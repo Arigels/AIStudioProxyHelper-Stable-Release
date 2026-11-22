@@ -162,6 +162,7 @@ fun SetupScreen(
         PrerequisitesCard(
             uiState = uiState,
             onOpenAccessibilitySettings = { openA11yWithHint() },
+            onShowAccessibilityGuide = { showA11yHelpDialog = true },
             onOpenFDroid = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_FDROID) },
             onOpenGitHub = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_GITHUB) }
         )
@@ -540,14 +541,31 @@ private fun hintForError(err: String): String = when {
 }
 
 @Composable
-private fun PrerequisitesCard(    uiState: MainUiState,
+private fun PrerequisitesCard(
+    uiState: MainUiState,
     onOpenAccessibilitySettings: () -> Unit,
+    onShowAccessibilityGuide: () -> Unit,
     onOpenFDroid: () -> Unit,
     onOpenGitHub: () -> Unit
 ) {
+    val context = LocalContext.current
     val env = uiState.environment
-    val allDone = env.termuxInstalled && (env.accessibilityEnabled || uiState.hasDeployed)
+    val canDrawOverlay = Settings.canDrawOverlays(context)
+    val allDone = env.termuxInstalled &&
+        canDrawOverlay &&
+        (env.accessibilityEnabled || uiState.hasDeployed)
     if (allDone) return
+
+    fun openOverlaySettings() {
+        runCatching {
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}")
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }
+    }
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -607,27 +625,57 @@ private fun PrerequisitesCard(    uiState: MainUiState,
                 )
             }
 
-            // 2. Accessibility auto-controller
+            // 2. 权限三步引导：解除限制 → 悬浮窗 → 无障碍
+            ChecklistRow(
+                ok = false,
+                title = "2. 先解除系统的权限限制",
+                subtitle = "小米/红米、OPPO、vivo、荣耀 等系统会限制第三方应用授权，" +
+                    "弹窗里有一行小字「解除限制 / 允许受限制的设置」，必须先点它，后面的悬浮窗和无障碍才能开。"
+            )
+            FilledTonalButton(
+                onClick = onShowAccessibilityGuide,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("查看解除限制的详细步骤")
+            }
+
+            ChecklistRow(
+                ok = canDrawOverlay,
+                title = "3. 悬浮窗授权",
+                subtitle = if (canDrawOverlay) {
+                    "已允许「显示在其他应用上层」"
+                } else {
+                    "允许后才能在 Termux 上方看到进度小窗（同样可能被「已限制设置」拦住，先解除限制）"
+                }
+            )
+            if (!canDrawOverlay) {
+                FilledTonalButton(
+                    onClick = onOpenOverlaySettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("去授权悬浮窗")
+                }
+            }
+
+            ChecklistRow(
+                ok = env.accessibilityEnabled,
+                title = "4. 无障碍（自动操控）",
+                subtitle = if (env.accessibilityEnabled) {
+                    "已开启，可以直接点上方「一键全自动搭建」"
+                } else {
+                    "开启后才能自动粘贴命令并回车；开不了也不影响使用，只是要手动粘贴一次"
+                }
+            )
             if (!env.accessibilityEnabled) {
-                ChecklistRow(
-                    ok = false,
-                    title = "2. 开启自动操控权限（推荐）",
-                    subtitle = "在系统无障碍中开启「AI Studio 反代自动搭建助手」，即可全自动搭建。\n" +
-                        "⚠️ 小米/红米/OPPO/vivo/荣耀 等手机常提示「已限制设置」，需要点它旁边的小字「解除限制」才能打开开关。"
-                )
                 FilledTonalButton(
                     onClick = onOpenAccessibilitySettings,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("去开启自动操控权限")
+                    Text("去开启无障碍")
                 }
-            } else {
-                ChecklistRow(
-                    ok = true,
-                    title = "2. 自动操控已开启",
-                    subtitle = "现在可以直接点上方「一键全自动搭建」"
-                )
             }
         }
     }

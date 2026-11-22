@@ -17,6 +17,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
@@ -55,6 +56,7 @@ class OverlayService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var windowManager: WindowManager? = null
+    private var panelParams: WindowManager.LayoutParams? = null
 
     private var root: LinearLayout? = null
     private var dot: View? = null
@@ -158,24 +160,21 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, dp(4), 0, 0)
         }
+        val openAppText = TextView(this).apply {
+            text = "打开 App"
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(6), 0, 0)
+            setOnClickListener { openApp() }
+        }
         details.addView(ai)
         details.addView(elapsed)
+        details.addView(openAppText)
 
         panel.addView(titleRow)
         panel.addView(stage)
         panel.addView(guide)
         panel.addView(details)
-
-        panel.setOnClickListener {
-            expanded = !expanded
-            details.visibility = if (expanded) View.VISIBLE else View.GONE
-            render()
-        }
-        // 长按直接打开 App
-        panel.setOnLongClickListener {
-            openApp()
-            true
-        }
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -195,6 +194,48 @@ class OverlayService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = dp(12)
             y = dp(72)
+        }
+        panelParams = params
+
+        // 支持拖拽：按下记录起点，移动时更新窗口位置，抬手时若几乎没移动则视为点击（展开/收起）
+        var downRawX = 0f
+        var downRawY = 0f
+        var startX = 0
+        var startY = 0
+        var dragging = false
+        panel.setOnTouchListener { _, ev ->
+            when (ev.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    downRawX = ev.rawX
+                    downRawY = ev.rawY
+                    startX = params.x
+                    startY = params.y
+                    dragging = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (ev.rawX - downRawX).toInt()
+                    val dy = (ev.rawY - downRawY).toInt()
+                    if (kotlin.math.abs(dx) > 12 || kotlin.math.abs(dy) > 12) {
+                        dragging = true
+                    }
+                    if (dragging) {
+                        params.x = startX + dx
+                        params.y = startY + dy
+                        runCatching { windowManager?.updateViewLayout(panel, params) }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!dragging) {
+                        expanded = !expanded
+                        details.visibility = if (expanded) View.VISIBLE else View.GONE
+                        render()
+                    }
+                    true
+                }
+                else -> false
+            }
         }
 
         runCatching {

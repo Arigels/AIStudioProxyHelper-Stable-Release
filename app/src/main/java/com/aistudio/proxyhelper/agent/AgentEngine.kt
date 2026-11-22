@@ -92,40 +92,60 @@ class AgentEngine {
 
     /** 拉取可用模型列表：本机反代走 Gemini 协议，外部走 OpenAI 兼容 /models。 */
     fun listModels(config: AgentConfig): List<String> {
-        val (url, headers) = if (config.useLocalProxy) {
+        val candidates: List<Pair<String, Map<String, String>>> = if (config.useLocalProxy) {
             val base = config.localBaseUrl.trim().trimEnd('/')
-            val modelsUrl = if (base.endsWith("/v1beta")) "$base/models" else "$base/v1beta/models"
-            modelsUrl to mapOf("x-goog-api-key" to config.localApiKey.ifBlank { "aistudio-api" })
+            val key = config.localApiKey.ifBlank { "aistudio-api" }
+            listOf(
+                "$base/v1beta/models" to mapOf("x-goog-api-key" to key),
+                "$base/v1/models" to mapOf("x-goog-api-key" to key)
+            )
         } else {
             val base = config.baseUrl.trim().trimEnd('/')
             if (base.isBlank() || config.apiKey.isBlank()) {
                 throw IllegalStateException("还没有填写接口地址或 API Key")
             }
-            "$base/models" to mapOf("Authorization" to "Bearer ${config.apiKey}")
+            val auth = mapOf("Authorization" to "Bearer ${config.apiKey}")
+            listOf(
+                "$base/models" to auth,
+                "$base/v1/models" to auth
+            ).distinctBy { it.first }
         }
 
+        val errors = mutableListOf<String>()
+        for ((url, headers) in candidates) {
+            try {
+                return fetchModelsAt(url, headers)
+            } catch (e: Exception) {
+                errors.add("${url.substringAfter("//").take(40)} → ${e.message?.take(60)}")
+            }
+        }
+        throw IllegalStateException(errors.joinToString("；").ifBlank { "没有可用的模型接口" })
+    }
+
+    private fun fetchModelsAt(url: String, headers: Map<String, String>): List<String> {
         val builder = Request.Builder().url(url).get()
         headers.forEach { (k, v) -> builder.header(k, v) }
         http.newCall(builder.build()).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw IllegalStateException("HTTP ${response.code}: ${body.take(200)}")
+                throw IllegalStateException("HTTP ${response.code}: ${body.take(120)}")
             }
             val obj = JSONObject(body)
             val result = mutableListOf<String>()
-            val geminiModels = obj.optJSONArray("models")
-            if (geminiModels != null) {
-                for (i in 0 until geminiModels.length()) {
-                    val name = geminiModels.optJSONObject(i)?.optString("name").orEmpty()
+            obj.optJSONArray("models")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val name = arr.optJSONObject(i)?.optString("name").orEmpty()
                     if (name.isNotBlank()) result.add(name.removePrefix("models/"))
                 }
             }
-            val openAiModels = obj.optJSONArray("data")
-            if (openAiModels != null) {
-                for (i in 0 until openAiModels.length()) {
-                    val id = openAiModels.optJSONObject(i)?.optString("id").orEmpty()
+            obj.optJSONArray("data")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val id = arr.optJSONObject(i)?.optString("id").orEmpty()
                     if (id.isNotBlank()) result.add(id)
                 }
+            }
+            if (result.isEmpty()) {
+                throw IllegalStateException("返回里没有模型字段：${body.take(100)}")
             }
             return result.distinct().sorted()
         }

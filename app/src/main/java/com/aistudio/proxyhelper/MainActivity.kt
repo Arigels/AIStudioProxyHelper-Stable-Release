@@ -237,7 +237,9 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
             text = {
                 Text(
                     "开启后，Termux 上方会显示搭建进度、AI 结论和「下一步该做什么」，" +
-                        "搭建时不用来回切 App。只需要授权一次。"
+                        "搭建时不用来回切 App。只需要授权一次。\n\n" +
+                        "⚠️ 小米/红米、OPPO、vivo、荣耀 等系统可能提示「已限制设置」，" +
+                        "需要先点「解除限制」才能打开开关。详细步骤见「搭建」页的权限引导。"
                 )
             },
             confirmButton = {

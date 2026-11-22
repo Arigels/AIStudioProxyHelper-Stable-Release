@@ -261,13 +261,12 @@ class TermuxAutomationService : AccessibilityService() {
     }
 
     private suspend fun pressKeyboardEnter(terminalBounds: Rect): Boolean {
-        // 策略 1：对焦点输入框直接触发 IME 回车动作（API 30+，用反射兼容不同 SDK 版本）
+        // 只使用「能确认是回车键」的方式，绝不按坐标盲点（盲点可能点到删除键，把命令改坏）
         tryTriggerImeEnter()
-        delay(350L)
+        delay(400L)
 
         var imeWindow = findImeWindow()
         if (imeWindow == null) {
-            // 轻点终端，把软键盘叫出来
             performPress(
                 terminalBounds.centerX().toFloat(),
                 (terminalBounds.top + terminalBounds.height() * 0.30f)
@@ -279,41 +278,30 @@ class TermuxAutomationService : AccessibilityService() {
         }
         if (imeWindow == null) return false
 
-        val imeRoot = imeWindow.root
-        if (imeRoot != null) {
-            // 策略 2：按文字 / 无障碍描述匹配回车键
-            findEnterKeyNode(imeRoot)?.let { node ->
-                if (clickNodeOrParent(node)) return true
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                if (!rect.isEmpty) {
-                    performPress(rect.centerX().toFloat(), rect.centerY().toFloat(), 60L)
-                    return true
-                }
-            }
+        val imeRoot = imeWindow.root ?: return false
+        val enterNode = findEnterKeyNode(imeRoot) ?: return false
 
-            // 策略 3：按位置找「最右下角的按键」（绝大多数输入法的回车都在这里）
-            findBottomRightKeyNode(imeRoot)?.let { node ->
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                if (!rect.isEmpty) {
-                    performPress(rect.centerX().toFloat(), rect.centerY().toFloat(), 60L)
-                    return true
-                }
-                if (clickNodeOrParent(node)) return true
-            }
-        }
+        // 二次校验：确认这个节点确实是回车语义，避免误点是删除/退格
+        val text = enterNode.text?.toString()?.trim().orEmpty()
+        val desc = enterNode.contentDescription?.toString()?.trim().orEmpty()
+        if (!looksLikeEnter(text) && !looksLikeEnter(desc)) return false
+        if (looksLikeDelete(text) || looksLikeDelete(desc)) return false
 
-        // 策略 4：固定坐标兜底（右下角区域）
-        val imeBounds = Rect()
-        imeWindow.getBoundsInScreen(imeBounds)
-        if (imeBounds.width() > 200 && imeBounds.height() > 150) {
-            val enterX = imeBounds.right - imeBounds.width() * 0.075f
-            val enterY = imeBounds.bottom - imeBounds.height() * 0.12f
-            performPress(enterX, enterY, 60L)
+        if (clickNodeOrParent(enterNode)) return true
+        val rect = Rect()
+        enterNode.getBoundsInScreen(rect)
+        if (!rect.isEmpty) {
+            performPress(rect.centerX().toFloat(), rect.centerY().toFloat(), 60L)
             return true
         }
         return false
+    }
+
+    private fun looksLikeDelete(value: String): Boolean {
+        if (value.isBlank()) return false
+        val v = value.trim().lowercase()
+        return v.contains("删除") || v.contains("退格") || v.contains("delete") ||
+            v.contains("backspace") || v.contains("del")
     }
 
     private fun findImeWindow(): AccessibilityWindowInfo? {
