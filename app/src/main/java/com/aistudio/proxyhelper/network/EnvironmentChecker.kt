@@ -1,0 +1,113 @@
+package com.aistudio.proxyhelper.network
+
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import com.aistudio.proxyhelper.data.EnvironmentStatus
+import com.aistudio.proxyhelper.termux.TermuxBridge
+import java.net.Inet4Address
+import java.net.NetworkInterface
+
+object EnvironmentChecker {
+
+    fun inspect(context: Context): EnvironmentStatus {
+        val abis = Build.SUPPORTED_ABIS ?: emptyArray()
+        val is64Bit = abis.any { it == "arm64-v8a" || it == "x86_64" }
+        val abiSummary = abis.joinToString(", ").ifBlank { "未知" }
+
+        val termuxInfo = getTermuxPackageInfo(context)
+        val termuxInstalled = termuxInfo != null
+        val termuxVersion = termuxInfo?.versionName
+
+        val runCmdGranted = ContextCompat.checkSelfPermission(
+            context,
+            TermuxBridge.PERMISSION_RUN_COMMAND
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        val batteryIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+
+        return EnvironmentStatus(
+            is64BitArm = is64Bit,
+            abiSummary = abiSummary,
+            termuxInstalled = termuxInstalled,
+            termuxVersionName = termuxVersion,
+            termuxRunCommandGranted = runCmdGranted,
+            batteryOptimizationIgnored = batteryIgnored,
+            lanIpAddress = detectLanIpv4()
+        )
+    }
+
+    fun openBatteryOptimizationSettings(context: Context) {
+        val directIntent = Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        try {
+            context.startActivity(directIntent)
+        } catch (_: Exception) {
+            val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(fallback) }
+        }
+    }
+
+    fun openTermuxAppDetails(context: Context) {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${TermuxBridge.TERMUX_PACKAGE}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+    }
+
+    private fun getTermuxPackageInfo(context: Context) = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageInfo(
+                TermuxBridge.TERMUX_PACKAGE,
+                PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(TermuxBridge.TERMUX_PACKAGE, 0)
+        }
+    } catch (_: PackageManager.NameNotFoundException) {
+        null
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun detectLanIpv4(): String? {
+        return try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+            val candidates = mutableListOf<Pair<Int, String>>()
+            while (interfaces.hasMoreElements()) {
+                val iface = interfaces.nextElement()
+                if (!iface.isUp || iface.isLoopback || iface.isVirtual) continue
+                val name = iface.name.lowercase()
+                val addrs = iface.inetAddresses
+                while (addrs.hasMoreElements()) {
+                    val addr = addrs.nextElement()
+                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
+                        val host = addr.hostAddress ?: continue
+                        val priority = when {
+                            name.startsWith("wlan") || name.startsWith("ap") -> 0
+                            name.startsWith("eth") || name.startsWith("en") -> 1
+                            addr.isSiteLocalAddress -> 2
+                            else -> 3
+                        }
+                        candidates.add(priority to host)
+                    }
+                }
+            }
+            candidates.minByOrNull { it.first }?.second
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
