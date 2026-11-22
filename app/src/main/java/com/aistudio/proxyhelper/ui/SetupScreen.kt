@@ -144,6 +144,9 @@ fun SetupScreen(
             onOpenGuide = onOpenGuide
         )
 
+        // 2.5 悬浮窗开关（显眼位置）
+        OverlayToggleCard()
+
         // 3. 唯一主操作
         PrimaryActionCard(
             uiState = uiState,
@@ -242,6 +245,74 @@ fun SetupScreen(
                 AutomationController.openAccessibilitySettings(context)
             }
         )
+    }
+}
+
+@Composable
+private fun OverlayToggleCard() {
+    val context = LocalContext.current
+    val canDraw = Settings.canDrawOverlays(context)
+    var overlayOn by remember(canDraw) { mutableStateOf(OverlayService.isRunning && canDraw) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "悬浮窗",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = when {
+                        !canDraw -> "需要在系统设置里允许「显示在其他应用上层」"
+                        overlayOn -> "已开启：Termux 上方显示进度 + 下一步提示"
+                        else -> "在 Termux 上方实时显示搭建进度、AI 结论与下一步该做什么"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(
+                onClick = {
+                    if (!canDraw) {
+                        runCatching {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    } else if (overlayOn) {
+                        OverlayService.stop(context)
+                        overlayOn = false
+                    } else {
+                        OverlayService.start(context)
+                        overlayOn = true
+                    }
+                },
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    when {
+                        !canDraw -> "去授权"
+                        overlayOn -> "关闭"
+                        else -> "开启"
+                    }
+                )
+            }
+        }
     }
 }
 
