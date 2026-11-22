@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.4.1.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.4.2.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v1.4.1.apk
+          path: dist/AIStudioProxyHelper-v1.4.2.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.4.1"
+          TAG="v1.4.2"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.4.1.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.4.2.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v1.4.1.apk \
-              --title "v1.4.1 — AI Studio 反代助手" \
-              --notes "无障碍开启引导优化：打开设置前先提示各品牌手机的「已限制设置」与「解除限制」小字，避免新手卡住；同时保留手动粘贴兜底方案。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v1.4.2.apk \
+              --title "v1.4.2 — AI Studio 反代助手" \
+              --notes "自动回车修复：粘贴后改用 4 套策略识别输入法回车键（IME 回车动作 / 文案匹配 / 右下角按键定位 / 坐标兜底）并自动重试，同时在命令末尾补换行，兼容部分粘贴即执行的 Termux 版本。"
           fi

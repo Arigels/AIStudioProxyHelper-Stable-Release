@@ -68,7 +68,8 @@ object AutomationController {
      * @return true if the auto-controller service is running and took over the task.
      */
     fun enqueueAndRun(context: Context, command: String, label: String): Boolean {
-        TermuxBridge.copyToClipboard(context, label, command)
+        // 末尾补一个换行：部分 Termux 版本粘贴即执行，能直接省掉回车这一步
+        TermuxBridge.copyToClipboard(context, label, command + "\n")
         pendingTask = PendingAutomationTask(command = command, label = label)
         _statusMessage.value = "正在打开 Termux 并准备自动输入..."
 

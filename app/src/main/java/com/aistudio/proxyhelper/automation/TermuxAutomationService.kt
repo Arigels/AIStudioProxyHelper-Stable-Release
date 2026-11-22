@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
+import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -117,18 +118,24 @@ class TermuxAutomationService : AccessibilityService() {
                 return
             }
 
-            // Step 3: Wait for pasted command to appear, then press Enter on IME keyboard
-            delay(650L)
+            // Step 3: 等待粘贴完成，然后按回车执行（多策略 + 自动重试）
+            delay(900L)
             if (AutomationController.pendingTask !== task) return
 
             AutomationController.updateStatus("正在自动按下回车执行...")
-            val enterPressed = pressKeyboardEnter(terminalBounds)
+            var enterPressed = false
+            for (attempt in 1..2) {
+                if (AutomationController.pendingTask !== task) return
+                enterPressed = pressKeyboardEnter(terminalBounds)
+                if (enterPressed) break
+                delay(700L)
+            }
 
             AutomationController.clearTask("已自动向 Termux 输入并启动「${task.label}」！")
             if (enterPressed) {
-                showToast("已自动输入并开始执行！若未运行请轻点一下回车")
+                showToast("已自动输入并开始执行！若没反应请再点一下键盘「回车」")
             } else {
-                showToast("已自动粘贴命令！请点一下键盘「回车」开始执行")
+                showToast("命令已粘贴，请点一下键盘上的「回车」开始执行")
             }
         } catch (_: Exception) {
             AutomationController.clearTask("自动操作中断，命令已在剪贴板，可直接在 Termux 长按粘贴并回车。")
@@ -254,43 +261,62 @@ class TermuxAutomationService : AccessibilityService() {
     }
 
     private suspend fun pressKeyboardEnter(terminalBounds: Rect): Boolean {
+        // 策略 1：对焦点输入框直接触发 IME 回车动作（部分输入法/系统支持）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (focused != null) {
+                runCatching { focused.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER) }
+                delay(350L)
+            }
+        }
+
         var imeWindow = findImeWindow()
         if (imeWindow == null) {
-            // Tap terminal view to bring up soft keyboard
+            // 轻点终端，把软键盘叫出来
             performPress(
                 terminalBounds.centerX().toFloat(),
                 (terminalBounds.top + terminalBounds.height() * 0.30f)
                     .coerceIn(terminalBounds.top + 30f, terminalBounds.bottom - 30f),
                 durationMs = 60L
             )
-            delay(750L)
+            delay(800L)
             imeWindow = findImeWindow()
         }
+        if (imeWindow == null) return false
 
-        if (imeWindow != null) {
-            val imeRoot = imeWindow.root
-            if (imeRoot != null) {
-                val enterNode = findEnterKeyNode(imeRoot)
-                if (enterNode != null) {
-                    if (clickNodeOrParent(enterNode)) return true
-                    val rect = Rect()
-                    enterNode.getBoundsInScreen(rect)
-                    if (!rect.isEmpty) {
-                        performPress(rect.centerX().toFloat(), rect.centerY().toFloat(), durationMs = 60L)
-                        return true
-                    }
+        val imeRoot = imeWindow.root
+        if (imeRoot != null) {
+            // 策略 2：按文字 / 无障碍描述匹配回车键
+            findEnterKeyNode(imeRoot)?.let { node ->
+                if (clickNodeOrParent(node)) return true
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (!rect.isEmpty) {
+                    performPress(rect.centerX().toFloat(), rect.centerY().toFloat(), 60L)
+                    return true
                 }
             }
 
-            // Fallback: tap standard bottom-right Enter key zone of the IME window
-            val imeBounds = Rect()
-            imeWindow.getBoundsInScreen(imeBounds)
-            if (imeBounds.width() > 200 && imeBounds.height() > 150) {
-                val enterX = imeBounds.right - imeBounds.width() * 0.085f
-                val enterY = imeBounds.bottom - imeBounds.height() * 0.14f
-                performPress(enterX, enterY, durationMs = 60L)
-                return true
+            // 策略 3：按位置找「最右下角的按键」（绝大多数输入法的回车都在这里）
+            findBottomRightKeyNode(imeRoot)?.let { node ->
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (!rect.isEmpty) {
+                    performPress(rect.centerX().toFloat(), rect.centerY().toFloat(), 60L)
+                    return true
+                }
+                if (clickNodeOrParent(node)) return true
             }
+        }
+
+        // 策略 4：固定坐标兜底（右下角区域）
+        val imeBounds = Rect()
+        imeWindow.getBoundsInScreen(imeBounds)
+        if (imeBounds.width() > 200 && imeBounds.height() > 150) {
+            val enterX = imeBounds.right - imeBounds.width() * 0.075f
+            val enterY = imeBounds.bottom - imeBounds.height() * 0.12f
+            performPress(enterX, enterY, 60L)
+            return true
         }
         return false
     }
@@ -302,23 +328,78 @@ class TermuxAutomationService : AccessibilityService() {
     }
 
     private fun findEnterKeyNode(imeRoot: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val exactMatches = setOf(
-            "enter", "return", "go", "send", "done", "next",
-            "回车", "换行", "确定", "完成", "发送", "执行", "前往"
-        )
         return findNodeMatching(imeRoot) { node ->
-            val t = node.text?.toString()?.trim()?.lowercase().orEmpty()
-            val d = node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
-            val combined = "$t $d"
+            val t = node.text?.toString()?.trim().orEmpty()
+            val d = node.contentDescription?.toString()?.trim().orEmpty()
+            val combined = "$t $d".lowercase()
             if (combined.contains("delete") || combined.contains("backspace") || combined.contains("删除")) {
                 return@findNodeMatching false
             }
-            t in exactMatches ||
-                d in exactMatches ||
-                d.contains("回车") ||
-                d.contains("换行") ||
-                d.contains("enter")
+            looksLikeEnter(t) || looksLikeEnter(d)
         }
+    }
+
+    /**
+     * 在输入法键盘里找最右下角的按键（通常是回车/发送键）。
+     * 优先匹配回车语义的描述，其次接受无文字的图标键。
+     */
+    private fun findBottomRightKeyNode(imeRoot: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val imeRect = Rect()
+        imeRoot.getBoundsInScreen(imeRect)
+        if (imeRect.isEmpty) return null
+
+        val minKeyWidth = (imeRect.width() * 0.06f).toInt()
+        val maxKeyWidth = (imeRect.width() * 0.22f).toInt()
+        val bottomRowTop = imeRect.top + imeRect.height() * 0.55f
+
+        var best: AccessibilityNodeInfo? = null
+        var bestRight = -1
+        var bestArea = Int.MAX_VALUE
+
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(imeRoot)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < 900) {
+            val node = queue.removeFirst()
+            visited++
+            val r = Rect()
+            node.getBoundsInScreen(r)
+            val w = r.width()
+            if (!r.isEmpty && w in minKeyWidth..maxKeyWidth &&
+                r.top >= bottomRowTop && r.bottom <= imeRect.bottom + 8
+            ) {
+                val text = node.text?.toString()?.trim().orEmpty()
+                val desc = node.contentDescription?.toString()?.trim().orEmpty()
+                val isEnterish = looksLikeEnter(text) || looksLikeEnter(desc)
+                val isBlankKey = text.isEmpty() && desc.isEmpty()
+                if (isEnterish || isBlankKey) {
+                    val area = w * r.height()
+                    if (r.right > bestRight || (r.right == bestRight && area < bestArea)) {
+                        bestRight = r.right
+                        bestArea = area
+                        best = node
+                    }
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return best
+    }
+
+    private fun looksLikeEnter(value: String): Boolean {
+        if (value.isBlank()) return false
+        val v = value.trim().lowercase()
+        val exact = setOf(
+            "enter", "return", "go", "send", "done", "search", "next",
+            "回车", "换行", "确定", "完成", "发送", "执行", "前往", "搜索"
+        )
+        return v in exact ||
+            v.contains("回车") ||
+            v.contains("换行") ||
+            v.contains("enter") ||
+            v.contains("send")
     }
 
     private fun clickNodeOrParent(node: AccessibilityNodeInfo): Boolean {
