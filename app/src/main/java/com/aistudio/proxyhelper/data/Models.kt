@@ -60,7 +60,7 @@ enum class TermuxAction(
     val runInBackground: Boolean = false
 ) {
     INSTALL_AND_START(
-        title = "一键安装并启动",
+        title = "一键搭建并启动",
         subtitle = "自动安装 Git/Python/uv/Go/Zig、编译本地 WAA 签名引擎并启动反代服务"
     ),
     INSTALL_ONLY(

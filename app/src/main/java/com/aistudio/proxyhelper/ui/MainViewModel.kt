@@ -25,6 +25,8 @@ data class MainUiState(
     val settings: ProxySettings = ProxySettings(),
     val environment: EnvironmentStatus = EnvironmentStatus(),
     val service: ServiceStatus = ServiceStatus(),
+    val hasDeployed: Boolean = false,
+    val externalAppsSetupDone: Boolean = false,
     val importingCookie: Boolean = false,
     val lastImportResult: ImportResult? = null,
     val testingModels: Boolean = false,
@@ -41,7 +43,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(
         MainUiState(
             settings = settingsRepo.load(),
-            environment = EnvironmentChecker.inspect(application)
+            environment = EnvironmentChecker.inspect(application),
+            hasDeployed = settingsRepo.hasDeployed,
+            externalAppsSetupDone = settingsRepo.externalAppsSetupDone
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -71,7 +75,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val currentSettings = _uiState.value.settings
             val status = apiClient.fetchServiceStatus(currentSettings)
-            _uiState.update { it.copy(service = status) }
+            if (status.online) {
+                settingsRepo.hasDeployed = true
+            }
+            _uiState.update {
+                it.copy(
+                    service = status,
+                    hasDeployed = it.hasDeployed || status.online
+                )
+            }
         }
     }
 
@@ -115,13 +127,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         when (val result = TermuxBridge.runInTermux(ctx, action, settings)) {
             is TermuxDispatchResult.SentToTermux -> {
+                val markDeployed = action == TermuxAction.INSTALL_AND_START ||
+                    action == TermuxAction.INSTALL_ONLY
+                val markExternal = action == TermuxAction.ENABLE_EXTERNAL_APPS
+                if (markDeployed) settingsRepo.hasDeployed = true
+                if (markExternal) settingsRepo.externalAppsSetupDone = true
                 _uiState.update {
                     it.copy(
                         lastDispatchedCommand = result.command,
-                        snackbarMessage = "已向 Termux 发送任务：${action.title}"
+                        hasDeployed = it.hasDeployed || markDeployed,
+                        externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
+                        snackbarMessage = when (action) {
+                            TermuxAction.INSTALL_AND_START ->
+                                "已在 Termux 开始一键搭建，请稍候…完成后状态会自动变绿"
+                            TermuxAction.ENABLE_EXTERNAL_APPS ->
+                                "已复制设置命令并打开 Termux，粘贴回车一次即可"
+                            else -> "已向 Termux 发送任务：${action.title}"
+                        }
                     )
                 }
-                if (action == TermuxAction.STOP_SERVICE || action == TermuxAction.START_SERVICE) {
+                if (action == TermuxAction.STOP_SERVICE ||
+                    action == TermuxAction.START_SERVICE ||
+                    action == TermuxAction.INSTALL_AND_START
+                ) {
                     viewModelScope.launch {
                         delay(2500L)
                         refreshServiceStatus(silent = true)
@@ -130,9 +158,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             is TermuxDispatchResult.FallbackCopied -> {
+                val markExternal = action == TermuxAction.ENABLE_EXTERNAL_APPS ||
+                    result.command.contains("allow-external-apps")
+                if (markExternal) settingsRepo.externalAppsSetupDone = true
                 _uiState.update {
                     it.copy(
                         lastDispatchedCommand = result.command,
+                        externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
                         snackbarMessage = result.reason
                     )
                 }

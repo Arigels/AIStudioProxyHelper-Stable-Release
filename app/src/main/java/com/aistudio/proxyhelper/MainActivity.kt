@@ -92,7 +92,7 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     ) { granted ->
         viewModel.refreshEnvironment()
         if (granted) {
-            viewModel.showMessage("已获得 Termux 调用权限！如首次使用请再点一次「开启 external-apps」")
+            viewModel.showMessage("已获得 Termux 调用权限！如首次使用请再点一次「开启 Termux 一键调用」")
         } else {
             viewModel.showMessage("未授予 Termux 调用权限，可继续使用复制命令手动粘贴方式")
         }

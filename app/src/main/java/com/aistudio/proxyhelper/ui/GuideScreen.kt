@@ -65,7 +65,7 @@ fun GuideScreen(
     val steps = listOf(
         GuideStepData(
             title = "准备 Termux 环境",
-            desc = "安装 F-Droid/GitHub 版 Termux，并在搭建页完成「授予调用权限」与「开启 external-apps」",
+            desc = "安装 F-Droid/GitHub 版 Termux，并在搭建页完成「授予调用权限」与「开启 Termux 一键调用」",
             done = env.termuxInstalled && env.termuxRunCommandGranted,
             jumpTab = 0
         ),
@@ -215,11 +215,11 @@ fun GuideScreen(
                 )
                 GuideNumberedLine(
                     number = "2",
-                    text = "打开本 App →「搭建」页 → 完成体检：授予调用权限 + 开启 external-apps（配置命令粘贴到 Termux 执行一次）。"
+                    text = "打开本 App →「搭建」页 → 完成首次准备：授予调用权限 + 开启 Termux 一键调用（设置命令粘贴到 Termux 执行一次）。"
                 )
                 GuideNumberedLine(
                     number = "3",
-                    text = "点【一键全新安装并启动】，Termux 会自动装 Git/Python/uv/Go/Zig、编译本地 WAA IPC 签名引擎并启动 ${settings.port} 端口。"
+                    text = "点【一键搭建并启动】，Termux 会自动装 Git/Python/uv/Go/Zig、编译本地 WAA IPC 签名引擎并启动 ${settings.port} 端口。"
                 )
                 GuideNumberedLine(
                     number = "4",
@@ -317,7 +317,7 @@ fun GuideScreen(
                 SectionHeader(icon = Icons.Filled.Info, title = "常见问题（FAQ）")
                 FaqItem(
                     q = "点一键安装没反应？",
-                    a = "多半是未授予 RUN_COMMAND 权限或未开启 allow-external-apps。回「搭建」页体检卡逐项完成即可；或点按钮旁的复制图标把命令粘到 Termux 手动执行。"
+                    a = "多半是未授予调用权限或未开启 Termux 一键调用。回「搭建」页「首次准备」卡逐项完成即可；命令会自动复制并打开 Termux，粘贴执行一次即可。"
                 )
                 FaqItem(
                     q = "服务一直显示未运行？",
@@ -333,7 +333,7 @@ fun GuideScreen(
                 )
                 FaqItem(
                     q = "想换个端口？",
-                    a = "「搭建」页点【端口/代理】修改端口保存，然后重新点【一键安装并启动】或【启动服务】即可（换端口后客户端地址也要同步修改）。"
+                    a = "「搭建」页展开【高级设置】修改端口保存，然后重新点【一键搭建并启动】或【启动服务】即可（换端口后客户端地址也要同步修改）。"
                 )
                 FaqItem(
                     q = "官方更新后怎么升级？",

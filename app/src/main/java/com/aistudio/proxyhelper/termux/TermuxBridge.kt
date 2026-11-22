@@ -121,11 +121,12 @@ object TermuxBridge {
 
         // Enabling allow-external-apps itself requires pasting into Termux first
         if (action == TermuxAction.ENABLE_EXTERNAL_APPS) {
-            copyToClipboard(context, "Termux 授权命令", command)
+            copyToClipboard(context, "一次性开启 Termux 一键调用", command)
             openTermux(context)
             return TermuxDispatchResult.FallbackCopied(
                 command = command,
-                reason = "已复制授权命令并打开 Termux，请长按粘贴并回车执行一次即可开启一键调用。"
+                reason = "已复制「一次性开启 Termux 一键调用」的设置命令并打开 Termux。" +
+                    "这是权限设置（不是安装命令），粘贴回车执行一次即可，之后按钮就能全自动执行。"
             )
         }
 
@@ -153,17 +154,44 @@ object TermuxBridge {
             }
             TermuxDispatchResult.SentToTermux(command)
         } catch (e: SecurityException) {
-            copyToClipboard(context, action.title, command)
-            TermuxDispatchResult.FallbackCopied(
-                command = command,
-                reason = "未获得 Termux RUN_COMMAND 权限，已将命令复制到剪贴板，请在环境检测中授权或手动粘贴到 Termux 执行。"
-            )
+            setupCommandFallback(context, settings)
         } catch (e: Exception) {
-            copyToClipboard(context, action.title, command)
-            TermuxDispatchResult.FallbackCopied(
-                command = command,
-                reason = "拉起 Termux 失败（${e.message ?: "请确认已开启 allow-external-apps"}），已复制命令到剪贴板。"
-            )
+            if (!isTermuxInstalled(context)) {
+                copyToClipboard(context, action.title, command)
+                TermuxDispatchResult.FallbackCopied(
+                    command = command,
+                    reason = "未检测到 Termux，请先从 F-Droid 或 GitHub 安装 64 位版本后再试（安装命令已复制备用）。"
+                )
+            } else {
+                setupCommandFallback(context, settings)
+            }
+        }
+    }
+
+    /**
+     * Termux 拒绝执行（最常见原因是尚未开启 allow-external-apps）。
+     * 此时只复制「一次性开启一键调用」的设置命令，避免让用户误把完整安装命令当成权限设置。
+     */
+    private fun setupCommandFallback(
+        context: Context,
+        settings: ProxySettings
+    ): TermuxDispatchResult {
+        val setupCmd = buildCommand(TermuxAction.ENABLE_EXTERNAL_APPS, settings)
+        copyToClipboard(context, "一次性开启 Termux 一键调用", setupCmd)
+        openTermux(context)
+        return TermuxDispatchResult.FallbackCopied(
+            command = setupCmd,
+            reason = "还差一步：已复制「一次性开启 Termux 一键调用」的设置命令并打开 Termux，" +
+                "粘贴回车执行一次即可，之后按钮就能全自动执行。"
+        )
+    }
+
+    private fun isTermuxInstalled(context: Context): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(TERMUX_PACKAGE, 0)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

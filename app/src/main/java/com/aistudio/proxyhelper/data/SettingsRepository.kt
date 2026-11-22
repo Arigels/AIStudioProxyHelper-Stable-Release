@@ -39,6 +39,20 @@ class SettingsRepository(context: Context) {
             .apply()
     }
 
+    /** 是否成功发起过安装（用于区分首次安装 / 日常启动）。 */
+    var hasDeployed: Boolean
+        get() = prefs.getBoolean(KEY_HAS_DEPLOYED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_HAS_DEPLOYED, value).apply()
+        }
+
+    /** 用户是否已执行过「开启 Termux 一键调用」的一次性设置。 */
+    var externalAppsSetupDone: Boolean
+        get() = prefs.getBoolean(KEY_EXTERNAL_APPS_DONE, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_EXTERNAL_APPS_DONE, value).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "aistudio_proxy_helper_prefs"
         private const val KEY_PORT = "port"
@@ -47,5 +61,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_INSTALL_DIR = "install_dir"
         private const val KEY_REPO_URL = "repo_url"
         private const val KEY_API_TEST_KEY = "api_test_key"
+        private const val KEY_HAS_DEPLOYED = "has_deployed"
+        private const val KEY_EXTERNAL_APPS_DONE = "external_apps_done"
     }
 }
