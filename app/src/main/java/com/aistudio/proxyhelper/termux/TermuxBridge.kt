@@ -43,6 +43,13 @@ object TermuxBridge {
     const val URL_UPSTREAM_REPO = "https://github.com/DeconstructedCube/aistudio-api"
     const val URL_AISTUDIO = "https://aistudio.google.com/"
 
+    // 国内可访问的浏览器与扩展下载渠道
+    const val URL_FIREFOX_ANDROID = "https://www.mozilla.org/zh-CN/firefox/android/"
+    const val URL_FIREFOX_ARCHIVE = "https://archive.mozilla.org/pub/fenix/releases/"
+    const val URL_COOKIE_EDITOR = "https://addons.mozilla.org/zh-CN/firefox/addon/cookie-editor/"
+    const val PACKAGE_FIREFOX = "org.mozilla.firefox"
+    const val PACKAGE_LEMUR = "com.lemurbrowser.exts"
+
     /**
      * Build the exact bash command for each action, matching the official aistudio-api Termux guide.
      */
@@ -274,6 +281,18 @@ object TermuxBridge {
             context.startActivity(intent)
         } catch (_: Exception) {
             // No browser available
+        }
+    }
+
+    /** 尝试直接打开指定包名的 App（如已安装的火狐）。 */
+    fun launchPackage(context: Context, packageName: String): Boolean {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return false
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.3.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.4.0.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v1.3.0.apk
+          path: dist/AIStudioProxyHelper-v1.4.0.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.3.0"
+          TAG="v1.4.0"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.3.0.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.4.0.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v1.3.0.apk \
-              --title "v1.3.0 — AI Studio 反代助手（全自动搭建版）" \
-              --notes "新增无障碍自动操控引擎：开启权限后点击「一键全自动搭建」，自动打开 Termux、等待初始化、自动粘贴并按回车执行全部安装与启动，全程免复制粘贴。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v1.4.0.apk \
+              --title "v1.4.0 — AI Studio 反代助手" \
+              --notes "账号页新增 5 步获取 Cookie 图文教程：内置国内可访问的火狐官网下载、Cookie-Editor 扩展页与 AI Studio 入口，并自动检测手机是否已装火狐/狐猴浏览器。"
           fi

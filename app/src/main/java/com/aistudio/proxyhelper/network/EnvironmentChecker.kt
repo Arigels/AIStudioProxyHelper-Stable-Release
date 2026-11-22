@@ -40,6 +40,8 @@ object EnvironmentChecker {
             termuxVersionName = termuxVersion,
             termuxRunCommandGranted = runCmdGranted,
             accessibilityEnabled = AutomationController.isServiceEnabled(context),
+            firefoxInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_FIREFOX),
+            lemurInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_LEMUR),
             batteryOptimizationIgnored = batteryIgnored,
             lanIpAddress = detectLanIpv4()
         )
@@ -66,6 +68,23 @@ object EnvironmentChecker {
             Uri.parse("package:${TermuxBridge.TERMUX_PACKAGE}")
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
+    }
+
+    private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(packageName, 0)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun getTermuxPackageInfo(context: Context) = try {

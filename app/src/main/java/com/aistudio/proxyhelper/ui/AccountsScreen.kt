@@ -1,7 +1,10 @@
 package com.aistudio.proxyhelper.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -28,8 +32,8 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.data.AccountSummary
+import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.termux.TermuxBridge
 
 @Composable
@@ -64,47 +69,10 @@ fun AccountsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // ── 说明：如何获取 Cookie ──
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-            ),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "如何获取 Cookie",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = {
-                        TermuxBridge.openUrl(context, TermuxBridge.URL_AISTUDIO)
-                    }) {
-                        Icon(
-                            Icons.Filled.OpenInBrowser,
-                            contentDescription = "打开 AI Studio",
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-                Text(
-                    text = "1. 手机安装「安卓火狐 (Firefox)」或「手机 Edge」（手机 Chrome 不支持插件）\n" +
-                        "2. 在浏览器扩展里安装免费插件 Cookie-Editor\n" +
-                        "3. 打开 aistudio.google.com 登录谷歌账号（多账号可点右上角头像全部登好）\n" +
-                        "4. 点 Cookie-Editor → Export → Export as JSON，回本 App 粘贴导入",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        CookieGuideCard(
+            env = uiState.environment,
+            onShowMessage = onShowMessage
+        )
 
         // ── 导入 ──
         ElevatedCard(
@@ -259,6 +227,186 @@ fun AccountsScreen(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun CookieGuideCard(
+    env: EnvironmentStatus,
+    onShowMessage: (String) -> Unit
+) {
+    val context = LocalContext.current
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+        ),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "获取 Cookie 教程（约 3 分钟）",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "⚠️ 手机版 Chrome / Edge 不支持浏览器扩展，装不了 Cookie-Editor，请按下面步骤操作。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+
+            // 步骤 1
+            GuideStep(number = 1, title = "安装一个支持扩展的浏览器") {
+                if (env.firefoxInstalled) {
+                    Text(
+                        text = "✅ 已检测到火狐浏览器，可以直接使用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF15803D),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                if (!TermuxBridge.launchPackage(context, TermuxBridge.PACKAGE_FIREFOX)) {
+                                    onShowMessage("未能打开火狐，请手动从桌面启动")
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ) { Text("打开火狐") }
+                        OutlinedButton(
+                            onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_FIREFOX_ANDROID) },
+                            shape = RoundedCornerShape(10.dp)
+                        ) { Text("重新下载") }
+                    }
+                } else {
+                    Text(
+                        text = "推荐「火狐浏览器（Firefox）国际版」，官网可直接下载 APK，国内可访问。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                TermuxBridge.openUrl(context, TermuxBridge.URL_FIREFOX_ANDROID)
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ) { Text("下载火狐（官网）") }
+                        OutlinedButton(
+                            onClick = {
+                                TermuxBridge.openUrl(context, TermuxBridge.URL_FIREFOX_ARCHIVE)
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ) { Text("备用下载地址") }
+                    }
+                }
+
+                Text(
+                    text = if (env.lemurInstalled) {
+                        "✅ 已检测到狐猴浏览器（Lemur），也可以用它装扩展。"
+                    } else {
+                        "备选：狐猴浏览器（Lemur）—— 在国内应用商店搜索「狐猴浏览器」即可安装，自带扩展商店。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (env.lemurInstalled) Color(0xFF15803D) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 步骤 2
+            GuideStep(number = 2, title = "安装 Cookie-Editor 扩展") {
+                Text(
+                    text = "在火狐里打开下面的扩展页 → 点「添加到 Firefox」→ 允许安装（狐猴浏览器则在它自带的扩展商店里搜 Cookie-Editor）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_COOKIE_EDITOR) },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("打开 Cookie-Editor 扩展页")
+                }
+            }
+
+            // 步骤 3
+            GuideStep(number = 3, title = "登录 Google AI Studio") {
+                Text(
+                    text = "需要能访问 Google 的网络环境。有多个账号时，点右上角头像「添加其他账号」把账号全部登好（导入时会自动识别）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_AISTUDIO) },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("打开 AI Studio")
+                }
+            }
+
+            // 步骤 4
+            GuideStep(number = 4, title = "导出 Cookie") {
+                Text(
+                    text = "点浏览器右上角（或工具栏）的 Cookie-Editor 图标 → Export → Export as JSON。内容会自动复制到剪贴板。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 步骤 5
+            GuideStep(number = 5, title = "回到本 App 粘贴导入") {
+                Text(
+                    text = "在下方「粘贴 Cookie 导入」里点「粘贴剪贴板」，再点「导入并自动识别所有账号」即可。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuideStep(
+    number: Int,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = number.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            content()
+        }
     }
 }
 

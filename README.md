@@ -17,6 +17,7 @@ App 只有 **3 个页签**：搭建 / 账号 / 使用，围绕「一键部署反
    - 实时显示服务状态、签名引擎状态、账号数、模型数与局域网 IP。
 
 2. **账号（「账号」页）**
+   - 内置 **5 步获取 Cookie 教程**：下载火狐 / 狐猴浏览器 → 安装 Cookie-Editor → 登录 AI Studio → 导出 JSON → 粘贴导入，每步都带可点的下载/打开按钮，并自动检测手机是否已装火狐或狐猴。
    - 复制 Cookie-Editor 导出的 JSON，粘贴后一键导入，自动识别全部已登录子账号（`u/0`, `u/1`...）。
    - 已导入账号的邮箱与额度等级一目了然。
 
@@ -53,7 +54,7 @@ App 只有 **3 个页签**：搭建 / 账号 / 使用，围绕「一键部署反
 1. 安装 **Termux**（请务必从 [F-Droid](https://f-droid.org/packages/com.termux/) 或 [GitHub Releases](https://github.com/termux/termux-app/releases) 下载 64 位版本 `arm64-v8a`，**切勿使用 Google Play 商店旧版**）。
 2. 打开 **AI Studio 反代助手** → 点击 **「去开启自动操控权限」**，在系统无障碍设置里开启 **「AI Studio 反代自动搭建助手」**。
 3. 回到 App 点击 **【一键全自动搭建】**，App 会自动打开 Termux 并输入执行完整安装与启动脚本，等待编译完成、首页状态卡变绿即成功。
-4. 切到 **「账号」** 页导入 Cookie：用 **安卓火狐 (Firefox)** 或 **手机 Edge** 安装免费扩展 **Cookie-Editor**（手机 Chrome 不支持插件），登录 `aistudio.google.com` 后点 **Export → Export as JSON**，回到本 App 粘贴并点击 **「导入并自动识别所有账号」**。
+4. 切到 **「账号」** 页，按内置教程操作：装 [火狐国际版](https://www.mozilla.org/zh-CN/firefox/android/)（或国内应用商店的狐猴浏览器）→ 安装 [Cookie-Editor](https://addons.mozilla.org/zh-CN/firefox/addon/cookie-editor/) → 登录 aistudio.google.com → **Export as JSON** → 回到 App 粘贴并点 **「导入并自动识别所有账号」**。注意手机版 Chrome / Edge 不支持扩展。
 5. 切到 **「使用」** 页测试模型列表，复制地址填入酒馆 / Cherry Studio / NextChat（选择 **Google Gemini** 协议）即可使用！
 6. **防杀后台**：下拉通知栏点击 Termux 通知上的 `Acquire Wakelock`，并在系统电池设置里将 Termux 设为「无限制」（App 的「搭建 → 高级设置」里也有「开启唤醒锁」按钮）。
 7. **重启恢复**：手机重启或服务掉线后，打开 App →「使用」页点【一键恢复服务】即可，无需重新安装。
