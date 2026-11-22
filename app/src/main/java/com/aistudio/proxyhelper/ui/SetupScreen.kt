@@ -1,5 +1,8 @@
 package com.aistudio.proxyhelper.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -71,6 +74,7 @@ import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
+import com.aistudio.proxyhelper.overlay.OverlayService
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import kotlinx.coroutines.delay
 
@@ -710,6 +714,34 @@ private fun AdvancedSettingsCard(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("开启唤醒锁（防锁屏断线）")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            if (!Settings.canDrawOverlays(context)) {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            Uri.parse("package:${context.packageName}")
+                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            } else if (OverlayService.isRunning) {
+                                OverlayService.stop(context)
+                            } else {
+                                OverlayService.start(context)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            if (OverlayService.isRunning) {
+                                "关闭悬浮窗"
+                            } else {
+                                "开启悬浮窗（在 Termux 上看搭建进度）"
+                            }
+                        )
                     }
                     OutlinedButton(
                         onClick = onClearCooldowns,

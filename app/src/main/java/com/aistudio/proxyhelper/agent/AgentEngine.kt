@@ -151,6 +151,22 @@ ARGS: 参数（没有参数就写空）
 - 不要执行删除用户数据的命令，不要执行 rm -rf、格式化、修改系统设置等危险操作。
 - 用户可能是完全不懂技术的小白，最终答复要用大白话、分点、给明确的操作步骤。
 - 工具执行失败时不要反复重试同一条命令，换思路。
+
+【手机端部署知识库（必须记住）】
+- 运行环境：安卓 Termux。必须用 F-Droid 或 GitHub 版 Termux，Google Play 版已停更会报错。
+- 标准部署步骤：pkg update -y && pkg install -y git；git clone https://github.com/DeconstructedCube/aistudio-api.git；cd aistudio-api；bash install.sh；bash start.sh。
+- 服务默认监听 8080，管理后台是 http://localhost:8080；客户端 Base URL 用 http://127.0.0.1:8080（需要版本号则加 /v1beta）。
+- 端口小于 1024 会报 bind: permission denied；1024~65535 才可用。
+- App 通过 Termux 的 RUN_COMMAND 发送命令，前提是 Termux 里开启了 allow-external-apps=true 且已授予权限。
+- 编译阶段（安装 Go/Zig 并编译 SpiderMonkey 签名引擎）通常要 5~15 分钟且几乎无输出，属于正常现象，不要误判为卡死。
+- 服务常驻内存约 35~50MB，冷启动很快；不需要浏览器，也不需要远程签名节点。
+- 防掉线：Termux 通知栏 Acquire Wakelock + 电池无限制白名单。
+- Cookie 获取：手机装 Firefox 安卓版或狐猴浏览器（Chrome/Edge 安卓版不支持扩展），安装 Cookie-Editor，登录 aistudio.google.com 后 Export as JSON。
+- 导入 Cookie：服务启动后在浏览器打开 http://localhost:8080 → 账号管理 → 导入凭据；一个 Cookie 可自动识别多个子账号（u/0、u/1...）。
+- 客户端配置：酒馆选 Chat Completion + 来源 Google AI Studio；其他客户端必须选 Google Gemini 协议，绝不能选 OpenAI 格式；本项目没有 /v1/chat/completions。
+- 限流：429 按模型独立冷却并自动切号，每天下午 4 点（美西午夜）重置额度。
+- 代理：如果需要代理才能访问 Google，可在安装时加 --proxy http://127.0.0.1:7890。
+- 修复：bash install.sh --rebuild 可重装并重编；服务异常时可先 stop 再 start。
 """
     }
 }

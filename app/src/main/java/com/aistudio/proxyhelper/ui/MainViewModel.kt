@@ -15,6 +15,7 @@ import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.net.LogCollector
+import com.aistudio.proxyhelper.overlay.OverlayState
 import com.aistudio.proxyhelper.network.ProxyApiClient
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.termux.TermuxDispatchResult
@@ -101,6 +102,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val status = apiClient.fetchServiceStatus(currentSettings)
             if (status.online) {
                 settingsRepo.hasDeployed = true
+                OverlayState.deployStartedAt = 0L
             }
             _uiState.update {
                 it.copy(
@@ -154,6 +156,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val preferAccessibility = !settingsRepo.externalAppsSetupDone ||
             !env.termuxRunCommandGranted ||
             action == TermuxAction.INSTALL_AND_START
+
+        if (action == TermuxAction.INSTALL_AND_START || action == TermuxAction.INSTALL_ONLY) {
+            OverlayState.deployStartedAt = System.currentTimeMillis()
+        }
 
         when (val result = TermuxBridge.runInTermux(ctx, action, settings, preferAccessibility)) {
             is TermuxDispatchResult.AutomatedByAccessibility -> {

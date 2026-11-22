@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.6.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.7.0.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v1.6.0.apk
+          path: dist/AIStudioProxyHelper-v1.7.0.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.6.0"
+          TAG="v1.7.0"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.6.0.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.7.0.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v1.6.0.apk \
-              --title "v1.6.0 — AI Studio 反代助手（AI 排障版）" \
-              --notes "新增 AI 排障助手：填入自己的 OpenAI 兼容接口后，AI 可通过受限工具（查状态、读日志、执行命令、改端口、启停服务）自动排查反代部署问题；同时新增本地日志回传与报错翻译器。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v1.7.0.apk \
+              --title "v1.7.0 — AI Studio 反代助手（悬浮窗进度版）" \
+              --notes "新增悬浮窗：在 Termux 上方实时显示搭建阶段与已用时长，失败时直接显示原因；AI 排障助手补充手机端部署知识库，覆盖端口、Cookie、客户端、限流等常见问题。"
           fi
