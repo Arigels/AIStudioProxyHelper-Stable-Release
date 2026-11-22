@@ -54,6 +54,27 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_EXTERNAL_APPS_DONE, value).apply()
         }
 
+    /** AI 助手使用的接口地址（OpenAI 兼容）。 */
+    var agentBaseUrl: String
+        get() = prefs.getString(KEY_AGENT_BASE_URL, "https://api.deepseek.com") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_AGENT_BASE_URL, value.trim()).apply()
+        }
+
+    /** AI 助手使用的 API Key。 */
+    var agentApiKey: String
+        get() = prefs.getString(KEY_AGENT_API_KEY, "") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_AGENT_API_KEY, value.trim()).apply()
+        }
+
+    /** AI 助手使用的模型名。 */
+    var agentModel: String
+        get() = prefs.getString(KEY_AGENT_MODEL, "deepseek-chat") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_AGENT_MODEL, value.trim()).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "aistudio_proxy_helper_prefs"
         private const val KEY_PORT = "port"
@@ -64,5 +85,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_API_TEST_KEY = "api_test_key"
         private const val KEY_HAS_DEPLOYED = "has_deployed"
         private const val KEY_EXTERNAL_APPS_DONE = "external_apps_done"
+        private const val KEY_AGENT_BASE_URL = "agent_base_url"
+        private const val KEY_AGENT_API_KEY = "agent_api_key"
+        private const val KEY_AGENT_MODEL = "agent_model"
     }
 }

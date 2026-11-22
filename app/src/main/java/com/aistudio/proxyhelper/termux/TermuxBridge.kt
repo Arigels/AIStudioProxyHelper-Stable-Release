@@ -38,6 +38,12 @@ object TermuxBridge {
     private const val TERMUX_BASH = "/data/data/com.termux/files/usr/bin/bash"
     private const val TERMUX_HOME = "/data/data/com.termux/files/home"
 
+    /** 把命令输出同时写文件，并回传到 App 的本地日志收集器。 */
+    private const val CAPTURE_SUFFIX =
+        " 2>&1 | tee ~/.aistudio_last.log; " +
+            "curl -s -m 5 -X POST --data-binary @~/.aistudio_last.log " +
+            "http://127.0.0.1:8099/log >/dev/null 2>&1 || true"
+
     const val URL_TERMUX_FDROID = "https://f-droid.org/packages/com.termux/"
     const val URL_TERMUX_GITHUB = "https://github.com/termux/termux-app/releases"
     const val URL_UPSTREAM_REPO = "https://github.com/DeconstructedCube/aistudio-api"
@@ -96,8 +102,9 @@ object TermuxBridge {
             }
 
             TermuxAction.INSTALL_AND_START -> {
-                "$enableExternalBlock && (termux-wake-lock 2>/dev/null || true) && " +
-                    "$envExports && $ensureRepoBlock && bash install.sh --start --port $port$proxyFlag"
+                "($enableExternalBlock && (termux-wake-lock 2>/dev/null || true) && " +
+                    "$envExports && $ensureRepoBlock && bash install.sh --start --port $port$proxyFlag)" +
+                    CAPTURE_SUFFIX
             }
 
             TermuxAction.INSTALL_ONLY -> {
@@ -281,6 +288,30 @@ object TermuxBridge {
             context.startActivity(intent)
         } catch (_: Exception) {
             // No browser available
+        }
+    }
+
+    /** 执行任意 shell 命令（供 AI 助手排障使用），输出会回传到 App 日志。 */
+    fun runRawCommand(context: Context, command: String): Boolean {
+        if (command.isBlank()) return false
+        val wrapped = "($command)$CAPTURE_SUFFIX"
+        val intent = Intent(ACTION_RUN_COMMAND).apply {
+            setClassName(TERMUX_PACKAGE, SERVICE_RUN_COMMAND)
+            putExtra(EXTRA_COMMAND_PATH, TERMUX_BASH)
+            putExtra(EXTRA_ARGUMENTS, arrayOf("-lc", wrapped))
+            putExtra(EXTRA_WORKDIR, TERMUX_HOME)
+            putExtra(EXTRA_BACKGROUND, true)
+            putExtra(EXTRA_SESSION_ACTION, "2")
+        }
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

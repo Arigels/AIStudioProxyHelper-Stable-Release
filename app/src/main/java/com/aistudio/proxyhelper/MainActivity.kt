@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -42,8 +43,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aistudio.proxyhelper.data.TermuxAction
+import com.aistudio.proxyhelper.net.LogCollector
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.ui.AccountsScreen
+import com.aistudio.proxyhelper.ui.AgentScreen
 import com.aistudio.proxyhelper.ui.MainViewModel
 import com.aistudio.proxyhelper.ui.SetupScreen
 import com.aistudio.proxyhelper.ui.UsageScreen
@@ -53,6 +56,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LogCollector.start()
         enableEdgeToEdge()
         setContent {
             AIStudioProxyTheme {
@@ -79,7 +83,8 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         listOf(
             NavTab("搭建", Icons.Filled.RocketLaunch),
             NavTab("账号", Icons.Filled.VpnKey),
-            NavTab("使用", Icons.Filled.MenuBook)
+            NavTab("使用", Icons.Filled.MenuBook),
+            NavTab("AI", Icons.Filled.SmartToy)
         )
     }
 
@@ -182,6 +187,12 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onRestartService = {
                         viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
                     }
+                )
+
+                3 -> AgentScreen(
+                    uiState = uiState,
+                    onSaveConfig = viewModel::saveAgentConfig,
+                    onRun = viewModel::runAgent
                 )
             }
         }

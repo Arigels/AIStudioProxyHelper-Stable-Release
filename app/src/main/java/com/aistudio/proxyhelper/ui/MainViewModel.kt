@@ -3,6 +3,9 @@ package com.aistudio.proxyhelper.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aistudio.proxyhelper.agent.AgentConfig
+import com.aistudio.proxyhelper.agent.AgentEngine
+import com.aistudio.proxyhelper.agent.AgentLine
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.data.ImportResult
@@ -11,9 +14,11 @@ import com.aistudio.proxyhelper.data.ServiceStatus
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
+import com.aistudio.proxyhelper.network.LogCollector
 import com.aistudio.proxyhelper.network.ProxyApiClient
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.termux.TermuxDispatchResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MainUiState(
     val settings: ProxySettings = ProxySettings(),
@@ -31,6 +37,12 @@ data class MainUiState(
     val automationStatus: String? = null,
     val deploying: Boolean = false,
     val deployStartedAt: Long = 0L,
+    val agentBaseUrl: String = "",
+    val agentApiKey: String = "",
+    val agentModel: String = "",
+    val agentRunning: Boolean = false,
+    val agentLines: List<AgentLine> = emptyList(),
+    val agentAnswer: String? = null,
     val importingCookie: Boolean = false,
     val lastImportResult: ImportResult? = null,
     val testingModels: Boolean = false,
@@ -49,7 +61,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             settings = settingsRepo.load(),
             environment = EnvironmentChecker.inspect(application),
             hasDeployed = settingsRepo.hasDeployed,
-            externalAppsSetupDone = settingsRepo.externalAppsSetupDone
+            externalAppsSetupDone = settingsRepo.externalAppsSetupDone,
+            agentBaseUrl = settingsRepo.agentBaseUrl,
+            agentApiKey = settingsRepo.agentApiKey,
+            agentModel = settingsRepo.agentModel
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -313,5 +328,136 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun consumeMessage() {
         _uiState.update { it.copy(snackbarMessage = null) }
+    }
+
+    // ─── AI 排障助手 ───
+
+    fun saveAgentConfig(baseUrl: String, key: String, model: String) {
+        settingsRepo.agentBaseUrl = baseUrl
+        settingsRepo.agentApiKey = key
+        settingsRepo.agentModel = model
+        _uiState.update {
+            it.copy(
+                agentBaseUrl = baseUrl.trim(),
+                agentApiKey = key.trim(),
+                agentModel = model.trim(),
+                snackbarMessage = "AI 助手配置已保存"
+            )
+        }
+    }
+
+    fun runAgent(problem: String) {
+        val state = _uiState.value
+        if (state.agentApiKey.isBlank()) {
+            _uiState.update { it.copy(agentAnswer = "请先在下面填写 AI 接口地址和 API Key") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(agentRunning = true, agentLines = emptyList(), agentAnswer = null)
+            }
+            val engine = AgentEngine()
+            val config = AgentConfig(
+                baseUrl = state.agentBaseUrl,
+                apiKey = state.agentApiKey,
+                model = state.agentModel
+            )
+            try {
+                val answer = engine.run(
+                    config = config,
+                    problem = problem.ifBlank { "我的反代服务有问题，帮我检查一下" },
+                    execute = { name, args -> executeAgentTool(name, args) },
+                    onLine = { line ->
+                        _uiState.update { it.copy(agentLines = it.agentLines + line) }
+                    }
+                )
+                _uiState.update { it.copy(agentRunning = false, agentAnswer = answer) }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(agentRunning = false, agentAnswer = "运行失败：${e.message}")
+                }
+            }
+        }
+    }
+
+    private suspend fun executeAgentTool(name: String, args: String): String =
+        withContext(Dispatchers.IO) {
+            val ctx = getApplication<Application>()
+            val settings = _uiState.value.settings
+            when (name) {
+                "get_status" -> buildStatusText()
+                "get_log" -> LogCollector.getLog()
+                    .ifBlank { "（暂无日志：可能还没执行过命令，或 Termux 无法回传）" }
+                "run" -> {
+                    if (args.isBlank()) {
+                        "缺少命令参数"
+                    } else if (TermuxBridge.runRawCommand(ctx, args)) {
+                        "命令已发送到 Termux，稍后用 get_log 查看输出"
+                    } else {
+                        "发送失败：请确认 Termux 已安装并开启 allow-external-apps"
+                    }
+                }
+                "install" -> {
+                    val r = TermuxBridge.runInTermux(
+                        ctx, TermuxAction.INSTALL_AND_START, settings, true
+                    )
+                    "已触发一键安装：${describeResult(r)}"
+                }
+                "start" -> {
+                    val r = TermuxBridge.runInTermux(
+                        ctx, TermuxAction.START_SERVICE, settings, false
+                    )
+                    "已触发启动：${describeResult(r)}"
+                }
+                "stop" -> {
+                    val r = TermuxBridge.runInTermux(
+                        ctx, TermuxAction.STOP_SERVICE, settings, true
+                    )
+                    "已触发停止：${describeResult(r)}"
+                }
+                "set_port" -> {
+                    val p = args.trim().toIntOrNull()
+                    when {
+                        p == null -> "参数不是数字"
+                        p < 1024 -> "端口 $p 小于 1024，会报 permission denied，请改用 8080 之类的端口"
+                        else -> {
+                            saveSettings(settings.copy(port = p.coerceAtMost(65535)))
+                            "端口已改为 ${p.coerceAtMost(65535)}，需要重新启动服务生效"
+                        }
+                    }
+                }
+                else -> "未知工具：$name"
+            }
+        }
+
+    private fun describeResult(result: TermuxDispatchResult): String = when (result) {
+        is TermuxDispatchResult.SentToTermux -> "已通过 Termux 后台执行"
+        is TermuxDispatchResult.AutomatedByAccessibility -> "已通过自动操控执行"
+        is TermuxDispatchResult.FallbackCopied -> "已复制命令并打开 Termux，需要用户手动粘贴回车"
+    }
+
+    private suspend fun buildStatusText(): String {
+        val ctx = getApplication<Application>()
+        val env = EnvironmentChecker.inspect(ctx)
+        val settings = _uiState.value.settings
+        val status = apiClient.fetchServiceStatus(settings)
+        return buildString {
+            appendLine("服务在线：${status.online}")
+            appendLine("端口：${settings.port}")
+            if (status.online) {
+                appendLine("签名引擎：ready=${status.signerReady} running=${status.signerRunning}")
+                appendLine("账号数：${status.accounts.size}")
+                appendLine("模型数：${status.models.size}")
+                if (status.accounts.isEmpty()) appendLine("提示：还没有导入任何账号")
+            } else {
+                appendLine("Termux 已安装：${env.termuxInstalled}")
+                appendLine("Termux 外部调用权限：${env.termuxRunCommandGranted}")
+                appendLine("自动操控（无障碍）：${env.accessibilityEnabled}")
+                appendLine("是否安装过：${_uiState.value.hasDeployed}")
+            }
+            appendLine("代理设置：${settings.proxyUrl.ifBlank { "未设置" }}")
+            appendLine("最近日志：")
+            appendLine(LogCollector.getLog(30).ifBlank { "（空）" })
+        }
     }
 }
