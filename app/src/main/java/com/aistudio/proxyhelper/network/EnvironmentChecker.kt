@@ -42,6 +42,7 @@ object EnvironmentChecker {
             accessibilityEnabled = AutomationController.isServiceEnabled(context),
             firefoxInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_FIREFOX),
             lemurInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_LEMUR),
+            termuxBootInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_TERMUX_BOOT),
             batteryOptimizationIgnored = batteryIgnored,
             lanIpAddress = detectLanIpv4()
         )

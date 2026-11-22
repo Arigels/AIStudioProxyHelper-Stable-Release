@@ -53,8 +53,10 @@ object TermuxBridge {
     const val URL_FIREFOX_ANDROID = "https://www.mozilla.org/zh-CN/firefox/android/"
     const val URL_FIREFOX_ARCHIVE = "https://archive.mozilla.org/pub/fenix/releases/"
     const val URL_COOKIE_EDITOR = "https://addons.mozilla.org/zh-CN/firefox/addon/cookie-editor/"
+    const val URL_TERMUX_BOOT = "https://f-droid.org/packages/com.termux.boot/"
     const val PACKAGE_FIREFOX = "org.mozilla.firefox"
     const val PACKAGE_LEMUR = "com.lemurbrowser.exts"
+    const val PACKAGE_TERMUX_BOOT = "com.termux.boot"
 
     /**
      * Build the exact bash command for each action, matching the official aistudio-api Termux guide.
@@ -131,6 +133,14 @@ object TermuxBridge {
 
             TermuxAction.ACQUIRE_WAKELOCK -> {
                 "termux-wake-lock && echo '[OK] Termux 唤醒锁已激活'"
+            }
+
+            TermuxAction.AUTO_START_SETUP -> {
+                "mkdir -p ~/.termux/boot && " +
+                    "printf '#!/data/data/com.termux/files/usr/bin/bash\\ntermux-wake-lock\\n" +
+                    "cd \$HOME/aistudio-api && bash start.sh\\n' > ~/.termux/boot/start-aistudio.sh && " +
+                    "chmod +x ~/.termux/boot/start-aistudio.sh && " +
+                    "echo '[OK] 已生成开机自启脚本；安装并打开一次 Termux:Boot 后，开机会自动启动反代'"
             }
         }
     }
