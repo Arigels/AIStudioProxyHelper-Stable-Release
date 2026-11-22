@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
+import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import java.net.Inet4Address
@@ -38,6 +39,7 @@ object EnvironmentChecker {
             termuxInstalled = termuxInstalled,
             termuxVersionName = termuxVersion,
             termuxRunCommandGranted = runCmdGranted,
+            accessibilityEnabled = AutomationController.isServiceEnabled(context),
             batteryOptimizationIgnored = batteryIgnored,
             lanIpAddress = detectLanIpv4()
         )

@@ -157,6 +157,7 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onRefreshStatus = { viewModel.refreshServiceStatus(silent = false) },
                     onSaveSettings = viewModel::saveSettings,
                     onExecuteAction = viewModel::executeTermuxAction,
+                    onRunManualFallback = viewModel::runManualFallback,
                     onCopyActionCommand = viewModel::copyActionCommand,
                     onCopyText = viewModel::copyText,
                     onClearCooldowns = viewModel::clearAllCooldowns,

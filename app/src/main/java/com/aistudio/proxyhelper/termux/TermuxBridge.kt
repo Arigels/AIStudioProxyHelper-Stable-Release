@@ -6,11 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
 
 sealed class TermuxDispatchResult {
     data class SentToTermux(val command: String) : TermuxDispatchResult()
+    data class AutomatedByAccessibility(val command: String) : TermuxDispatchResult()
     data class FallbackCopied(val command: String, val reason: String) : TermuxDispatchResult()
 }
 
@@ -67,17 +69,21 @@ object TermuxBridge {
             append("fi")
         }
 
+        val enableExternalBlock =
+            "(mkdir -p ~/.termux && " +
+                "(grep -q '^allow-external-apps' ~/.termux/termux.properties 2>/dev/null " +
+                "&& sed -i 's/^allow-external-apps.*/allow-external-apps = true/' ~/.termux/termux.properties " +
+                "|| echo 'allow-external-apps = true' >> ~/.termux/termux.properties) && " +
+                "termux-reload-settings || true)"
+
         return when (action) {
             TermuxAction.ENABLE_EXTERNAL_APPS -> {
-                "mkdir -p ~/.termux && " +
-                    "(grep -q '^allow-external-apps' ~/.termux/termux.properties 2>/dev/null " +
-                    "&& sed -i 's/^allow-external-apps.*/allow-external-apps = true/' ~/.termux/termux.properties " +
-                    "|| echo 'allow-external-apps = true' >> ~/.termux/termux.properties) && " +
-                    "termux-reload-settings && echo '[OK] 已开启 allow-external-apps，现在可返回反代助手一键操作！'"
+                "$enableExternalBlock && echo '[OK] 已开启 Termux 一键调用，现在可返回反代助手！'"
             }
 
             TermuxAction.INSTALL_AND_START -> {
-                "$envExports && $ensureRepoBlock && bash install.sh --start --port $port$proxyFlag"
+                "$enableExternalBlock && (termux-wake-lock 2>/dev/null || true) && " +
+                    "$envExports && $ensureRepoBlock && bash install.sh --start --port $port$proxyFlag"
             }
 
             TermuxAction.INSTALL_ONLY -> {
@@ -109,24 +115,48 @@ object TermuxBridge {
     }
 
     /**
-     * Dispatch a command via Termux's official RUN_COMMAND service intent.
-     * Falls back to copying the command to clipboard if Termux rejects the intent.
+     * Execute an action in Termux using the smoothest available method:
+     * 1) If preferAccessibility is true (e.g. first-time install before external-apps is ready)
+     *    and Accessibility auto-controller is active -> auto-open Termux, paste & press Enter.
+     * 2) Try official Termux RUN_COMMAND IPC.
+     * 3) If IPC fails and Accessibility is active -> auto-open Termux, paste & press Enter.
+     * 4) Otherwise -> copy command & open Termux for one-tap manual paste.
      */
     fun runInTermux(
         context: Context,
         action: TermuxAction,
-        settings: ProxySettings
+        settings: ProxySettings,
+        preferAccessibility: Boolean = false
     ): TermuxDispatchResult {
         val command = buildCommand(action, settings)
 
-        // Enabling allow-external-apps itself requires pasting into Termux first
+        if (!isTermuxInstalled(context)) {
+            copyToClipboard(context, action.title, command)
+            return TermuxDispatchResult.FallbackCopied(
+                command = command,
+                reason = "未检测到 Termux，请先安装 64 位版本后再试。"
+            )
+        }
+
+        // First-time / accessibility-preferred path: let our AccessibilityService handle everything
+        if (preferAccessibility && AutomationController.isServiceEnabled(context)) {
+            if (AutomationController.enqueueAndRun(context, command, action.title)) {
+                return TermuxDispatchResult.AutomatedByAccessibility(command)
+            }
+        }
+
+        // Manual enable external-apps fallback if accessibility is not enabled
         if (action == TermuxAction.ENABLE_EXTERNAL_APPS) {
-            copyToClipboard(context, "一次性开启 Termux 一键调用", command)
+            if (AutomationController.isServiceEnabled(context) &&
+                AutomationController.enqueueAndRun(context, command, action.title)
+            ) {
+                return TermuxDispatchResult.AutomatedByAccessibility(command)
+            }
+            copyToClipboard(context, "开启 Termux 一键调用", command)
             openTermux(context)
             return TermuxDispatchResult.FallbackCopied(
                 command = command,
-                reason = "已复制「一次性开启 Termux 一键调用」的设置命令并打开 Termux。" +
-                    "这是权限设置（不是安装命令），粘贴回车执行一次即可，之后按钮就能全自动执行。"
+                reason = "已复制设置命令并打开 Termux，长按屏幕点「粘贴」并回车执行一次即可。"
             )
         }
 
@@ -153,42 +183,50 @@ object TermuxBridge {
                 context.startService(intent)
             }
             TermuxDispatchResult.SentToTermux(command)
-        } catch (e: SecurityException) {
-            setupCommandFallback(context, settings)
-        } catch (e: Exception) {
-            if (!isTermuxInstalled(context)) {
+        } catch (_: Exception) {
+            if (AutomationController.isServiceEnabled(context) &&
+                AutomationController.enqueueAndRun(context, command, action.title)
+            ) {
+                TermuxDispatchResult.AutomatedByAccessibility(command)
+            } else {
                 copyToClipboard(context, action.title, command)
+                openTermux(context)
                 TermuxDispatchResult.FallbackCopied(
                     command = command,
-                    reason = "未检测到 Termux，请先从 F-Droid 或 GitHub 安装 64 位版本后再试（安装命令已复制备用）。"
+                    reason = "已复制「${action.title}」命令并打开 Termux，请长按屏幕点「粘贴」并回车。"
                 )
-            } else {
-                setupCommandFallback(context, settings)
             }
         }
     }
 
     /**
-     * Termux 拒绝执行（最常见原因是尚未开启 allow-external-apps）。
-     * 此时只复制「一次性开启一键调用」的设置命令，避免让用户误把完整安装命令当成权限设置。
+     * Explicit manual copy + open Termux (when user chooses to skip Accessibility).
      */
-    private fun setupCommandFallback(
+    fun copyAndOpenTermux(
         context: Context,
+        action: TermuxAction,
         settings: ProxySettings
     ): TermuxDispatchResult {
-        val setupCmd = buildCommand(TermuxAction.ENABLE_EXTERNAL_APPS, settings)
-        copyToClipboard(context, "一次性开启 Termux 一键调用", setupCmd)
+        val command = buildCommand(action, settings)
+        copyToClipboard(context, action.title, command)
         openTermux(context)
         return TermuxDispatchResult.FallbackCopied(
-            command = setupCmd,
-            reason = "还差一步：已复制「一次性开启 Termux 一键调用」的设置命令并打开 Termux，" +
-                "粘贴回车执行一次即可，之后按钮就能全自动执行。"
+            command = command,
+            reason = "已复制「${action.title}」命令并打开 Termux，请长按屏幕点「粘贴」并回车执行。"
         )
     }
 
     private fun isTermuxInstalled(context: Context): Boolean {
         return try {
-            context.packageManager.getPackageInfo(TERMUX_PACKAGE, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    TERMUX_PACKAGE,
+                    android.content.pm.PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(TERMUX_PACKAGE, 0)
+            }
             true
         } catch (_: Exception) {
             false

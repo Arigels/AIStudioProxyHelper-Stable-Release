@@ -66,8 +66,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
+import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.termux.TermuxBridge
 
 @Composable
@@ -77,6 +79,7 @@ fun SetupScreen(
     onRefreshStatus: () -> Unit,
     onSaveSettings: (ProxySettings) -> Unit,
     onExecuteAction: (TermuxAction) -> Unit,
+    onRunManualFallback: (TermuxAction) -> Unit,
     onCopyActionCommand: (TermuxAction) -> Unit,
     onCopyText: (String, String) -> Unit,
     onClearCooldowns: () -> Unit,
@@ -88,7 +91,23 @@ fun SetupScreen(
     val context = LocalContext.current
     val env = uiState.environment
     var showTermuxDialog by remember { mutableStateOf(false) }
-    var showPermissionDialog by remember { mutableStateOf(false) }
+    var pendingAutoAction by remember { mutableStateOf<TermuxAction?>(null) }
+
+    fun triggerSmartAction(action: TermuxAction) {
+        if (!env.termuxInstalled) {
+            showTermuxDialog = true
+            return
+        }
+        val canDirectIpc = env.termuxRunCommandGranted &&
+            uiState.externalAppsSetupDone &&
+            action != TermuxAction.INSTALL_AND_START
+        if (env.accessibilityEnabled || canDirectIpc) {
+            onExecuteAction(action)
+        } else {
+            // Guide user to enable Accessibility auto-controller (or skip to one-tap manual paste)
+            pendingAutoAction = action
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -116,24 +135,18 @@ fun SetupScreen(
         // 3. 唯一主操作
         PrimaryActionCard(
             uiState = uiState,
-            onDeploy = { onExecuteAction(TermuxAction.INSTALL_AND_START) },
-            onStart = { onExecuteAction(TermuxAction.START_SERVICE) },
-            onStop = { onExecuteAction(TermuxAction.STOP_SERVICE) },
-            onUpdate = { onExecuteAction(TermuxAction.UPDATE_AND_REBUILD) },
-            onBlocked = {
-                when {
-                    !env.termuxInstalled -> showTermuxDialog = true
-                    !env.termuxRunCommandGranted -> showPermissionDialog = true
-                }
-            }
+            onDeploy = { triggerSmartAction(TermuxAction.INSTALL_AND_START) },
+            onStart = { triggerSmartAction(TermuxAction.START_SERVICE) },
+            onStop = { triggerSmartAction(TermuxAction.STOP_SERVICE) },
+            onUpdate = { triggerSmartAction(TermuxAction.UPDATE_AND_REBUILD) }
         )
 
-        // 4. 首次准备（做完自动消失）
+        // 4. 首次准备（只保留 2 步，做完自动消失）
         PrerequisitesCard(
             uiState = uiState,
-            onRequestPermission = onRequestTermuxPermission,
-            onEnableExternalApps = { onExecuteAction(TermuxAction.ENABLE_EXTERNAL_APPS) },
-            onOpenTermux = { TermuxBridge.openTermux(context) },
+            onOpenAccessibilitySettings = {
+                AutomationController.openAccessibilitySettings(context)
+            },
             onOpenFDroid = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_FDROID) },
             onOpenGitHub = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_GITHUB) }
         )
@@ -144,7 +157,14 @@ fun SetupScreen(
             onSaveSettings = onSaveSettings,
             onExecuteAction = onExecuteAction,
             onCopyActionCommand = onCopyActionCommand,
-            onClearCooldowns = onClearCooldowns
+            onClearCooldowns = onClearCooldowns,
+            onRequestTermuxPermission = onRequestTermuxPermission,
+            onOpenAccessibilitySettings = {
+                AutomationController.openAccessibilitySettings(context)
+            },
+            onOpenTermuxBatterySettings = {
+                EnvironmentChecker.openTermuxAppDetails(context)
+            }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -156,38 +176,50 @@ fun SetupScreen(
             title = { Text("先安装 Termux") },
             text = {
                 Text(
-                    "需要先装 Termux（手机上的终端工具）。\n\n" +
-                        "请从 F-Droid 或 GitHub 下载 64 位版本，不要用应用商店的旧版。装好后回到本页继续。"
+                    "反代服务需要在手机的 Termux 里运行。\n\n" +
+                        "请从 F-Droid 或 GitHub 下载 64 位安装包（文件名带 arm64-v8a），切勿使用 Google Play 商店旧版。装好后回到这里点一键搭建即可。"
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     showTermuxDialog = false
                     TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_FDROID)
-                }) { Text("去 F-Droid 下载") }
+                }) { Text("F-Droid 下载") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showTermuxDialog = false
                     TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_GITHUB)
-                }) { Text("去 GitHub 下载") }
+                }) { Text("GitHub 下载") }
             }
         )
     }
 
-    if (showPermissionDialog) {
+    pendingAutoAction?.let { action ->
         AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = { Text("还差一个授权") },
-            text = { Text("需要允许本 App 调用 Termux 执行命令，弹窗里点「允许」即可（只需一次）。") },
+            onDismissRequest = { pendingAutoAction = null },
+            title = { Text("开启自动操控权限（推荐）") },
+            text = {
+                Text(
+                    "在系统「无障碍」里开启「AI Studio 反代自动搭建助手」后，本 App 会自动打开 Termux、自动粘贴命令并按回车开始搭建，全程不用你手动操作。\n\n" +
+                        "（仅在你点击按钮时临时运行，不会收集任何隐私）"
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    showPermissionDialog = false
-                    onRequestTermuxPermission()
-                }) { Text("去授权") }
+                Button(onClick = {
+                    pendingAutoAction = null
+                    AutomationController.openAccessibilitySettings(context)
+                }) {
+                    Text("去开启（推荐）")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showPermissionDialog = false }) { Text("取消") }
+                TextButton(onClick = {
+                    pendingAutoAction = null
+                    onRunManualFallback(action)
+                }) {
+                    Text("不开，自己粘贴")
+                }
             }
         )
     }
@@ -199,13 +231,11 @@ private fun PrimaryActionCard(
     onDeploy: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onUpdate: () -> Unit,
-    onBlocked: () -> Unit
+    onUpdate: () -> Unit
 ) {
     val service = uiState.service
-    val ready = uiState.environment.termuxInstalled &&
-        uiState.environment.termuxRunCommandGranted
     val deployed = uiState.hasDeployed
+    val autoReady = uiState.environment.accessibilityEnabled
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -230,7 +260,7 @@ private fun PrimaryActionCard(
                     )
                 }
                 Text(
-                    text = "手机上已经可以用了。下一步：去「账号」页导入 Cookie，或去「客户端」页复制地址填进酒馆。",
+                    text = "搭建已完成。下一步：去「账号」页导入 Cookie，或去「使用」页复制地址填进酒馆。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -248,11 +278,7 @@ private fun PrimaryActionCard(
             } else {
                 Button(
                     onClick = {
-                        when {
-                            !ready -> onBlocked()
-                            !deployed -> onDeploy()
-                            else -> onStart()
-                        }
+                        if (!deployed) onDeploy() else onStart()
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -265,20 +291,40 @@ private fun PrimaryActionCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (deployed) "启动服务" else "一键搭建并启动",
+                        text = when {
+                            deployed -> "一键启动服务"
+                            autoReady -> "一键全自动搭建"
+                            else -> "一键搭建并启动"
+                        },
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
                 Text(
-                    text = if (deployed) {
-                        "上次已经装好了，点一下就能重新启动。"
-                    } else {
-                        "首次约 3~5 分钟：自动安装依赖、编译本地签名引擎并启动服务，全程你不用操作。"
+                    text = when {
+                        deployed -> "上次已经装好了，点一下自动拉起服务。"
+                        autoReady -> "自动操控已就绪：点击后将自动打开 Termux、输入并执行搭建（首次约 3~5 分钟）。"
+                        else -> "首次约 3~5 分钟：自动安装依赖、编译本地签名引擎并启动服务。"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                uiState.automationStatus?.let { status ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+
                 if (deployed) {
                     TextButton(
                         onClick = onUpdate,
@@ -295,16 +341,12 @@ private fun PrimaryActionCard(
 @Composable
 private fun PrerequisitesCard(
     uiState: MainUiState,
-    onRequestPermission: () -> Unit,
-    onEnableExternalApps: () -> Unit,
-    onOpenTermux: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
     onOpenFDroid: () -> Unit,
     onOpenGitHub: () -> Unit
 ) {
     val env = uiState.environment
-    val allDone = env.termuxInstalled &&
-        env.termuxRunCommandGranted &&
-        uiState.externalAppsSetupDone
+    val allDone = env.termuxInstalled && (env.accessibilityEnabled || uiState.hasDeployed)
     if (allDone) return
 
     ElevatedCard(
@@ -323,17 +365,18 @@ private fun PrerequisitesCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "首次准备（各做一次，做完自动消失）",
+                    text = "首次准备（做完自动消失）",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
             }
 
+            // 1. Termux
             if (!env.termuxInstalled) {
                 ChecklistRow(
                     ok = false,
-                    title = "安装 Termux",
-                    subtitle = "必须用 F-Droid / GitHub 的 64 位版本，勿用应用商店旧版"
+                    title = "1. 安装 Termux",
+                    subtitle = "务必从 F-Droid 或 GitHub 下载 64 位版（arm64-v8a），勿用 Play 商店旧版"
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -359,50 +402,31 @@ private fun PrerequisitesCard(
             } else {
                 ChecklistRow(
                     ok = true,
-                    title = "Termux 已安装",
-                    subtitle = "版本 ${env.termuxVersionName ?: "未知"}"
+                    title = "1. Termux 已安装",
+                    subtitle = "版本 ${env.termuxVersionName ?: "已就绪"}"
                 )
             }
 
-            if (!env.termuxRunCommandGranted) {
+            // 2. Accessibility auto-controller
+            if (!env.accessibilityEnabled) {
                 ChecklistRow(
                     ok = false,
-                    title = "授予调用权限",
-                    subtitle = "允许本 App 把命令发给 Termux（系统弹窗点「允许」）"
+                    title = "2. 开启自动操控权限（推荐）",
+                    subtitle = "在系统无障碍中开启「AI Studio 反代自动搭建助手」，即可全自动打开 Termux 输入执行，不用自己复制粘贴"
                 )
                 FilledTonalButton(
-                    onClick = onRequestPermission,
+                    onClick = onOpenAccessibilitySettings,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("去授权")
+                    Text("去开启自动操控权限")
                 }
-            }
-
-            if (env.termuxInstalled && !uiState.externalAppsSetupDone) {
+            } else {
                 ChecklistRow(
-                    ok = false,
-                    title = "开启 Termux 一键调用",
-                    subtitle = "会把一条「设置命令」复制到剪贴板并打开 Termux，粘贴回车一次即可（不是安装命令）"
+                    ok = true,
+                    title = "2. 自动操控已开启",
+                    subtitle = "现在可以直接点上方「一键全自动搭建」"
                 )
-                FilledTonalButton(
-                    onClick = onEnableExternalApps,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("复制设置命令并打开 Termux")
-                }
-            }
-
-            if (env.termuxInstalled) {
-                TextButton(
-                    onClick = onOpenTermux,
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Icon(Icons.Filled.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("打开 Termux")
-                }
             }
         }
     }
@@ -414,8 +438,12 @@ private fun AdvancedSettingsCard(
     onSaveSettings: (ProxySettings) -> Unit,
     onExecuteAction: (TermuxAction) -> Unit,
     onCopyActionCommand: (TermuxAction) -> Unit,
-    onClearCooldowns: () -> Unit
+    onClearCooldowns: () -> Unit,
+    onRequestTermuxPermission: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
+    onOpenTermuxBatterySettings: () -> Unit
 ) {
+    val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
 
     var portInput by remember(uiState.settings.port) {
@@ -456,7 +484,7 @@ private fun AdvancedSettingsCard(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "端口、代理等，不懂可以完全不管",
+                        text = "端口、代理、保活与权限，不懂可以完全不管",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -486,14 +514,14 @@ private fun AdvancedSettingsCard(
                         value = proxyInput,
                         onValueChange = { proxyInput = it },
                         label = { Text("网络代理（可选）") },
-                        placeholder = { Text("只有需要代理才能访问 Google 时才填，否则留空") },
+                        placeholder = { Text("如 http://127.0.0.1:7890，留空自动探测") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = passwordInput,
                         onValueChange = { passwordInput = it },
-                        label = { Text("管理后台密码（可选，留空即不设密码）") },
+                        label = { Text("管理后台密码（可选，留空不设密码）") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -525,6 +553,51 @@ private fun AdvancedSettingsCard(
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
                     OutlinedButton(
+                        onClick = onOpenAccessibilitySettings,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            if (uiState.environment.accessibilityEnabled) {
+                                "自动操控权限：已开启（点击管理）"
+                            } else {
+                                "开启自动操控权限（无障碍）"
+                            }
+                        )
+                    }
+                    if (!uiState.environment.termuxRunCommandGranted) {
+                        OutlinedButton(
+                            onClick = onRequestTermuxPermission,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("授予 Termux 后台静默调用权限")
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = onOpenTermuxBatterySettings,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Filled.BatteryChargingFull, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("设置 Termux 电池无限制（防杀后台）")
+                    }
+                    OutlinedButton(
+                        onClick = { onExecuteAction(TermuxAction.ACQUIRE_WAKELOCK) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("开启唤醒锁（防锁屏断线）")
+                    }
+                    OutlinedButton(
+                        onClick = onClearCooldowns,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("重置 429 冷却（遇到报错时用）")
+                    }
+                    OutlinedButton(
                         onClick = { onCopyActionCommand(TermuxAction.INSTALL_AND_START) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
@@ -533,21 +606,13 @@ private fun AdvancedSettingsCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("复制手动安装命令（备用）")
                     }
-                    OutlinedButton(
-                        onClick = { onExecuteAction(TermuxAction.ACQUIRE_WAKELOCK) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                    TextButton(
+                        onClick = { TermuxBridge.openTermux(context) },
+                        modifier = Modifier.align(Alignment.End)
                     ) {
-                        Icon(Icons.Filled.BatteryChargingFull, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("开启唤醒锁（防杀后台）")
-                    }
-                    OutlinedButton(
-                        onClick = onClearCooldowns,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("重置 429 冷却（遇到报错时用）")
+                        Icon(Icons.Filled.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("打开 Termux")
                     }
                 }
             }
@@ -610,7 +675,6 @@ private fun ServiceStatusCard(
                 }
             }
 
-            // 一行关键数据
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -685,20 +749,20 @@ private fun NextStepsCard(
     when {
         !accountReady -> {
             title = "下一步 ①：导入 Google Cookie"
-            desc = "服务已上线，但还没有任何账号，客户端会拉不到模型。去「账号」页粘贴 Cookie-Editor 导出的 JSON，一键导入全部已登录子账号。"
+            desc = "服务已上线！现在去「账号」页粘贴 Cookie-Editor 导出的 JSON，导入后就能刷出模型。"
             actionLabel = "去导入 Cookie"
             action = onGoToAccounts
         }
         !connectionTested -> {
             title = "下一步 ②：测试并配置客户端"
-            desc = "账号已就绪（${service.accounts.size} 个）。去「客户端」页点「测试拉取模型列表」，再复制地址填入酒馆 / Cherry Studio。"
+            desc = "账号已就绪（${service.accounts.size} 个）。去「使用」页测试模型列表，并复制地址填入酒馆 / Cherry Studio。"
             actionLabel = "去配置客户端"
             action = onGoToClients
         }
         else -> {
             title = "全部就绪 ✅"
-            desc = "服务、账号、模型均正常。手机重启后只需回到本页点「启动服务」即可恢复；完整使用说明见「教程」页。"
-            actionLabel = "查看完整教程"
+            desc = "服务、账号、模型均正常。手机重启后只需回到本页点「一键启动服务」即可恢复。"
+            actionLabel = "查看使用说明"
             action = onOpenGuide
         }
     }
@@ -744,7 +808,7 @@ private fun NextStepsCard(
                     Text(actionLabel)
                 }
                 TextButton(onClick = onOpenGuide) {
-                    Text("使用教程")
+                    Text("使用说明")
                 }
             }
         }

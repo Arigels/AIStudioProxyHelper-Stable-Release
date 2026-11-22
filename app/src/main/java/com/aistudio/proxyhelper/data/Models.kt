@@ -22,6 +22,7 @@ data class EnvironmentStatus(
     val termuxInstalled: Boolean = false,
     val termuxVersionName: String? = null,
     val termuxRunCommandGranted: Boolean = false,
+    val accessibilityEnabled: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val lanIpAddress: String? = null
 )

@@ -3,6 +3,7 @@ package com.aistudio.proxyhelper.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.data.ImportResult
 import com.aistudio.proxyhelper.data.ProxySettings
@@ -27,6 +28,7 @@ data class MainUiState(
     val service: ServiceStatus = ServiceStatus(),
     val hasDeployed: Boolean = false,
     val externalAppsSetupDone: Boolean = false,
+    val automationStatus: String? = null,
     val importingCookie: Boolean = false,
     val lastImportResult: ImportResult? = null,
     val testingModels: Boolean = false,
@@ -52,6 +54,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         startStatusPolling()
+        viewModelScope.launch {
+            AutomationController.statusMessage.collect { msg ->
+                _uiState.update { it.copy(automationStatus = msg) }
+            }
+        }
     }
 
     private fun startStatusPolling() {
@@ -125,7 +132,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        when (val result = TermuxBridge.runInTermux(ctx, action, settings)) {
+        val preferAccessibility = !settingsRepo.externalAppsSetupDone ||
+            !env.termuxRunCommandGranted ||
+            action == TermuxAction.INSTALL_AND_START
+
+        when (val result = TermuxBridge.runInTermux(ctx, action, settings, preferAccessibility)) {
+            is TermuxDispatchResult.AutomatedByAccessibility -> {
+                val markDeployed = action == TermuxAction.INSTALL_AND_START ||
+                    action == TermuxAction.INSTALL_ONLY
+                val markExternal = action == TermuxAction.INSTALL_AND_START ||
+                    action == TermuxAction.ENABLE_EXTERNAL_APPS
+                if (markDeployed) settingsRepo.hasDeployed = true
+                if (markExternal) settingsRepo.externalAppsSetupDone = true
+                _uiState.update {
+                    it.copy(
+                        lastDispatchedCommand = result.command,
+                        hasDeployed = it.hasDeployed || markDeployed,
+                        externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
+                        snackbarMessage = "正在自动操控 Termux 执行「${action.title}」，请勿切出..."
+                    )
+                }
+            }
+
             is TermuxDispatchResult.SentToTermux -> {
                 val markDeployed = action == TermuxAction.INSTALL_AND_START ||
                     action == TermuxAction.INSTALL_ONLY
@@ -140,8 +168,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         snackbarMessage = when (action) {
                             TermuxAction.INSTALL_AND_START ->
                                 "已在 Termux 开始一键搭建，请稍候…完成后状态会自动变绿"
-                            TermuxAction.ENABLE_EXTERNAL_APPS ->
-                                "已复制设置命令并打开 Termux，粘贴回车一次即可"
                             else -> "已向 Termux 发送任务：${action.title}"
                         }
                     )
@@ -158,17 +184,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             is TermuxDispatchResult.FallbackCopied -> {
+                val markDeployed = action == TermuxAction.INSTALL_AND_START ||
+                    action == TermuxAction.INSTALL_ONLY
                 val markExternal = action == TermuxAction.ENABLE_EXTERNAL_APPS ||
                     result.command.contains("allow-external-apps")
+                if (markDeployed) settingsRepo.hasDeployed = true
                 if (markExternal) settingsRepo.externalAppsSetupDone = true
                 _uiState.update {
                     it.copy(
                         lastDispatchedCommand = result.command,
+                        hasDeployed = it.hasDeployed || markDeployed,
                         externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
                         snackbarMessage = result.reason
                     )
                 }
             }
+        }
+    }
+
+    fun runManualFallback(action: TermuxAction) {
+        val ctx = getApplication<Application>()
+        val result = TermuxBridge.copyAndOpenTermux(ctx, action, _uiState.value.settings)
+        val markDeployed = action == TermuxAction.INSTALL_AND_START ||
+            action == TermuxAction.INSTALL_ONLY
+        val markExternal = action == TermuxAction.INSTALL_AND_START ||
+            action == TermuxAction.ENABLE_EXTERNAL_APPS
+        if (markDeployed) settingsRepo.hasDeployed = true
+        if (markExternal) settingsRepo.externalAppsSetupDone = true
+        _uiState.update {
+            it.copy(
+                lastDispatchedCommand = result.command,
+                hasDeployed = it.hasDeployed || markDeployed,
+                externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
+                snackbarMessage = result.reason
+            )
         }
     }
 
