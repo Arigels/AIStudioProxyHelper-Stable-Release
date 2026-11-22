@@ -25,9 +25,12 @@ object ProgressTracker {
         "端口权限不足（小于 1024）" to listOf("errno 13", "bind on address"),
         "端口被占用" to listOf("address already in use", "errno 98"),
         "存储空间不足" to listOf("no space left on device"),
-        "网络或代理失败" to listOf(
+        "梯子没开或已断（无法解析/连接 Google）" to listOf(
             "could not resolve host", "temporary failure in name resolution",
-            "failed to fetch", "unable to download", "connection timed out"
+            "failed to fetch", "unable to download", "connection timed out", "network is unreachable"
+        ),
+        "Google 拒绝访问（403，梯子或 Cookie 有问题）" to listOf(
+            "403", "forbidden", "unauthenticated", "invalid_grant"
         ),
         "依赖安装失败" to listOf("command not found", "no such file or directory"),
         "内存不足被系统杀掉" to listOf("killed", "out of memory", "oom"),

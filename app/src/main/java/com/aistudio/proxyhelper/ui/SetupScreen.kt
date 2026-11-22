@@ -302,6 +302,31 @@ private fun PrimaryActionCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            uiState.deployError?.let { err ->
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "⚠️ 检测到：$err",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = hintForError(err),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
             if (service.online) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -452,9 +477,23 @@ private fun PrimaryActionCard(
     }
 }
 
+private fun hintForError(err: String): String = when {
+    err.contains("梯子") ->
+        "请确认梯子/VPN 已开启；若用本地代理，去「高级设置 → 网络代理」填写（如 http://127.0.0.1:7890），再点「重新安装」或「启动」。"
+    err.contains("403") ->
+        "先确认能正常打开 Google，再重新用 Cookie-Editor 导出并导入 Cookie。"
+    err.contains("端口") ->
+        "去「高级设置」把端口改成 1024 以上（推荐 8080），再启动。"
+    err.contains("存储") ->
+        "清理手机空间（建议留 1~2GB）后重新安装。"
+    err.contains("内存") ->
+        "关掉后台应用，并给 Termux 开电池无限制后重试。"
+    else ->
+        "打开 Termux 查看最后几行报错，或到「AI」页让 AI 帮你排查。"
+}
+
 @Composable
-private fun PrerequisitesCard(
-    uiState: MainUiState,
+private fun PrerequisitesCard(    uiState: MainUiState,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenFDroid: () -> Unit,
     onOpenGitHub: () -> Unit

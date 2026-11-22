@@ -40,6 +40,8 @@ data class MainUiState(
     val automationStatus: String? = null,
     val deploying: Boolean = false,
     val deployStartedAt: Long = 0L,
+    val deployStage: String = "准备中",
+    val deployError: String? = null,
     val agentBaseUrl: String = "",
     val agentApiKey: String = "",
     val agentModel: String = "",
@@ -136,11 +138,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             status.online && state.lastTestResult?.first != true ->
                 "下一步：去「使用」页测试模型，把地址填进酒馆"
             status.online -> "一切就绪，可以连酒馆开玩了"
+            phase.error != null && phase.error.contains("梯子") ->
+                "梯子可能没开或已断，检查代理后再试"
+            phase.error != null && phase.error.contains("403") ->
+                "Google 拒绝了访问：先确认梯子正常，再重新导入 Cookie"
             phase.error != null -> "出错了，点开 App 按提示修复"
             state.deploying -> "正在${phase.label}，编译阶段没输出是正常的，请耐心等"
             !env.termuxInstalled -> "还没安装 Termux，去 F-Droid 下载"
             !env.accessibilityEnabled -> "建议开启自动操控权限，可全自动搭建"
             else -> "点「一键搭建并启动」开始"
+        }
+
+        _uiState.update {
+            it.copy(
+                deployStage = phase.label,
+                deployError = if (status.online) null else phase.error
+            )
         }
         OverlayState.update(
             OverlaySnapshot(
