@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit
 /** 一行 Agent 轨迹，供界面展示。role: think / action / observation / answer / error */
 data class AgentLine(val role: String, val text: String)
 
+enum class AgentMode { TROUBLESHOOT, TAVERN }
+
 data class AgentConfig(
     val baseUrl: String,
     val apiKey: String,
@@ -38,9 +40,25 @@ class AgentEngine {
     suspend fun run(
         config: AgentConfig,
         problem: String,
+        mode: AgentMode = AgentMode.TROUBLESHOOT,
         execute: suspend (String, String) -> String,
         onLine: suspend (AgentLine) -> Unit
     ): String = withContext(Dispatchers.IO) {
+        if (mode == AgentMode.TAVERN) {
+            val history = listOf(
+                "system" to TAVERN_PROMPT,
+                "user" to problem
+            )
+            val reply = try {
+                chat(config, history)
+            } catch (e: Exception) {
+                onLine(AgentLine("error", "调用模型失败：${e.message}"))
+                return@withContext "调用模型失败：${e.message}"
+            }
+            onLine(AgentLine("answer", reply.trim()))
+            return@withContext reply.trim()
+        }
+
         val history = mutableListOf<Pair<String, String>>()
         history.add("system" to SYSTEM_PROMPT)
         history.add("user" to "用户描述的问题：$problem")
@@ -274,6 +292,22 @@ class AgentEngine {
         private const val MAX_STEPS = 8
 
         private val JSON = "application/json; charset=utf-8".toMediaType()
+
+        private val TAVERN_PROMPT = """
+你是「酒馆（SillyTavern）配置助手」。用户手机上的反代服务已经把 Google AI Studio 转成了标准 Gemini 协议，地址是 http://127.0.0.1:8080。
+
+你掌握的知识：
+- 酒馆设置：点左上角插头图标 → API 类型选「Chat Completion」→ 来源选「Google AI Studio」→ 反向代理地址填 http://127.0.0.1:8080 → 代理密码随便填（如 123）→ 连接后自动拉取模型。
+- 其他客户端（Cherry Studio / NextChat）必须选「Google Gemini」协议，Base URL 填 http://127.0.0.1:8080 或 /v1beta，API Key 任意非空；本项目不支持 OpenAI 的 /v1/chat/completions。
+- 模型列表为空：通常是还没导入 Google Cookie，或 Cookie 过期，去 App「账号」页重新导入。
+- 连不上：确认反代服务在运行、地址端口正确、手机和客户端在同一台设备或同一局域网。
+- 403：Cookie 失效或账号被风控，重新导出导入 Cookie；确认梯子正常。
+- 429：触发限流，系统会按模型冷却并自动切换账号，等一会或加账号；额度每天下午 4 点（美西午夜）重置。
+- 回复很慢：换 flash 类模型；检查梯子速度。
+- 不支持图片/联网：确认模型本身支持，并在请求里带上对应参数。
+
+回答要求：用中文、大白话、分点、给可操作的步骤；不要输出代码块以外的东西；不要假装能替用户操作。只回答与酒馆/反代/模型使用相关的问题，其他问题礼貌说明范围。
+"""
 
         private val SYSTEM_PROMPT = """
 你是「AI Studio 反代助手」App 内置的手机排障助手，只处理在安卓 Termux 上部署 aistudio-api 反向代理服务相关的问题。

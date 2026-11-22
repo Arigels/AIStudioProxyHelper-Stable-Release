@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -71,9 +72,11 @@ fun AgentScreen(
     onSaveConfig: (String, String, String, Boolean, String) -> Unit,
     onTest: () -> Unit,
     onFetchModels: () -> Unit,
-    onRun: (String) -> Unit
+    onRun: (String) -> Unit,
+    onAskTavern: (String) -> Unit
 ) {
     var problem by remember { mutableStateOf("") }
+    var mode by remember { mutableIntStateOf(0) }
     var showConfig by remember(uiState.agentApiKey) {
         mutableStateOf(uiState.agentApiKey.isBlank() && !uiState.agentUseLocal)
     }
@@ -335,21 +338,48 @@ fun AgentScreen(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = mode == 0,
+                        onClick = { mode = 0 },
+                        label = { Text("搭建排障") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = mode == 1,
+                        onClick = { mode = 1 },
+                        label = { Text("酒馆问答") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
                 Text(
-                    text = "② 描述你遇到的问题（或直接让它从零搭建）",
+                    text = if (mode == 0) {
+                        "② 描述你遇到的问题（或直接让它从零搭建）"
+                    } else {
+                        "② 问酒馆相关的问题（服务在跑时用反代模型免费回答）"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 OutlinedTextField(
                     value = problem,
                     onValueChange = { problem = it },
-                    label = { Text("例如：点了搭建但服务一直没起来") },
+                    label = {
+                        Text(
+                            if (mode == 0) "例如：点了搭建但服务一直没起来"
+                            else "例如：酒馆连不上 / 模型列表是空的"
+                        )
+                    },
                     minLines = 3,
                     maxLines = 5,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Button(
-                    onClick = { onRun(problem) },
+                    onClick = { if (mode == 0) onRun(problem) else onAskTavern(problem) },
                     enabled = !uiState.agentRunning &&
                         (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()),
                     modifier = Modifier
@@ -364,7 +394,7 @@ fun AgentScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("AI 正在排查…")
+                        Text(if (mode == 0) "AI 正在排查…" else "AI 正在回答…")
                     } else {
                         Icon(
                             Icons.Filled.PlayArrow,
@@ -372,20 +402,48 @@ fun AgentScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("让 AI 帮我排查", fontWeight = FontWeight.Bold)
+                        Text(
+                            if (mode == 0) "让 AI 帮我排查" else "问酒馆助手",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                OutlinedButton(
-                    onClick = {
-                        onRun("我还没开始搭建，请帮我从零把反代服务搭起来，并确认能否正常访问。")
-                    },
-                    enabled = !uiState.agentRunning &&
-                        (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("从零开始，让 AI 自动搭建", fontWeight = FontWeight.SemiBold)
+                if (mode == 0) {
+                    OutlinedButton(
+                        onClick = {
+                            onRun("我还没开始搭建，请帮我从零把反代服务搭起来，并确认能否正常访问。")
+                        },
+                        enabled = !uiState.agentRunning &&
+                            (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("从零开始，让 AI 自动搭建", fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "酒馆地址和密码怎么填",
+                            "模型列表是空的怎么办",
+                            "报 403 怎么处理",
+                            "回复太慢怎么优化"
+                        ).forEach { q ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    problem = q
+                                    onAskTavern(q)
+                                },
+                                label = { Text(q) }
+                            )
+                        }
+                    }
                 }
             }
         }

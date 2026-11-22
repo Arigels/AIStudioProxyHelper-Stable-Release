@@ -224,7 +224,8 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onSaveConfig = viewModel::saveAgentConfig,
                     onTest = viewModel::testAgentConnection,
                     onFetchModels = viewModel::fetchAgentModels,
-                    onRun = viewModel::runAgent
+                    onRun = viewModel::runAgent,
+                    onAskTavern = viewModel::askTavern
                 )
             }
         }

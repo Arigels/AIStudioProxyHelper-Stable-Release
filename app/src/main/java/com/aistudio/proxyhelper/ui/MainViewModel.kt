@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.aistudio.proxyhelper.agent.AgentConfig
 import com.aistudio.proxyhelper.agent.AgentEngine
 import com.aistudio.proxyhelper.agent.AgentLine
+import com.aistudio.proxyhelper.agent.AgentMode
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.data.ImportResult
@@ -416,6 +417,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun buildAgentConfig(preferLocalWhenOnline: Boolean = false): AgentConfig {
+        val s = _uiState.value
+        val useLocal = s.agentUseLocal || (preferLocalWhenOnline && s.service.online)
+        return AgentConfig(
+            baseUrl = s.agentBaseUrl,
+            apiKey = s.agentApiKey,
+            model = s.agentModel,
+            useLocalProxy = useLocal,
+            localBaseUrl = s.settings.localBaseUrl,
+            localModel = s.agentLocalModel.ifBlank { "gemini-3.7-flash" },
+            localApiKey = s.agentLocalKey.ifBlank { "aistudio-api" }
+        )
+    }
+
+    fun askTavern(question: String) {
+        val state = _uiState.value
+        val config = buildAgentConfig(preferLocalWhenOnline = true)
+        val canRun = (config.useLocalProxy && state.service.online) ||
+            (!config.useLocalProxy && state.agentApiKey.isNotBlank())
+        if (!canRun) {
+            _uiState.update {
+                it.copy(agentAnswer = "酒馆问答需要本机反代正在运行，或者先配置一个外部 API Key。")
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(agentRunning = true, agentLines = emptyList(), agentAnswer = null) }
+            val engine = AgentEngine()
+            try {
+                val answer = engine.run(
+                    config = config,
+                    problem = question.ifBlank { "酒馆怎么配置才能用上反代模型？" },
+                    mode = AgentMode.TAVERN,
+                    execute = { _, _ -> "" },
+                    onLine = { line -> _uiState.update { it.copy(agentLines = it.agentLines + line) } }
+                )
+                _uiState.update { it.copy(agentRunning = false, agentAnswer = answer) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(agentRunning = false, agentAnswer = "运行失败：${e.message}") }
+            }
+        }
+    }
+
     fun runAgent(problem: String) {
         val state = _uiState.value
         if (!state.agentUseLocal && state.agentApiKey.isBlank()) {
@@ -433,19 +477,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(agentRunning = true, agentLines = emptyList(), agentAnswer = null)
             }
             val engine = AgentEngine()
-            val config = AgentConfig(
-                baseUrl = state.agentBaseUrl,
-                apiKey = state.agentApiKey,
-                model = state.agentModel,
-                useLocalProxy = state.agentUseLocal,
-                localBaseUrl = state.settings.localBaseUrl,
-                localModel = state.agentLocalModel.ifBlank { "gemini-3.7-flash" },
-                localApiKey = state.agentLocalKey.ifBlank { "aistudio-api" }
-            )
+            val config = buildAgentConfig()
             try {
                 val answer = engine.run(
                     config = config,
                     problem = problem.ifBlank { "我的反代服务有问题，帮我检查一下" },
+                    mode = AgentMode.TROUBLESHOOT,
                     execute = { name, args -> executeAgentTool(name, args) },
                     onLine = { line ->
                         _uiState.update { it.copy(agentLines = it.agentLines + line) }

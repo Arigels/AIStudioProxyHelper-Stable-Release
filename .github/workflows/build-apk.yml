@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.2.1.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.0.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.2.1.apk
+          path: dist/AIStudioProxyHelper-v2.3.0.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.2.1"
+          TAG="v2.3.0"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.2.1.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.0.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.2.1.apk \
-              --title "v2.2.1 — AI Studio 反代助手" \
-              --notes "无障碍教程强调：本 App 的服务在「已下载的应用 / 已下载的服务」里（不是「已安装的应用」），并在开启弹窗与教程中高亮提示。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.0.apk \
+              --title "v2.3.0 — AI Studio 反代助手（酒馆问答版）" \
+              --notes "AI 页新增「酒馆问答」模式：用本机反代模型免费回答 SillyTavern 配置与使用问题（地址怎么填、模型列表空、403、429、回复慢等），并给出可操作步骤。"
           fi
