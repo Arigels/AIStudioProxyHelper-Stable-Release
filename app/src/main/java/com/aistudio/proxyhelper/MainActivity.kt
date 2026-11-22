@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.VpnKey
@@ -37,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -45,11 +44,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.ui.AccountsScreen
-import com.aistudio.proxyhelper.ui.ClientsScreen
-import com.aistudio.proxyhelper.ui.ConsoleScreen
-import com.aistudio.proxyhelper.ui.GuideScreen
 import com.aistudio.proxyhelper.ui.MainViewModel
 import com.aistudio.proxyhelper.ui.SetupScreen
+import com.aistudio.proxyhelper.ui.UsageScreen
 import com.aistudio.proxyhelper.ui.theme.AIStudioProxyTheme
 
 class MainActivity : ComponentActivity() {
@@ -76,14 +73,13 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
 
     val tabs = remember {
         listOf(
             NavTab("搭建", Icons.Filled.RocketLaunch),
             NavTab("账号", Icons.Filled.VpnKey),
-            NavTab("控制台", Icons.Filled.Dashboard),
-            NavTab("客户端", Icons.Filled.Link),
-            NavTab("教程", Icons.Filled.MenuBook)
+            NavTab("使用", Icons.Filled.MenuBook)
         )
     }
 
@@ -94,11 +90,11 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         if (granted) {
             viewModel.showMessage("已获得 Termux 调用权限！如首次使用请再点一次「开启 Termux 一键调用」")
         } else {
-            viewModel.showMessage("未授予 Termux 调用权限，可继续使用复制命令手动粘贴方式")
+            viewModel.showMessage("未授予 Termux 调用权限，可稍后重试")
         }
     }
 
-    // Refresh environment & status whenever returning from Termux or system settings
+    // 从 Termux / 系统设置返回时刷新状态
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -164,10 +160,12 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onCopyActionCommand = viewModel::copyActionCommand,
                     onCopyText = viewModel::copyText,
                     onClearCooldowns = viewModel::clearAllCooldowns,
-                    onOpenConsole = { selectedTab = 2 },
+                    onOpenConsole = {
+                        TermuxBridge.openUrl(context, uiState.settings.localBaseUrl)
+                    },
                     onGoToAccounts = { selectedTab = 1 },
-                    onGoToClients = { selectedTab = 3 },
-                    onOpenGuide = { selectedTab = 4 }
+                    onGoToClients = { selectedTab = 2 },
+                    onOpenGuide = { selectedTab = 2 }
                 )
 
                 1 -> AccountsScreen(
@@ -176,24 +174,13 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onShowMessage = viewModel::showMessage
                 )
 
-                2 -> ConsoleScreen(
-                    uiState = uiState,
-                    onStartService = { viewModel.executeTermuxAction(TermuxAction.START_SERVICE) },
-                    onRefreshStatus = { viewModel.refreshServiceStatus(silent = false) },
-                    onGoToSetup = { selectedTab = 0 }
-                )
-
-                3 -> ClientsScreen(
+                2 -> UsageScreen(
                     uiState = uiState,
                     onCopyText = viewModel::copyText,
-                    onTestModels = viewModel::testModelsConnectivity
-                )
-
-                4 -> GuideScreen(
-                    uiState = uiState,
-                    onGoToTab = { selectedTab = it },
-                    onExecuteAction = viewModel::executeTermuxAction,
-                    onCopyActionCommand = viewModel::copyActionCommand
+                    onTestModels = viewModel::testModelsConnectivity,
+                    onRestartService = {
+                        viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
+                    }
                 )
             }
         }

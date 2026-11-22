@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
@@ -32,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,16 +46,16 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ClientsScreen(
+fun UsageScreen(
     uiState: MainUiState,
     onCopyText: (String, String) -> Unit,
-    onTestModels: () -> Unit
+    onTestModels: () -> Unit,
+    onRestartService: () -> Unit
 ) {
     val settings = uiState.settings
     val localUrl = settings.localBaseUrl
-    val localV1Beta = "$localUrl/v1beta"
     val lanUrl = settings.lanBaseUrl(uiState.environment.lanIpAddress)
-    val lanV1Beta = lanUrl?.let { "$it/v1beta" }
+    val models = uiState.service.models
 
     Column(
         modifier = Modifier
@@ -62,48 +64,14 @@ fun ClientsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Protocol Warning Banner
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-            ),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(14.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "重要：必须使用 Google Gemini 协议！",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    Text(
-                        text = "本项目严格遵循标准 Google Gemini API 规范，不提供 OpenAI 专有路由（/v1/chat/completions）。在任意客户端中配置时切勿选 OpenAI 格式。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
-            }
-        }
-
-        // Connectivity Test Card
+        // ── 连接客户端 ──
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -113,18 +81,28 @@ fun ClientsScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "接口地址与连通性测试",
+                        text = "连接客户端（酒馆 / Cherry Studio）",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
+                Text(
+                    text = "协议必须选 Google Gemini，切勿选 OpenAI 格式。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
 
-                CopyableField("本机代理地址（同手机客户端）", localUrl, onCopyText)
-                CopyableField("本机带版本地址（强制 /v1beta 客户端）", localV1Beta, onCopyText)
-                if (lanUrl != null && lanV1Beta != null) {
-                    CopyableField("局域网代理地址（电脑连手机酒馆）", lanUrl, onCopyText)
-                    CopyableField("局域网带版本地址", lanV1Beta, onCopyText)
+                CopyableField("本机地址（手机上的客户端用）", localUrl, onCopyText)
+                if (lanUrl != null) {
+                    CopyableField("局域网地址（电脑上的酒馆连手机）", lanUrl, onCopyText)
                 }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                Text(
+                    text = "酒馆参数：API 类型选 Chat Completion，来源选 Google AI Studio，代理密码随意填。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 Button(
                     onClick = onTestModels,
@@ -139,11 +117,11 @@ fun ClientsScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("正在请求 /v1beta/models ...")
+                        Text("正在测试...")
                     } else {
                         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("测试拉取模型列表 (/v1beta/models)")
+                        Text("测试拉取模型列表")
                     }
                 }
 
@@ -173,9 +151,9 @@ fun ClientsScreen(
                     }
                 }
 
-                if (uiState.service.models.isNotEmpty()) {
+                if (models.isNotEmpty()) {
                     Text(
-                        text = "当前已同步模型 (${uiState.service.models.size})：",
+                        text = "可用模型（${models.size}）",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -183,7 +161,7 @@ fun ClientsScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        uiState.service.models.take(18).forEach { model ->
+                        models.take(12).forEach { model ->
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant
@@ -201,57 +179,7 @@ fun ClientsScreen(
             }
         }
 
-        // SillyTavern Card
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "连酒馆（SillyTavern）配置",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "点击酒馆左上角插头图标（API 连接），按以下参数填写即可刷出全部模型：",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                GuideKeyValue("API 类型", "Chat Completion")
-                GuideKeyValue("来源 (Source)", "Google AI Studio")
-                CopyableField("反向代理地址（本机）", localUrl, onCopyText)
-                if (lanUrl != null) {
-                    CopyableField("反向代理地址（电脑连本手机）", lanUrl, onCopyText)
-                }
-                CopyableField("代理密码 / API Key（任意非空即可）", settings.apiTestKey, onCopyText)
-            }
-        }
-
-        // Cherry Studio / NextChat Card
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "连 Cherry Studio / NextChat / One API",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                GuideKeyValue("模型提供商 / 协议类型", "Google Gemini（严禁选 OpenAI）")
-                CopyableField("API Base URL", localUrl, onCopyText)
-                CopyableField("强制带版本 Base URL", localV1Beta, onCopyText)
-                CopyableField("API Key", settings.apiTestKey, onCopyText)
-            }
-        }
-
-        // Background survival & Q&A Card
+        // ── 重启恢复 ──
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
@@ -262,23 +190,82 @@ fun ClientsScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "手机重启后怎么办",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "点下面按钮即可恢复，不需要重新安装。若 Termux 被系统清理了，先打开一次 Termux 再点。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onRestartService,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("一键恢复服务")
+                }
+                Text(
+                    text = "想更稳定地常驻：在「搭建 → 高级设置」里开一次唤醒锁，并把 Termux 的电池限制设为「无限制」。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // ── 常见问题 ──
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
                         imageVector = Icons.Filled.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "防杀后台与常见问题",
+                        text = "常见问题",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
+                FaqItem(
+                    q = "点一键搭建没反应？",
+                    a = "多半是没完成「首次准备」：回「搭建」页，按卡片把 Termux 装好、授权并开启一键调用。"
+                )
+                FaqItem(
+                    q = "服务一直显示未运行？",
+                    a = "打开 Termux 看报错。若是依赖损坏，回「搭建」页点「运行异常？重新安装 / 修复」。"
+                )
+                FaqItem(
+                    q = "导入 Cookie 失败？",
+                    a = "先确认服务已启动；再用 Cookie-Editor 重新导出完整 JSON（要包含 __Secure-1PSID 等）。"
+                )
+                FaqItem(
+                    q = "客户端报 403 / 429？",
+                    a = "账号被限流，系统会自动切号。也可去「搭建」页高级设置里点「重置 429 冷却」。"
+                )
+                FaqItem(
+                    q = "模型列表是空的？",
+                    a = "通常是没有导入账号或 Cookie 过期，重新导入一次即可。"
+                )
                 Text(
-                    text = "• 防杀后台：下拉通知栏点 Termux 通知上的 Acquire Wakelock，并在系统电池设置里把 Termux 设为「无限制」。\n" +
-                        "• 多账号轮换：同一浏览器登好多个 Google 账号（u/0, u/1...），导出一次 Cookie 导入即可全自动探测全部子账号。\n" +
-                        "• 429 冷却与重置：按模型独立冷却并自动切号，每天下午 4 点（美西午夜）自动重置额度；也可在首页手动点「重置 429 冷却」。\n" +
-                        "• 仅限学习与研究：请合理使用，自行注意账号风控。",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "本项目仅供个人学习与研究，请自行注意账号风控。",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -331,26 +318,17 @@ private fun CopyableField(
 }
 
 @Composable
-private fun GuideKeyValue(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+private fun FaqItem(q: String, a: String) {
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Text(
+            text = "Q：$q",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "A：$a",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

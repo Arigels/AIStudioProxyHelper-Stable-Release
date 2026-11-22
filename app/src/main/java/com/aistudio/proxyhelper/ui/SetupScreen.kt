@@ -102,7 +102,6 @@ fun SetupScreen(
             uiState = uiState,
             onRefresh = onRefreshStatus,
             onCopyText = onCopyText,
-            onClearCooldowns = onClearCooldowns,
             onOpenConsole = onOpenConsole
         )
 
@@ -144,7 +143,8 @@ fun SetupScreen(
             uiState = uiState,
             onSaveSettings = onSaveSettings,
             onExecuteAction = onExecuteAction,
-            onCopyActionCommand = onCopyActionCommand
+            onCopyActionCommand = onCopyActionCommand,
+            onClearCooldowns = onClearCooldowns
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -413,7 +413,8 @@ private fun AdvancedSettingsCard(
     uiState: MainUiState,
     onSaveSettings: (ProxySettings) -> Unit,
     onExecuteAction: (TermuxAction) -> Unit,
-    onCopyActionCommand: (TermuxAction) -> Unit
+    onCopyActionCommand: (TermuxAction) -> Unit,
+    onClearCooldowns: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -541,6 +542,13 @@ private fun AdvancedSettingsCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("开启唤醒锁（防杀后台）")
                     }
+                    OutlinedButton(
+                        onClick = onClearCooldowns,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("重置 429 冷却（遇到报错时用）")
+                    }
                 }
             }
         }
@@ -552,7 +560,6 @@ private fun ServiceStatusCard(
     uiState: MainUiState,
     onRefresh: () -> Unit,
     onCopyText: (String, String) -> Unit,
-    onClearCooldowns: () -> Unit,
     onOpenConsole: () -> Unit
 ) {
     val service = uiState.service
@@ -646,22 +653,11 @@ private fun ServiceStatusCard(
             }
 
             if (service.online) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                FilledTonalButton(
+                    onClick = onOpenConsole,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    FilledTonalButton(
-                        onClick = onOpenConsole,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("打开管理面板")
-                    }
-                    OutlinedButton(
-                        onClick = onClearCooldowns,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("重置 429 冷却")
-                    }
+                    Text("在浏览器打开管理面板")
                 }
             }
         }

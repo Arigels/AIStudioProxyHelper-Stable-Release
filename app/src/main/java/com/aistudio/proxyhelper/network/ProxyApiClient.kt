@@ -195,7 +195,7 @@ class ProxyApiClient {
                 }
             }
         } catch (e: Exception) {
-            ImportResult(false, "连接本机服务失败：${e.message ?: "请确认服务已启动"}")
+            ImportResult(false, "无法连接本机服务（127.0.0.1:${settings.port}），请先到「搭建」页启动服务后再试。")
         }
     }
 
@@ -241,7 +241,7 @@ class ProxyApiClient {
                 }
             }
         } catch (e: Exception) {
-            ImportResult(false, "连接本机服务失败：${e.message ?: "请确认服务已启动"}")
+            ImportResult(false, "无法连接本机服务（127.0.0.1:${settings.port}），请先到「搭建」页启动服务后再试。")
         }
     }
 
