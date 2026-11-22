@@ -235,49 +235,11 @@ fun SetupScreen(
     }
 
     if (showA11yHelpDialog) {
-        AlertDialog(
-            onDismissRequest = { showA11yHelpDialog = false },
-            title = { Text("开启自动操控，只需要在这里点几下") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "1. 点下面的「打开无障碍设置」",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = "2. 找到「AI Studio 反代自动搭建助手」，打开右边的开关，弹窗点「允许」",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = "3. ⚠️ 重点：如果开关旁边出现一行小字「已限制设置」（小米/红米/OPPO/vivo/荣耀常见），" +
-                            "要再点它右边的小字「解除限制」（有的手机叫「允许受限制的设置」），然后才能把开关打开。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "4. 打开后返回本 App，首页会显示「自动操控已开启」。",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = "如果实在打不开也没关系：点「一键搭建并启动」时 App 会把命令复制好并打开 Termux，你只要长按屏幕点「粘贴」再按回车即可。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showA11yHelpDialog = false
-                    AutomationController.openAccessibilitySettings(context)
-                }) {
-                    Text("打开无障碍设置")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showA11yHelpDialog = false }) {
-                    Text("取消")
-                }
+        AccessibilityGuideDialog(
+            onDismiss = { showA11yHelpDialog = false },
+            onOpenSettings = {
+                showA11yHelpDialog = false
+                AutomationController.openAccessibilitySettings(context)
             }
         )
     }
