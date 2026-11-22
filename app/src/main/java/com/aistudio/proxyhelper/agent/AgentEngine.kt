@@ -13,7 +13,15 @@ import java.util.concurrent.TimeUnit
 /** 一行 Agent 轨迹，供界面展示。role: think / action / observation / answer / error */
 data class AgentLine(val role: String, val text: String)
 
-data class AgentConfig(val baseUrl: String, val apiKey: String, val model: String)
+data class AgentConfig(
+    val baseUrl: String,
+    val apiKey: String,
+    val model: String,
+    val useLocalProxy: Boolean = false,
+    val localBaseUrl: String = "http://127.0.0.1:8080",
+    val localModel: String = "gemini-3.7-flash",
+    val localApiKey: String = "aistudio-api"
+)
 
 /**
  * 只做「手机端 aistudio-api 反代」这一件事的 ReAct Agent。
@@ -33,21 +41,19 @@ class AgentEngine {
         execute: suspend (String, String) -> String,
         onLine: suspend (AgentLine) -> Unit
     ): String = withContext(Dispatchers.IO) {
-        val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content", SYSTEM_PROMPT))
-        messages.put(
-            JSONObject().put("role", "user").put("content", "用户描述的问题：$problem")
-        )
+        val history = mutableListOf<Pair<String, String>>()
+        history.add("system" to SYSTEM_PROMPT)
+        history.add("user" to "用户描述的问题：$problem")
 
         repeat(MAX_STEPS) {
             val reply = try {
-                chat(config, messages)
+                chat(config, history)
             } catch (e: Exception) {
                 onLine(AgentLine("error", "调用 AI 接口失败：${e.message}"))
                 return@withContext "调用 AI 接口失败：${e.message}"
             }
             onLine(AgentLine("think", reply.trim()))
-            messages.put(JSONObject().put("role", "assistant").put("content", reply))
+            history.add("assistant" to reply)
 
             val action = parseAction(reply)
             if (action == null) {
@@ -67,17 +73,23 @@ class AgentEngine {
                 "工具执行出错：${e.message}"
             }
             onLine(AgentLine("observation", observation))
-            messages.put(
-                JSONObject().put("role", "user").put("content", "OBSERVATION:\n$observation")
-            )
+            history.add("user" to "OBSERVATION:\n$observation")
         }
         "已尝试 $MAX_STEPS 步仍未解决。可以把上面的记录复制给开发者进一步排查。"
     }
 
-    private fun chat(config: AgentConfig, messages: JSONArray): String {
+    private fun chat(config: AgentConfig, history: List<Pair<String, String>>): String {
+        return if (config.useLocalProxy) chatLocalGemini(config, history) else chatOpenAi(config, history)
+    }
+
+    private fun chatOpenAi(config: AgentConfig, history: List<Pair<String, String>>): String {
         val base = config.baseUrl.trim().trimEnd('/')
         if (base.isBlank() || config.apiKey.isBlank()) {
             throw IllegalStateException("还没有填写 AI 接口地址或 API Key")
+        }
+        val messages = JSONArray()
+        history.forEach { (role, content) ->
+            messages.put(JSONObject().put("role", role).put("content", content))
         }
         val url = if (base.endsWith("/chat/completions")) base else "$base/chat/completions"
         val payload = JSONObject().apply {
@@ -104,6 +116,76 @@ class AgentEngine {
             val content = message?.optString("content").orEmpty()
             if (content.isNotBlank()) return content
             return message?.optString("reasoning_content").orEmpty()
+        }
+    }
+
+    /** 直接使用本机反代出来的 Gemini 模型（免费，无需外部 Key）。 */
+    private fun chatLocalGemini(config: AgentConfig, history: List<Pair<String, String>>): String {
+        val base = config.localBaseUrl.trim().trimEnd('/')
+        if (base.isBlank()) throw IllegalStateException("本机反代地址为空")
+        val model = config.localModel.ifBlank { "gemini-3.7-flash" }
+        val url = "$base/v1beta/models/$model:generateContent"
+
+        var systemText: String? = null
+        val contents = JSONArray()
+        var lastRole: String? = null
+
+        history.forEach { (role, content) ->
+            when (role) {
+                "system" -> systemText = content
+                else -> {
+                    val geminiRole = if (role == "assistant") "model" else "user"
+                    if (geminiRole == lastRole && contents.length() > 0) {
+                        // 合并连续同角色，避免 Gemini 拒绝
+                        val last = contents.optJSONObject(contents.length() - 1)
+                        val parts = last?.optJSONArray("parts")
+                        parts?.put(JSONObject().put("text", "\n\n$content"))
+                    } else {
+                        contents.put(
+                            JSONObject().put("role", geminiRole).put(
+                                "parts",
+                                JSONArray().put(JSONObject().put("text", content))
+                            )
+                        )
+                        lastRole = geminiRole
+                    }
+                }
+            }
+        }
+
+        val payload = JSONObject().apply {
+            if (systemText != null) {
+                put(
+                    "systemInstruction",
+                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemText)))
+                )
+            }
+            put("contents", contents)
+            put("generationConfig", JSONObject().put("temperature", 0.2))
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .header("x-goog-api-key", config.localApiKey.ifBlank { "aistudio-api" })
+            .post(payload.toString().toRequestBody(JSON))
+            .build()
+
+        http.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw IllegalStateException("HTTP ${response.code}: ${body.take(300)}")
+            }
+            val obj = JSONObject(body)
+            val parts = obj.optJSONArray("candidates")
+                ?.optJSONObject(0)
+                ?.optJSONObject("content")
+                ?.optJSONArray("parts")
+            if (parts == null) throw IllegalStateException("响应里没有 candidates：${body.take(200)}")
+            val sb = StringBuilder()
+            for (i in 0 until parts.length()) {
+                sb.append(parts.optJSONObject(i)?.optString("text").orEmpty())
+            }
+            return sb.toString()
         }
     }
 

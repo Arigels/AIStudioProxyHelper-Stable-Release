@@ -43,6 +43,9 @@ data class MainUiState(
     val agentBaseUrl: String = "",
     val agentApiKey: String = "",
     val agentModel: String = "",
+    val agentUseLocal: Boolean = false,
+    val agentLocalModel: String = "",
+    val agentLocalKey: String = "",
     val agentRunning: Boolean = false,
     val agentLines: List<AgentLine> = emptyList(),
     val agentAnswer: String? = null,
@@ -67,7 +70,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             externalAppsSetupDone = settingsRepo.externalAppsSetupDone,
             agentBaseUrl = settingsRepo.agentBaseUrl,
             agentApiKey = settingsRepo.agentApiKey,
-            agentModel = settingsRepo.agentModel
+            agentModel = settingsRepo.agentModel,
+            agentUseLocal = settingsRepo.agentUseLocal,
+            agentLocalModel = settingsRepo.agentLocalModel,
+            agentLocalKey = settingsRepo.agentLocalKey
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -369,15 +375,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ─── AI 排障助手 ───
 
-    fun saveAgentConfig(baseUrl: String, key: String, model: String) {
+    fun saveAgentConfig(
+        baseUrl: String,
+        key: String,
+        model: String,
+        useLocal: Boolean,
+        localModel: String
+    ) {
         settingsRepo.agentBaseUrl = baseUrl
         settingsRepo.agentApiKey = key
         settingsRepo.agentModel = model
+        settingsRepo.agentUseLocal = useLocal
+        settingsRepo.agentLocalModel = localModel
         _uiState.update {
             it.copy(
                 agentBaseUrl = baseUrl.trim(),
                 agentApiKey = key.trim(),
                 agentModel = model.trim(),
+                agentUseLocal = useLocal,
+                agentLocalModel = localModel.trim(),
                 snackbarMessage = "AI 助手配置已保存"
             )
         }
@@ -385,8 +401,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun runAgent(problem: String) {
         val state = _uiState.value
-        if (state.agentApiKey.isBlank()) {
-            _uiState.update { it.copy(agentAnswer = "请先在下面填写 AI 接口地址和 API Key") }
+        if (!state.agentUseLocal && state.agentApiKey.isBlank()) {
+            _uiState.update { it.copy(agentAnswer = "请先填写 AI 接口地址和 API Key，或改用本机反代模型") }
+            return
+        }
+        if (state.agentUseLocal && !state.service.online) {
+            _uiState.update {
+                it.copy(agentAnswer = "本机反代服务还没运行，无法使用本机模型。请先在「搭建」页启动服务，或改用外部 API。")
+            }
             return
         }
         viewModelScope.launch {
@@ -397,7 +419,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val config = AgentConfig(
                 baseUrl = state.agentBaseUrl,
                 apiKey = state.agentApiKey,
-                model = state.agentModel
+                model = state.agentModel,
+                useLocalProxy = state.agentUseLocal,
+                localBaseUrl = state.settings.localBaseUrl,
+                localModel = state.agentLocalModel.ifBlank { "gemini-3.7-flash" },
+                localApiKey = state.agentLocalKey.ifBlank { "aistudio-api" }
             )
             try {
                 val answer = engine.run(

@@ -75,6 +75,27 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_AGENT_MODEL, value.trim()).apply()
         }
 
+    /** AI 助手是否改用本机反代出来的模型（免费，无需外部 Key）。 */
+    var agentUseLocal: Boolean
+        get() = prefs.getBoolean(KEY_AGENT_USE_LOCAL, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_AGENT_USE_LOCAL, value).apply()
+        }
+
+    /** 本机反代模型名。 */
+    var agentLocalModel: String
+        get() = prefs.getString(KEY_AGENT_LOCAL_MODEL, "gemini-3.7-flash") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_AGENT_LOCAL_MODEL, value.trim()).apply()
+        }
+
+    /** 本机反代使用的 API Key（服务未配置鉴权时任意非空即可）。 */
+    var agentLocalKey: String
+        get() = prefs.getString(KEY_AGENT_LOCAL_KEY, "aistudio-api") ?: ""
+        set(value) {
+            prefs.edit().putString(KEY_AGENT_LOCAL_KEY, value.trim()).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "aistudio_proxy_helper_prefs"
         private const val KEY_PORT = "port"
@@ -88,5 +109,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_AGENT_BASE_URL = "agent_base_url"
         private const val KEY_AGENT_API_KEY = "agent_api_key"
         private const val KEY_AGENT_MODEL = "agent_model"
+        private const val KEY_AGENT_USE_LOCAL = "agent_use_local"
+        private const val KEY_AGENT_LOCAL_MODEL = "agent_local_model"
+        private const val KEY_AGENT_LOCAL_KEY = "agent_local_key"
     }
 }

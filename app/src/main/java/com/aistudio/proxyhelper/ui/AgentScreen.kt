@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,16 +48,18 @@ import com.aistudio.proxyhelper.agent.AgentLine
 @Composable
 fun AgentScreen(
     uiState: MainUiState,
-    onSaveConfig: (String, String, String) -> Unit,
+    onSaveConfig: (String, String, String, Boolean, String) -> Unit,
     onRun: (String) -> Unit
 ) {
     var problem by remember { mutableStateOf("") }
     var showConfig by remember(uiState.agentApiKey) {
-        mutableStateOf(uiState.agentApiKey.isBlank())
+        mutableStateOf(uiState.agentApiKey.isBlank() && !uiState.agentUseLocal)
     }
     var baseUrl by remember(uiState.agentBaseUrl) { mutableStateOf(uiState.agentBaseUrl) }
     var apiKey by remember(uiState.agentApiKey) { mutableStateOf(uiState.agentApiKey) }
     var model by remember(uiState.agentModel) { mutableStateOf(uiState.agentModel) }
+    var useLocal by remember(uiState.agentUseLocal) { mutableStateOf(uiState.agentUseLocal) }
+    var localModel by remember(uiState.agentLocalModel) { mutableStateOf(uiState.agentLocalModel) }
 
     Column(
         modifier = Modifier
@@ -115,33 +118,70 @@ fun AgentScreen(
 
                 AnimatedVisibility(visible = showConfig) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = baseUrl,
-                            onValueChange = { baseUrl = it },
-                            label = { Text("接口地址（OpenAI 兼容）") },
-                            placeholder = { Text("如 https://api.deepseek.com") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = apiKey,
-                            onValueChange = { apiKey = it },
-                            label = { Text("API Key") },
-                            placeholder = { Text("sk-...") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = model,
-                            onValueChange = { model = it },
-                            label = { Text("模型名") },
-                            placeholder = { Text("如 deepseek-chat / gpt-4o-mini") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "使用本机反代模型（免费）",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "用反代出来的 Gemini 模型当助手，不用另外买 Key；需要反代服务已启动",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = useLocal, onCheckedChange = { useLocal = it })
+                        }
+
+                        if (useLocal) {
+                            OutlinedTextField(
+                                value = localModel,
+                                onValueChange = { localModel = it },
+                                label = { Text("反代模型名") },
+                                placeholder = { Text("如 gemini-3.7-flash") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = baseUrl,
+                                onValueChange = { baseUrl = it },
+                                label = { Text("接口地址（OpenAI 兼容）") },
+                                placeholder = { Text("如 https://api.deepseek.com") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = apiKey,
+                                onValueChange = { apiKey = it },
+                                label = { Text("API Key") },
+                                placeholder = { Text("sk-...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = model,
+                                onValueChange = { model = it },
+                                label = { Text("模型名") },
+                                placeholder = { Text("如 deepseek-chat / gpt-4o-mini") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
                         Button(
                             onClick = {
-                                onSaveConfig(baseUrl.trim(), apiKey.trim(), model.trim())
+                                onSaveConfig(
+                                    baseUrl.trim(),
+                                    apiKey.trim(),
+                                    model.trim(),
+                                    useLocal,
+                                    localModel.trim()
+                                )
                                 showConfig = false
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -150,7 +190,7 @@ fun AgentScreen(
                             Text("保存接口配置")
                         }
                         Text(
-                            text = "说明：Key 只保存在本机，直接发往你填的接口，不经过任何第三方服务器。",
+                            text = "说明：外部 Key 只存本机、直接发往你填的接口；本机模式不会发出任何外部请求。",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -183,7 +223,8 @@ fun AgentScreen(
                 )
                 Button(
                     onClick = { onRun(problem) },
-                    enabled = !uiState.agentRunning && uiState.agentApiKey.isNotBlank(),
+                    enabled = !uiState.agentRunning &&
+                        (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),

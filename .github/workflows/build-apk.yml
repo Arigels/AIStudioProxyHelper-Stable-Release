@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.8.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.9.0.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v1.8.0.apk
+          path: dist/AIStudioProxyHelper-v1.9.0.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.8.0"
+          TAG="v1.9.0"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.8.0.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.9.0.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v1.8.0.apk \
-              --title "v1.8.0 — AI Studio 反代助手（AI 悬浮窗版）" \
-              --notes "悬浮窗升级为 AI 小助手：显示当前搭建阶段、AI 结论与「下一步该做什么」，点按展开、长按打开 App。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v1.9.0.apk \
+              --title "v1.9.0 — AI Studio 反代助手" \
+              --notes "AI 助手新增「使用本机反代模型」开关：直接调用手机上的反代服务（Gemini 协议），不填外部 API Key 也能用 AI 排障。"
           fi
