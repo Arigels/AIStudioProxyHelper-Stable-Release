@@ -10,6 +10,8 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -54,3 +56,17 @@ jobs:
           name: AIStudioProxyHelper-APK
           path: dist/AIStudioProxyHelper-v1.2.0.apk
           retention-days: 30
+
+      - name: Publish GitHub Release (Formal APK only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.2.0"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.2.0.apk --clobber
+          else
+            gh release create "$TAG" dist/AIStudioProxyHelper-v1.2.0.apk \
+              --title "v1.2.0 — AI Studio 反代助手" \
+              --notes "极简 3 页签版（搭建 / 账号 / 使用）：手机一键本地部署 aistudio-api 反代服务，支持 Cookie-Editor 多账号自动识别与客户端配置复制。"
+          fi
