@@ -199,6 +199,7 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     uiState = uiState,
                     onSaveConfig = viewModel::saveAgentConfig,
                     onTest = viewModel::testAgentConnection,
+                    onFetchModels = viewModel::fetchAgentModels,
                     onRun = viewModel::runAgent
                 )
             }

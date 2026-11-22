@@ -51,6 +51,8 @@ data class MainUiState(
     val agentRunning: Boolean = false,
     val agentTesting: Boolean = false,
     val agentTestResult: String? = null,
+    val agentFetchingModels: Boolean = false,
+    val agentModels: List<String> = emptyList(),
     val agentLines: List<AgentLine> = emptyList(),
     val agentAnswer: String? = null,
     val importingCookie: Boolean = false,
@@ -486,6 +488,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     agentTestResult = result.getOrElse { e ->
                         "连接失败：${e.message?.take(120) ?: "未知错误"}"
                     }
+                )
+            }
+        }
+    }
+
+    fun fetchAgentModels() {
+        val state = _uiState.value
+        viewModelScope.launch {
+            _uiState.update { it.copy(agentFetchingModels = true) }
+            val engine = AgentEngine()
+            val config = AgentConfig(
+                baseUrl = state.agentBaseUrl,
+                apiKey = state.agentApiKey,
+                model = state.agentModel,
+                useLocalProxy = state.agentUseLocal,
+                localBaseUrl = state.settings.localBaseUrl,
+                localModel = state.agentLocalModel.ifBlank { "gemini-3.7-flash" },
+                localApiKey = state.agentLocalKey.ifBlank { "aistudio-api" }
+            )
+            val result = withContext(Dispatchers.IO) {
+                runCatching { engine.listModels(config) }
+            }
+            _uiState.update {
+                it.copy(
+                    agentFetchingModels = false,
+                    agentModels = result.getOrDefault(emptyList()),
+                    snackbarMessage = result.fold(
+                        onSuccess = { list ->
+                            if (list.isEmpty()) "没有拉取到模型" else "已获取 ${list.size} 个模型"
+                        },
+                        onFailure = { e -> "拉取失败：${e.message?.take(80) ?: "未知错误"}" }
+                    )
                 )
             }
         }

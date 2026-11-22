@@ -52,6 +52,7 @@ fun AgentScreen(
     uiState: MainUiState,
     onSaveConfig: (String, String, String, Boolean, String) -> Unit,
     onTest: () -> Unit,
+    onFetchModels: () -> Unit,
     onRun: (String) -> Unit
 ) {
     var problem by remember { mutableStateOf("") }
@@ -241,6 +242,45 @@ fun AgentScreen(
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                        }
+
+                        OutlinedButton(
+                            onClick = onFetchModels,
+                            enabled = !uiState.agentFetchingModels,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            if (uiState.agentFetchingModels) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("正在拉取模型列表…")
+                            } else {
+                                Text("拉取可用模型列表")
+                            }
+                        }
+
+                        if (uiState.agentModels.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                uiState.agentModels.take(40).forEach { name ->
+                                    val selectedNow =
+                                        (if (useLocal) localModel else model) == name
+                                    FilterChip(
+                                        selected = selectedNow,
+                                        onClick = {
+                                            if (useLocal) localModel = name else model = name
+                                        },
+                                        label = { Text(name) }
+                                    )
+                                }
+                            }
                         }
 
                         OutlinedButton(
