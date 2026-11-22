@@ -1,7 +1,6 @@
 package com.aistudio.proxyhelper.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,14 +24,14 @@ import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +46,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.agent.AgentLine
 
+private data class Provider(
+    val label: String,
+    val baseUrl: String,
+    val defaultModel: String,
+    val isLocal: Boolean = false
+)
+
+private val providers = listOf(
+    Provider("本机反代（免费，不用 Key）", "", "", isLocal = true),
+    Provider("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
+    Provider("硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3"),
+    Provider("Kimi 月之暗面", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
+    Provider("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash"),
+    Provider("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
+    Provider("Claude（Anthropic 兼容）", "https://api.anthropic.com/v1", "claude-sonnet-4-20250514"),
+    Provider("Gemini（官方 Key）", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
+    Provider("自定义地址", "", "")
+)
+
 @Composable
 fun AgentScreen(
     uiState: MainUiState,
@@ -59,11 +77,26 @@ fun AgentScreen(
     var showConfig by remember(uiState.agentApiKey) {
         mutableStateOf(uiState.agentApiKey.isBlank() && !uiState.agentUseLocal)
     }
+
     var baseUrl by remember(uiState.agentBaseUrl) { mutableStateOf(uiState.agentBaseUrl) }
     var apiKey by remember(uiState.agentApiKey) { mutableStateOf(uiState.agentApiKey) }
     var model by remember(uiState.agentModel) { mutableStateOf(uiState.agentModel) }
     var useLocal by remember(uiState.agentUseLocal) { mutableStateOf(uiState.agentUseLocal) }
     var localModel by remember(uiState.agentLocalModel) { mutableStateOf(uiState.agentLocalModel) }
+
+    var providerMenu by remember { mutableStateOf(false) }
+    var modelMenu by remember { mutableStateOf(false) }
+
+    val currentProvider = providers.firstOrNull { p ->
+        if (p.isLocal) {
+            useLocal
+        } else {
+            !useLocal && p.baseUrl.isNotBlank() &&
+                baseUrl.trim().trimEnd('/').equals(p.baseUrl.trim().trimEnd('/'), ignoreCase = true)
+        }
+    } ?: providers.last()
+
+    val currentModel = if (useLocal) localModel else model
 
     Column(
         modifier = Modifier
@@ -72,7 +105,6 @@ fun AgentScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 标题
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
@@ -95,134 +127,85 @@ fun AgentScreen(
                     )
                 }
                 Text(
-                    text = "接你自己的 AI 接口（OpenAI 兼容格式），它只会做「反代部署」这件事：" +
-                        "查状态、读日志、执行命令、改端口、启停服务。不会碰你的其他数据。",
+                    text = "选一个服务商、填 Key、选模型就能用。它只会做「反代部署」这件事：查状态、读日志、执行命令、改端口、启停服务。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showConfig = !showConfig },
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (uiState.agentApiKey.isBlank()) "① 先配置接口（必填）" else "接口配置（已保存）",
+                        text = if (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()) {
+                            "接口配置（已保存，点此修改）"
+                        } else {
+                            "① 配置接口（必填）"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f)
                     )
-                    Icon(
-                        imageVector = if (showConfig) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = null
-                    )
+                    OutlinedButton(onClick = { showConfig = !showConfig }) {
+                        Icon(
+                            imageVector = if (showConfig) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (showConfig) "收起" else "配置")
+                    }
                 }
 
                 AnimatedVisibility(visible = showConfig) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FilterChip(
-                                selected = !useLocal && baseUrl.contains("deepseek"),
-                                onClick = {
-                                    useLocal = false
-                                    baseUrl = "https://api.deepseek.com"
-                                    model = "deepseek-chat"
-                                },
-                                label = { Text("DeepSeek") }
-                            )
-                            FilterChip(
-                                selected = !useLocal && baseUrl.contains("siliconflow"),
-                                onClick = {
-                                    useLocal = false
-                                    baseUrl = "https://api.siliconflow.cn/v1"
-                                    model = "deepseek-ai/DeepSeek-V3"
-                                },
-                                label = { Text("硅基流动") }
-                            )
-                            FilterChip(
-                                selected = !useLocal && baseUrl.contains("moonshot"),
-                                onClick = {
-                                    useLocal = false
-                                    baseUrl = "https://api.moonshot.cn/v1"
-                                    model = "moonshot-v1-8k"
-                                },
-                                label = { Text("Kimi") }
-                            )
-                            FilterChip(
-                                selected = !useLocal && baseUrl.contains("bigmodel"),
-                                onClick = {
-                                    useLocal = false
-                                    baseUrl = "https://open.bigmodel.cn/api/paas/v4"
-                                    model = "glm-4-flash"
-                                },
-                                label = { Text("智谱") }
-                            )
-                            FilterChip(
-                                selected = !useLocal && baseUrl.contains("openai.com"),
-                                onClick = {
-                                    useLocal = false
-                                    baseUrl = "https://api.openai.com/v1"
-                                    model = "gpt-4o-mini"
-                                },
-                                label = { Text("OpenAI") }
-                            )
-                            FilterChip(
-                                selected = !useLocal && baseUrl.contains("googleapis"),
-                                onClick = {
-                                    useLocal = false
-                                    baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai"
-                                    model = "gemini-2.0-flash"
-                                },
-                                label = { Text("Gemini Key") }
-                            )
-                            FilterChip(
-                                selected = useLocal,
-                                onClick = { useLocal = true },
-                                label = { Text("本机反代（免费）") }
-                            )
-                        }
-
+                        // 服务商下拉
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "使用本机反代模型（免费）",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "用反代出来的 Gemini 模型当助手，不用另外买 Key；需要反代服务已启动",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Text(
+                                text = "服务商",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedButton(onClick = { providerMenu = true }) {
+                                Text(currentProvider.label)
                             }
-                            Switch(checked = useLocal, onCheckedChange = { useLocal = it })
+                            DropdownMenu(
+                                expanded = providerMenu,
+                                onDismissRequest = { providerMenu = false }
+                            ) {
+                                providers.forEach { p ->
+                                    DropdownMenuItem(
+                                        text = { Text(p.label) },
+                                        onClick = {
+                                            providerMenu = false
+                                            if (p.isLocal) {
+                                                useLocal = true
+                                            } else {
+                                                useLocal = false
+                                                if (p.baseUrl.isNotBlank()) baseUrl = p.baseUrl
+                                                if (p.defaultModel.isNotBlank()) model = p.defaultModel
+                                            }
+                                        }
+                                    )
+                                }
+                            }
                         }
 
                         if (useLocal) {
-                            OutlinedTextField(
-                                value = localModel,
-                                onValueChange = { localModel = it },
-                                label = { Text("反代模型名") },
-                                placeholder = { Text("如 gemini-3.7-flash") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                            Text(
+                                text = "使用本机反代模型：不需要 Key，但反代服务必须已启动。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
                             OutlinedTextField(
                                 value = baseUrl,
                                 onValueChange = { baseUrl = it },
-                                label = { Text("接口地址（OpenAI 兼容）") },
-                                placeholder = { Text("如 https://api.deepseek.com") },
+                                label = { Text("接口地址（选服务商后自动填好，可改）") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -230,18 +213,46 @@ fun AgentScreen(
                                 value = apiKey,
                                 onValueChange = { apiKey = it },
                                 label = { Text("API Key") },
-                                placeholder = { Text("sk-...") },
+                                placeholder = { Text("粘贴你的 Key") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            OutlinedTextField(
-                                value = model,
-                                onValueChange = { model = it },
-                                label = { Text("模型名") },
-                                placeholder = { Text("如 deepseek-chat / gpt-4o-mini") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                        }
+
+                        // 模型下拉
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "模型",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
                             )
+                            OutlinedButton(onClick = { modelMenu = true }) {
+                                Text(currentModel.ifBlank { "选择模型" })
+                            }
+                            DropdownMenu(
+                                expanded = modelMenu,
+                                onDismissRequest = { modelMenu = false }
+                            ) {
+                                if (uiState.agentModels.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("还没有模型列表，先点「拉取模型」") },
+                                        onClick = { modelMenu = false }
+                                    )
+                                } else {
+                                    uiState.agentModels.forEach { name ->
+                                        DropdownMenuItem(
+                                            text = { Text(name) },
+                                            onClick = {
+                                                modelMenu = false
+                                                if (useLocal) localModel = name else model = name
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         OutlinedButton(
@@ -258,28 +269,7 @@ fun AgentScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text("正在拉取模型列表…")
                             } else {
-                                Text("拉取可用模型列表")
-                            }
-                        }
-
-                        if (uiState.agentModels.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                uiState.agentModels.take(40).forEach { name ->
-                                    val selectedNow =
-                                        (if (useLocal) localModel else model) == name
-                                    FilterChip(
-                                        selected = selectedNow,
-                                        onClick = {
-                                            if (useLocal) localModel = name else model = name
-                                        },
-                                        label = { Text(name) }
-                                    )
-                                }
+                                Text("拉取模型列表")
                             }
                         }
 
@@ -309,6 +299,7 @@ fun AgentScreen(
                                 Text("保存并测试连接")
                             }
                         }
+
                         uiState.agentTestResult?.let { result ->
                             Surface(
                                 color = if (result.startsWith("连接失败")) {
@@ -320,17 +311,16 @@ fun AgentScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = if (result.startsWith("连接失败")) result else "连接成功，模型回复：$result",
+                                    text = if (result.startsWith("连接失败")) {
+                                        result
+                                    } else {
+                                        "连接成功，模型回复：$result"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(10.dp)
                                 )
                             }
                         }
-                        Text(
-                            text = "说明：外部 Key 只存本机、直接发往你填的接口；本机模式不会发出任何外部请求。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -346,7 +336,7 @@ fun AgentScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "② 描述你遇到的问题",
+                    text = "② 描述你遇到的问题（或直接让它从零搭建）",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -376,7 +366,11 @@ fun AgentScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("AI 正在排查…")
                     } else {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("让 AI 帮我排查", fontWeight = FontWeight.Bold)
                     }
