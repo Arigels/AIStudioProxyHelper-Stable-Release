@@ -137,6 +137,33 @@ fun AgentScreen(
                                 label = { Text("DeepSeek") }
                             )
                             FilterChip(
+                                selected = !useLocal && baseUrl.contains("siliconflow"),
+                                onClick = {
+                                    useLocal = false
+                                    baseUrl = "https://api.siliconflow.cn/v1"
+                                    model = "deepseek-ai/DeepSeek-V3"
+                                },
+                                label = { Text("硅基流动") }
+                            )
+                            FilterChip(
+                                selected = !useLocal && baseUrl.contains("moonshot"),
+                                onClick = {
+                                    useLocal = false
+                                    baseUrl = "https://api.moonshot.cn/v1"
+                                    model = "moonshot-v1-8k"
+                                },
+                                label = { Text("Kimi") }
+                            )
+                            FilterChip(
+                                selected = !useLocal && baseUrl.contains("bigmodel"),
+                                onClick = {
+                                    useLocal = false
+                                    baseUrl = "https://open.bigmodel.cn/api/paas/v4"
+                                    model = "glm-4-flash"
+                                },
+                                label = { Text("智谱") }
+                            )
+                            FilterChip(
                                 selected = !useLocal && baseUrl.contains("openai.com"),
                                 onClick = {
                                     useLocal = false
@@ -157,7 +184,7 @@ fun AgentScreen(
                             FilterChip(
                                 selected = useLocal,
                                 onClick = { useLocal = true },
-                                label = { Text("本机反代") }
+                                label = { Text("本机反代（免费）") }
                             )
                         }
 

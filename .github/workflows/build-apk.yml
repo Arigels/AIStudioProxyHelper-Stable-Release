@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.0.1.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.0.2.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.0.1.apk
+          path: dist/AIStudioProxyHelper-v2.0.2.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.0.1"
+          TAG="v2.0.2"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.0.1.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.0.2.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.0.1.apk \
-              --title "v2.0.1 — AI Studio 反代助手" \
-              --notes "新增网络/梯子检测：日志出现 DNS 解析失败、连接超时或 403 时，首页与悬浮窗直接提示「梯子可能没开」并给出对应处理步骤。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.0.2.apk \
+              --title "v2.0.2 — AI Studio 反代助手" \
+              --notes "AI 助手新增国内可直连的提供商预设：硅基流动、Kimi、智谱，与 DeepSeek/OpenAI/Gemini/本机反代并列，方便不用翻墙也能接入。"
           fi
