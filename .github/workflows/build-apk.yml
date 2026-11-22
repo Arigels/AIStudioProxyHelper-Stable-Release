@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.1.2.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.1.3.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.1.2.apk
+          path: dist/AIStudioProxyHelper-v2.1.3.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.1.2"
+          TAG="v2.1.3"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.1.2.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.1.3.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.1.2.apk \
-              --title "v2.1.2 — AI Studio 反代助手" \
-              --notes "悬浮窗开关移到首页显眼位置：一键授权「显示在其他应用上层」并可随时开关，不再藏在高级设置里。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.1.3.apk \
+              --title "v2.1.3 — AI Studio 反代助手" \
+              --notes "首次打开 App 主动提示申请「显示在其他应用上层」权限；授权返回后自动拉起悬浮窗，无需再手动点一次。"
           fi

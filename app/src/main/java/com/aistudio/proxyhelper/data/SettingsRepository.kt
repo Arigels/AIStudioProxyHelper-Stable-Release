@@ -96,6 +96,20 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_AGENT_LOCAL_KEY, value.trim()).apply()
         }
 
+    /** 用户是否希望开启悬浮窗（默认开启，授权后自动拉起）。 */
+    var overlayDesired: Boolean
+        get() = prefs.getBoolean(KEY_OVERLAY_DESIRED, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_OVERLAY_DESIRED, value).apply()
+        }
+
+    /** 是否已经主动提示过一次悬浮窗授权。 */
+    var overlayPromptShown: Boolean
+        get() = prefs.getBoolean(KEY_OVERLAY_PROMPTED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_OVERLAY_PROMPTED, value).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "aistudio_proxy_helper_prefs"
         private const val KEY_PORT = "port"
@@ -112,5 +126,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_AGENT_USE_LOCAL = "agent_use_local"
         private const val KEY_AGENT_LOCAL_MODEL = "agent_local_model"
         private const val KEY_AGENT_LOCAL_KEY = "agent_local_key"
+        private const val KEY_OVERLAY_DESIRED = "overlay_desired"
+        private const val KEY_OVERLAY_PROMPTED = "overlay_prompted"
     }
 }

@@ -72,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.ProxySettings
+import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.overlay.OverlayService
@@ -251,6 +252,7 @@ fun SetupScreen(
 @Composable
 private fun OverlayToggleCard() {
     val context = LocalContext.current
+    val prefs = remember { SettingsRepository(context) }
     val canDraw = Settings.canDrawOverlays(context)
     var overlayOn by remember(canDraw) { mutableStateOf(OverlayService.isRunning && canDraw) }
 
@@ -296,9 +298,11 @@ private fun OverlayToggleCard() {
                         }
                     } else if (overlayOn) {
                         OverlayService.stop(context)
+                        prefs.overlayDesired = false
                         overlayOn = false
                     } else {
                         OverlayService.start(context)
+                        prefs.overlayDesired = true
                         overlayOn = true
                     }
                 },

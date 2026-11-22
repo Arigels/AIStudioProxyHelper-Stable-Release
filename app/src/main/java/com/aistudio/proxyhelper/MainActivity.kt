@@ -1,6 +1,9 @@
 package com.aistudio.proxyhelper
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -15,6 +18,8 @@ import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -23,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -31,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -42,8 +49,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.net.LogCollector
+import com.aistudio.proxyhelper.overlay.OverlayService
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.ui.AccountsScreen
 import com.aistudio.proxyhelper.ui.AgentScreen
@@ -101,11 +110,26 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
 
     // 从 Termux / 系统设置返回时刷新状态
     val lifecycleOwner = LocalLifecycleOwner.current
+    val prefs = remember { SettingsRepository(context) }
+    var showOverlayPrompt by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (!Settings.canDrawOverlays(context) && !prefs.overlayPromptShown) {
+            showOverlayPrompt = true
+        }
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshEnvironment()
                 viewModel.refreshServiceStatus(silent = true)
+                if (Settings.canDrawOverlays(context)) {
+                    prefs.overlayPromptShown = true
+                    if (prefs.overlayDesired && !OverlayService.isRunning) {
+                        OverlayService.start(context)
+                    }
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -204,5 +228,44 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 )
             }
         }
+    }
+
+    if (showOverlayPrompt) {
+        AlertDialog(
+            onDismissRequest = { showOverlayPrompt = false },
+            title = { Text("开启悬浮窗权限") },
+            text = {
+                Text(
+                    "开启后，Termux 上方会显示搭建进度、AI 结论和「下一步该做什么」，" +
+                        "搭建时不用来回切 App。只需要授权一次。"
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showOverlayPrompt = false
+                    prefs.overlayPromptShown = true
+                    prefs.overlayDesired = true
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }) {
+                    Text("去授权")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showOverlayPrompt = false
+                    prefs.overlayPromptShown = true
+                    prefs.overlayDesired = false
+                }) {
+                    Text("暂不需要")
+                }
+            }
+        )
     }
 }
