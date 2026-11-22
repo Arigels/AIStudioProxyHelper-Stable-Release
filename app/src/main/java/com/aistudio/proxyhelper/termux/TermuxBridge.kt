@@ -11,9 +11,16 @@ import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
 
 sealed class TermuxDispatchResult {
-    data class SentToTermux(val command: String) : TermuxDispatchResult()
-    data class AutomatedByAccessibility(val command: String) : TermuxDispatchResult()
-    data class FallbackCopied(val command: String, val reason: String) : TermuxDispatchResult()
+    abstract val command: String
+
+    data class SentToTermux(override val command: String) : TermuxDispatchResult()
+
+    data class AutomatedByAccessibility(override val command: String) : TermuxDispatchResult()
+
+    data class FallbackCopied(
+        override val command: String,
+        val reason: String
+    ) : TermuxDispatchResult()
 }
 
 object TermuxBridge {
@@ -206,7 +213,7 @@ object TermuxBridge {
         context: Context,
         action: TermuxAction,
         settings: ProxySettings
-    ): TermuxDispatchResult {
+    ): TermuxDispatchResult.FallbackCopied {
         val command = buildCommand(action, settings)
         copyToClipboard(context, action.title, command)
         openTermux(context)
