@@ -108,7 +108,6 @@ class OverlayService : Service() {
                 setColor(Color.parseColor("#E6111827"))
                 setStroke(dp(1), Color.parseColor("#40FFFFFF"))
             }
-            width = dp(280)
         }
 
         // 标题行：状态点 + 标题
