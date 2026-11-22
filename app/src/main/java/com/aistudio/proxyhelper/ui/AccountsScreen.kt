@@ -96,12 +96,10 @@ fun AccountsScreen(
                     }
                 }
                 Text(
-                    text = "⚠️ Chrome / Edge 安卓版不支持扩展，装不了 Cookie-Editor。\n\n" +
-                        "方法一（手机）：装「Firefox 安卓版」→ 打开 addons.mozilla.org 搜 " +
-                        "Cookie-Editor 安装 → 登录 aistudio.google.com（多账号可全部登好）→ " +
-                        "点 Cookie-Editor → Export → Export as JSON → 回本 App 粘贴导入。\n\n" +
-                        "方法二（电脑，最稳）：电脑 Chrome/Edge 装 Cookie-Editor 导出 JSON → " +
-                        "发到手机（微信文件传输助手等）→ 本 App 粘贴导入。",
+                    text = "1. 手机安装「安卓火狐 (Firefox)」或「手机 Edge」（手机 Chrome 不支持插件）\n" +
+                        "2. 在浏览器扩展里安装免费插件 Cookie-Editor\n" +
+                        "3. 打开 aistudio.google.com 登录谷歌账号（多账号可点右上角头像全部登好）\n" +
+                        "4. 点 Cookie-Editor → Export → Export as JSON，回本 App 粘贴导入",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
