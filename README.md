@@ -56,7 +56,10 @@ App 只有 **3 个页签**：搭建 / 账号 / 使用，围绕「一键部署反
    - 点击 **「去授权」** 允许 App 调用 Termux；
    - 点击 **「复制设置命令并打开 Termux」**，在 Termux 中长按粘贴回车执行一次即可（只需做一次）。
 3. 点击 **【一键搭建并启动】**，等待自动下载依赖并编译本地 `waa-signer` 引擎完成，状态卡变绿即成功。
-4. 切到 **「账号」** 页，粘贴通过 Firefox/Edge + Cookie-Editor 导出的 Google AI Studio Cookie（JSON），点击 **「导入并自动识别所有账号」**。
+4. 切到 **「账号」** 页导入 Cookie。注意 **Chrome / Edge 安卓版不支持扩展**，装不了 Cookie-Editor，请用下面任一方式导出：
+   - **手机**：装 [Firefox 安卓版](https://www.mozilla.org/firefox/browsers/mobile/android/)，在 addons.mozilla.org 搜 Cookie-Editor 安装，登录 aistudio.google.com 后 Export as JSON；
+   - **电脑（最稳）**：电脑 Chrome/Edge 装 Cookie-Editor 导出 JSON，发到手机（微信文件传输助手等）后再粘贴。
+   然后点击 **「导入并自动识别所有账号」**。
 5. 切到 **「使用」** 页测试模型列表，复制地址填入酒馆 / Cherry Studio / NextChat（选择 **Google Gemini** 协议）即可使用！
 6. **防杀后台**：下拉通知栏点击 Termux 通知上的 `Acquire Wakelock`，并在系统电池设置里将 Termux 设为「无限制」（App 的「搭建 → 高级设置」里也有「开启唤醒锁」按钮）。
 7. **重启恢复**：手机重启或服务掉线后，打开 App →「使用」页点【一键恢复服务】即可，无需重新安装。

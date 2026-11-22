@@ -81,7 +81,7 @@ fun AccountsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "如何获取 Cookie（用手机 Firefox / Edge）",
+                        text = "如何获取 Cookie",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -96,10 +96,12 @@ fun AccountsScreen(
                     }
                 }
                 Text(
-                    text = "1. 手机浏览器装 Cookie-Editor 扩展\n" +
-                        "2. 登录 aistudio.google.com（有多个账号可全部登好）\n" +
-                        "3. 点扩展 → Export → Export as JSON\n" +
-                        "4. 回到这里粘贴，点「导入」即可自动识别所有账号",
+                    text = "⚠️ Chrome / Edge 安卓版不支持扩展，装不了 Cookie-Editor。\n\n" +
+                        "方法一（手机）：装「Firefox 安卓版」→ 打开 addons.mozilla.org 搜 " +
+                        "Cookie-Editor 安装 → 登录 aistudio.google.com（多账号可全部登好）→ " +
+                        "点 Cookie-Editor → Export → Export as JSON → 回本 App 粘贴导入。\n\n" +
+                        "方法二（电脑，最稳）：电脑 Chrome/Edge 装 Cookie-Editor 导出 JSON → " +
+                        "发到手机（微信文件传输助手等）→ 本 App 粘贴导入。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
