@@ -89,7 +89,7 @@ class AgentEngine {
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer ${config.apiKey}")
-            .post(payload.toString().toRequestBody(JSON.toMediaType()))
+            .post(payload.toString().toRequestBody(JSON))
             .build()
 
         http.newCall(request).execute().use { response ->

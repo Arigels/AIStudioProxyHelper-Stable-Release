@@ -14,7 +14,7 @@ import com.aistudio.proxyhelper.data.ServiceStatus
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
-import com.aistudio.proxyhelper.network.LogCollector
+import com.aistudio.proxyhelper.net.LogCollector
 import com.aistudio.proxyhelper.network.ProxyApiClient
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.termux.TermuxDispatchResult
