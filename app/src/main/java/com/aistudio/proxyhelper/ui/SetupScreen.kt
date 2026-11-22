@@ -52,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,6 +72,7 @@ import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.termux.TermuxBridge
+import kotlinx.coroutines.delay
 
 @Composable
 fun SetupScreen(
@@ -286,6 +288,7 @@ private fun PrimaryActionCard(
     val service = uiState.service
     val deployed = uiState.hasDeployed
     val autoReady = uiState.environment.accessibilityEnabled
+    val context = LocalContext.current
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -324,6 +327,63 @@ private fun PrimaryActionCard(
                     Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("停止服务")
+                }
+            } else if (uiState.deploying) {
+                var now by remember { mutableStateOf(System.currentTimeMillis()) }
+                LaunchedEffect(uiState.deploying) {
+                    while (uiState.deploying) {
+                        now = System.currentTimeMillis()
+                        delay(1000L)
+                    }
+                }
+                val elapsedSec = ((now - uiState.deployStartedAt) / 1000L).coerceAtLeast(0L)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "正在搭建反代服务…",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒（一般需要 5~15 分钟）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "流程：安装依赖 → 克隆仓库 → 编译本地签名引擎。编译阶段长时间没有输出属于正常现象，请不要关闭 Termux。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (elapsedSec > 20 * 60) {
+                    Text(
+                        text = "⚠️ 已超过 20 分钟仍未启动，可能失败了：请打开 Termux 查看最后几行红色报错，或点「重新安装」。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { TermuxBridge.openTermux(context) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Filled.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("打开 Termux 看进度", maxLines = 1)
+                    }
+                    TextButton(onClick = onDeploy) {
+                        Text("重新安装")
+                    }
                 }
             } else {
                 Button(

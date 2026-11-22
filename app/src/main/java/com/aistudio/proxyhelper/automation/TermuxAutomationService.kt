@@ -336,7 +336,8 @@ class TermuxAutomationService : AccessibilityService() {
             null
         }
         if (action != null) {
-            runCatching { focused.performAction(action) }
+            val actionId = action.id
+            runCatching { focused.performAction(actionId) }
         }
     }
 

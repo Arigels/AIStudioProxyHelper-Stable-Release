@@ -29,6 +29,8 @@ data class MainUiState(
     val hasDeployed: Boolean = false,
     val externalAppsSetupDone: Boolean = false,
     val automationStatus: String? = null,
+    val deploying: Boolean = false,
+    val deployStartedAt: Long = 0L,
     val importingCookie: Boolean = false,
     val lastImportResult: ImportResult? = null,
     val testingModels: Boolean = false,
@@ -88,7 +90,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     service = status,
-                    hasDeployed = it.hasDeployed || status.online
+                    hasDeployed = it.hasDeployed || status.online,
+                    deploying = if (status.online) false else it.deploying,
+                    deployStartedAt = if (status.online) 0L else it.deployStartedAt
                 )
             }
         }
@@ -149,6 +153,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         lastDispatchedCommand = result.command,
                         hasDeployed = it.hasDeployed || markDeployed,
                         externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
+                        deploying = it.deploying || markDeployed,
+                        deployStartedAt = if (markDeployed && !it.deploying) {
+                            System.currentTimeMillis()
+                        } else {
+                            it.deployStartedAt
+                        },
                         snackbarMessage = "正在自动操控 Termux 执行「${action.title}」，请勿切出..."
                     )
                 }
@@ -165,6 +175,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         lastDispatchedCommand = result.command,
                         hasDeployed = it.hasDeployed || markDeployed,
                         externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
+                        deploying = it.deploying || markDeployed,
+                        deployStartedAt = if (markDeployed && !it.deploying) {
+                            System.currentTimeMillis()
+                        } else {
+                            it.deployStartedAt
+                        },
                         snackbarMessage = when (action) {
                             TermuxAction.INSTALL_AND_START ->
                                 "已在 Termux 开始一键搭建，请稍候…完成后状态会自动变绿"
@@ -195,6 +211,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         lastDispatchedCommand = result.command,
                         hasDeployed = it.hasDeployed || markDeployed,
                         externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
+                        deploying = it.deploying || markDeployed,
+                        deployStartedAt = if (markDeployed && !it.deploying) {
+                            System.currentTimeMillis()
+                        } else {
+                            it.deployStartedAt
+                        },
                         snackbarMessage = result.reason
                     )
                 }
