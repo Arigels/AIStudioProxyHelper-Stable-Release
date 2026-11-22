@@ -15,6 +15,8 @@ import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.net.LogCollector
+import com.aistudio.proxyhelper.data.ProgressTracker
+import com.aistudio.proxyhelper.overlay.OverlaySnapshot
 import com.aistudio.proxyhelper.overlay.OverlayState
 import com.aistudio.proxyhelper.network.ProxyApiClient
 import com.aistudio.proxyhelper.termux.TermuxBridge
@@ -112,7 +114,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     deployStartedAt = if (status.online) 0L else it.deployStartedAt
                 )
             }
+            updateOverlaySnapshot(status)
         }
+    }
+
+    private fun updateOverlaySnapshot(status: ServiceStatus) {
+        val env = EnvironmentChecker.inspect(getApplication())
+        val phase = ProgressTracker.analyze(LogCollector.getLog(200))
+        val state = _uiState.value
+        val guidance = when {
+            status.online && status.accounts.isEmpty() ->
+                "服务已启动，下一步：去「账号」页导入 Cookie"
+            status.online && state.lastTestResult?.first != true ->
+                "下一步：去「使用」页测试模型，把地址填进酒馆"
+            status.online -> "一切就绪，可以连酒馆开玩了"
+            phase.error != null -> "出错了，点开 App 按提示修复"
+            state.deploying -> "正在${phase.label}，编译阶段没输出是正常的，请耐心等"
+            !env.termuxInstalled -> "还没安装 Termux，去 F-Droid 下载"
+            !env.accessibilityEnabled -> "建议开启自动操控权限，可全自动搭建"
+            else -> "点「一键搭建并启动」开始"
+        }
+        OverlayState.update(
+            OverlaySnapshot(
+                online = status.online,
+                port = state.settings.port,
+                stage = phase.label,
+                error = phase.error,
+                guidance = guidance,
+                aiHint = state.agentAnswer?.lineSequence()?.firstOrNull()?.take(80)
+            )
+        )
     }
 
     fun saveSettings(newSettings: ProxySettings) {
@@ -378,6 +409,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
                 _uiState.update { it.copy(agentRunning = false, agentAnswer = answer) }
+                OverlayState.update(
+                    OverlayState.snapshot.copy(
+                        aiHint = answer.lineSequence().firstOrNull()?.take(80)
+                    )
+                )
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(agentRunning = false, agentAnswer = "运行失败：${e.message}")
