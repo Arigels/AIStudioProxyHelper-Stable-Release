@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.4.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.4.1.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v1.4.0.apk
+          path: dist/AIStudioProxyHelper-v1.4.1.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.4.0"
+          TAG="v1.4.1"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.4.0.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.4.1.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v1.4.0.apk \
-              --title "v1.4.0 — AI Studio 反代助手" \
-              --notes "账号页新增 5 步获取 Cookie 图文教程：内置国内可访问的火狐官网下载、Cookie-Editor 扩展页与 AI Studio 入口，并自动检测手机是否已装火狐/狐猴浏览器。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v1.4.1.apk \
+              --title "v1.4.1 — AI Studio 反代助手" \
+              --notes "无障碍开启引导优化：打开设置前先提示各品牌手机的「已限制设置」与「解除限制」小字，避免新手卡住；同时保留手动粘贴兜底方案。"
           fi

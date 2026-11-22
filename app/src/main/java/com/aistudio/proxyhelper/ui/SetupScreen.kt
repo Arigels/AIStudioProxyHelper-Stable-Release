@@ -91,7 +91,12 @@ fun SetupScreen(
     val context = LocalContext.current
     val env = uiState.environment
     var showTermuxDialog by remember { mutableStateOf(false) }
+    var showA11yHelpDialog by remember { mutableStateOf(false) }
     var pendingAutoAction by remember { mutableStateOf<TermuxAction?>(null) }
+
+    fun openA11yWithHint() {
+        showA11yHelpDialog = true
+    }
 
     fun triggerSmartAction(action: TermuxAction) {
         if (!env.termuxInstalled) {
@@ -144,9 +149,7 @@ fun SetupScreen(
         // 4. 首次准备（只保留 2 步，做完自动消失）
         PrerequisitesCard(
             uiState = uiState,
-            onOpenAccessibilitySettings = {
-                AutomationController.openAccessibilitySettings(context)
-            },
+            onOpenAccessibilitySettings = { openA11yWithHint() },
             onOpenFDroid = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_FDROID) },
             onOpenGitHub = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_GITHUB) }
         )
@@ -159,9 +162,7 @@ fun SetupScreen(
             onCopyActionCommand = onCopyActionCommand,
             onClearCooldowns = onClearCooldowns,
             onRequestTermuxPermission = onRequestTermuxPermission,
-            onOpenAccessibilitySettings = {
-                AutomationController.openAccessibilitySettings(context)
-            },
+            onOpenAccessibilitySettings = { openA11yWithHint() },
             onOpenTermuxBatterySettings = {
                 EnvironmentChecker.openTermuxAppDetails(context)
             }
@@ -202,13 +203,14 @@ fun SetupScreen(
             text = {
                 Text(
                     "在系统「无障碍」里开启「AI Studio 反代自动搭建助手」后，本 App 会自动打开 Termux、自动粘贴命令并按回车开始搭建，全程不用你手动操作。\n\n" +
-                        "（仅在你点击按钮时临时运行，不会收集任何隐私）"
+                        "（仅在你点击按钮时临时运行，不会收集任何隐私）\n\n" +
+                        "⚠️ 小米/红米、OPPO、vivo、荣耀等手机会弹一行很小的「已限制设置」，要再点它旁边的「解除限制」才能打开开关。"
                 )
             },
             confirmButton = {
                 Button(onClick = {
                     pendingAutoAction = null
-                    AutomationController.openAccessibilitySettings(context)
+                    openA11yWithHint()
                 }) {
                     Text("去开启（推荐）")
                 }
@@ -219,6 +221,54 @@ fun SetupScreen(
                     onRunManualFallback(action)
                 }) {
                     Text("不开，自己粘贴")
+                }
+            }
+        )
+    }
+
+    if (showA11yHelpDialog) {
+        AlertDialog(
+            onDismissRequest = { showA11yHelpDialog = false },
+            title = { Text("开启自动操控，只需要在这里点几下") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "1. 点下面的「打开无障碍设置」",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "2. 找到「AI Studio 反代自动搭建助手」，打开右边的开关，弹窗点「允许」",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "3. ⚠️ 重点：如果开关旁边出现一行小字「已限制设置」（小米/红米/OPPO/vivo/荣耀常见），" +
+                            "要再点它右边的小字「解除限制」（有的手机叫「允许受限制的设置」），然后才能把开关打开。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "4. 打开后返回本 App，首页会显示「自动操控已开启」。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "如果实在打不开也没关系：点「一键搭建并启动」时 App 会把命令复制好并打开 Termux，你只要长按屏幕点「粘贴」再按回车即可。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    showA11yHelpDialog = false
+                    AutomationController.openAccessibilitySettings(context)
+                }) {
+                    Text("打开无障碍设置")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showA11yHelpDialog = false }) {
+                    Text("取消")
                 }
             }
         )
@@ -412,7 +462,8 @@ private fun PrerequisitesCard(
                 ChecklistRow(
                     ok = false,
                     title = "2. 开启自动操控权限（推荐）",
-                    subtitle = "在系统无障碍中开启「AI Studio 反代自动搭建助手」，即可全自动打开 Termux 输入执行，不用自己复制粘贴"
+                    subtitle = "在系统无障碍中开启「AI Studio 反代自动搭建助手」，即可全自动搭建。\n" +
+                        "⚠️ 小米/红米/OPPO/vivo/荣耀 等手机常提示「已限制设置」，需要点它旁边的小字「解除限制」才能打开开关。"
                 )
                 FilledTonalButton(
                     onClick = onOpenAccessibilitySettings,
