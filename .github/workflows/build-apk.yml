@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.2.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.2.1.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.2.0.apk
+          path: dist/AIStudioProxyHelper-v2.2.1.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.2.0"
+          TAG="v2.2.1"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.2.0.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.2.1.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.2.0.apk \
-              --title "v2.2.0 — AI Studio 反代助手" \
-              --notes "重要修复：自动回车不再按坐标盲点（之前可能误点删除键把端口 8080 改成 808）；悬浮窗支持拖拽；权限引导改为「解除限制→悬浮窗→无障碍」顺序；模型拉取支持多地址重试并显示真实错误。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.2.1.apk \
+              --title "v2.2.1 — AI Studio 反代助手" \
+              --notes "无障碍教程强调：本 App 的服务在「已下载的应用 / 已下载的服务」里（不是「已安装的应用」），并在开启弹窗与教程中高亮提示。"
           fi

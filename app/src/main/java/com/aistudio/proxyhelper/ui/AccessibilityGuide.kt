@@ -41,12 +41,24 @@ fun AccessibilityGuideBody() {
         )
         Text(
             text = "1. 打开系统「设置」→「无障碍」（有的手机叫「辅助功能」）\n" +
-                "2. 找到「已下载的服务」或「已安装的服务」\n" +
+                "2. 找到「已下载的应用」或「已下载的服务」\n" +
                 "3. 点「AI Studio 反代自动搭建助手」\n" +
                 "4. 打开开关，弹窗点「允许 / 确定」\n" +
                 "5. 返回本 App，首页会显示「自动操控已开启」",
             style = MaterialTheme.typography.bodySmall
         )
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text(
+                text = "❗ 找不到本 App？它一定在「已下载的应用」里（有的系统叫「已下载的服务」），" +
+                    "不是「已安装的应用/服务」，切换一下那个标签页就能看到。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(10.dp),
+                fontWeight = FontWeight.SemiBold
+            )
+        }
 
         Text(
             text = "② 打不开 / 被系统限制",
@@ -68,7 +80,7 @@ fun AccessibilityGuideBody() {
         }
         Text(
             text = "• 开关是灰色的：先在无障碍页关掉「无障碍快捷方式」，或退出「隐私空间 / 儿童空间」再进\n" +
-                "• 列表里找不到本 App：切到「已下载的服务」标签（不是「已安装的服务」）\n" +
+                "• 列表里找不到本 App：切到「已下载的应用 / 已下载的服务」标签（不是「已安装的应用 / 服务」）\n" +
                 "• 打开后过一会自动关闭：设置 → 电池 → 应用 → 本 App → 改成「无限制」，并允许「自启动」\n" +
                 "• 提示「此应用可能导致…」风险提示：点「仍要开启」",
             style = MaterialTheme.typography.bodySmall
@@ -83,11 +95,11 @@ fun AccessibilityGuideBody() {
             text = "小米 / 红米（HyperOS、MIUI）\n" +
                 "设置 → 更多设置 → 无障碍 → 已下载的应用 → 选本 App → 若有「已限制设置」点「解除限制」\n\n" +
                 "OPPO / 一加 / realme（ColorOS）\n" +
-                "设置 → 系统设置 → 无障碍 → 已安装的服务 → 选本 App → 弹窗点「允许受限制的设置」\n\n" +
+                "设置 → 系统设置 → 无障碍 → 已下载的服务 → 选本 App → 弹窗点「允许受限制的设置」\n\n" +
                 "vivo / iQOO（OriginOS）\n" +
-                "设置 → 快捷与辅助 → 无障碍 → 已下载的服务 → 选本 App\n\n" +
+                "设置 → 快捷与辅助 → 无障碍 → 已下载的应用 → 选本 App\n\n" +
                 "荣耀 / 华为（MagicOS、EMUI）\n" +
-                "设置 → 辅助功能 → 无障碍 → 已安装的服务 → 选本 App\n\n" +
+                "设置 → 辅助功能 → 无障碍 → 已下载的应用 → 选本 App\n\n" +
                 "三星（One UI）\n" +
                 "设置 → 辅助功能 → 已安装的应用程序 → 选本 App",
             style = MaterialTheme.typography.bodySmall
