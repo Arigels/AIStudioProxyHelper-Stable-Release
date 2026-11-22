@@ -82,6 +82,14 @@ class AgentEngine {
         return if (config.useLocalProxy) chatLocalGemini(config, history) else chatOpenAi(config, history)
     }
 
+    /** 简单连通性测试：发一句最短请求，返回模型的原话。 */
+    fun ping(config: AgentConfig): String {
+        val history = listOf("user" to "只回复两个字：正常")
+        val reply = chat(config, history).trim()
+        if (reply.isEmpty()) throw IllegalStateException("接口返回内容为空")
+        return reply.take(80)
+    }
+
     private fun chatOpenAi(config: AgentConfig, history: List<Pair<String, String>>): String {
         val base = config.baseUrl.trim().trimEnd('/')
         if (base.isBlank() || config.apiKey.isBlank()) {

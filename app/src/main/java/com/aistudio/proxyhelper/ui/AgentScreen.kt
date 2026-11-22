@@ -2,6 +2,7 @@ package com.aistudio.proxyhelper.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,6 +51,7 @@ import com.aistudio.proxyhelper.agent.AgentLine
 fun AgentScreen(
     uiState: MainUiState,
     onSaveConfig: (String, String, String, Boolean, String) -> Unit,
+    onTest: () -> Unit,
     onRun: (String) -> Unit
 ) {
     var problem by remember { mutableStateOf("") }
@@ -119,6 +122,46 @@ fun AgentScreen(
                 AnimatedVisibility(visible = showConfig) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = !useLocal && baseUrl.contains("deepseek"),
+                                onClick = {
+                                    useLocal = false
+                                    baseUrl = "https://api.deepseek.com"
+                                    model = "deepseek-chat"
+                                },
+                                label = { Text("DeepSeek") }
+                            )
+                            FilterChip(
+                                selected = !useLocal && baseUrl.contains("openai.com"),
+                                onClick = {
+                                    useLocal = false
+                                    baseUrl = "https://api.openai.com/v1"
+                                    model = "gpt-4o-mini"
+                                },
+                                label = { Text("OpenAI") }
+                            )
+                            FilterChip(
+                                selected = !useLocal && baseUrl.contains("googleapis"),
+                                onClick = {
+                                    useLocal = false
+                                    baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai"
+                                    model = "gemini-2.0-flash"
+                                },
+                                label = { Text("Gemini Key") }
+                            )
+                            FilterChip(
+                                selected = useLocal,
+                                onClick = { useLocal = true },
+                                label = { Text("本机反代") }
+                            )
+                        }
+
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -173,7 +216,7 @@ fun AgentScreen(
                             )
                         }
 
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 onSaveConfig(
                                     baseUrl.trim(),
@@ -182,12 +225,39 @@ fun AgentScreen(
                                     useLocal,
                                     localModel.trim()
                                 )
-                                showConfig = false
+                                onTest()
                             },
+                            enabled = !uiState.agentTesting,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("保存接口配置")
+                            if (uiState.agentTesting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("正在测试连接…")
+                            } else {
+                                Text("保存并测试连接")
+                            }
+                        }
+                        uiState.agentTestResult?.let { result ->
+                            Surface(
+                                color = if (result.startsWith("连接失败")) {
+                                    MaterialTheme.colorScheme.errorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (result.startsWith("连接失败")) result else "连接成功，模型回复：$result",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
                         }
                         Text(
                             text = "说明：外部 Key 只存本机、直接发往你填的接口；本机模式不会发出任何外部请求。",

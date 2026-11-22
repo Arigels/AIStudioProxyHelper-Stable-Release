@@ -192,6 +192,7 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 3 -> AgentScreen(
                     uiState = uiState,
                     onSaveConfig = viewModel::saveAgentConfig,
+                    onTest = viewModel::testAgentConnection,
                     onRun = viewModel::runAgent
                 )
             }

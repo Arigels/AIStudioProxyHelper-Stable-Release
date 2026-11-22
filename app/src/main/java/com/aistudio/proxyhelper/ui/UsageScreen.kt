@@ -34,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,7 +58,6 @@ fun UsageScreen(
 ) {
     val settings = uiState.settings
     val localUrl = settings.localBaseUrl
-    val lanUrl = settings.lanBaseUrl(uiState.environment.lanIpAddress)
     val models = uiState.service.models
 
     Column(
@@ -95,10 +95,7 @@ fun UsageScreen(
                     color = MaterialTheme.colorScheme.error
                 )
 
-                CopyableField("本机地址（手机上的客户端用）", localUrl, onCopyText)
-                if (lanUrl != null) {
-                    CopyableField("局域网地址（电脑上的酒馆连手机）", lanUrl, onCopyText)
-                }
+                CopyableField("代理地址（手机上的客户端用）", localUrl, onCopyText)
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 Text(

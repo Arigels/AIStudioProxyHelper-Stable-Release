@@ -782,7 +782,6 @@ private fun ServiceStatusCard(
 ) {
     val service = uiState.service
     val settings = uiState.settings
-    val lanUrl = settings.lanBaseUrl(uiState.environment.lanIpAddress)
 
     val containerColor = if (service.online) {
         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
@@ -861,13 +860,6 @@ private fun ServiceStatusCard(
                 url = settings.localBaseUrl,
                 onCopy = { onCopyText("本机地址", settings.localBaseUrl) }
             )
-            if (lanUrl != null) {
-                AddressCopyRow(
-                    label = "局域网地址",
-                    url = lanUrl,
-                    onCopy = { onCopyText("局域网地址", lanUrl) }
-                )
-            }
 
             if (service.online) {
                 FilledTonalButton(

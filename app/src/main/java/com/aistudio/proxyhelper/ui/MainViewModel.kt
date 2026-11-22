@@ -47,6 +47,8 @@ data class MainUiState(
     val agentLocalModel: String = "",
     val agentLocalKey: String = "",
     val agentRunning: Boolean = false,
+    val agentTesting: Boolean = false,
+    val agentTestResult: String? = null,
     val agentLines: List<AgentLine> = emptyList(),
     val agentAnswer: String? = null,
     val importingCookie: Boolean = false,
@@ -444,6 +446,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(agentRunning = false, agentAnswer = "运行失败：${e.message}")
                 }
+            }
+        }
+    }
+
+    fun testAgentConnection() {
+        val state = _uiState.value
+        viewModelScope.launch {
+            _uiState.update { it.copy(agentTesting = true, agentTestResult = null) }
+            val engine = AgentEngine()
+            val config = AgentConfig(
+                baseUrl = state.agentBaseUrl,
+                apiKey = state.agentApiKey,
+                model = state.agentModel,
+                useLocalProxy = state.agentUseLocal,
+                localBaseUrl = state.settings.localBaseUrl,
+                localModel = state.agentLocalModel.ifBlank { "gemini-3.7-flash" },
+                localApiKey = state.agentLocalKey.ifBlank { "aistudio-api" }
+            )
+            val result = withContext(Dispatchers.IO) {
+                runCatching { engine.ping(config) }
+            }
+            _uiState.update {
+                it.copy(
+                    agentTesting = false,
+                    agentTestResult = result.getOrElse { e ->
+                        "连接失败：${e.message?.take(120) ?: "未知错误"}"
+                    }
+                )
             }
         }
     }
