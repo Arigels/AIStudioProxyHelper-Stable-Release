@@ -341,6 +341,18 @@ fun AgentScreen(
                         Text("让 AI 帮我排查", fontWeight = FontWeight.Bold)
                     }
                 }
+
+                OutlinedButton(
+                    onClick = {
+                        onRun("我还没开始搭建，请帮我从零把反代服务搭起来，并确认能否正常访问。")
+                    },
+                    enabled = !uiState.agentRunning &&
+                        (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("从零开始，让 AI 自动搭建", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
 

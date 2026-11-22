@@ -92,7 +92,8 @@ fun SetupScreen(
     onOpenConsole: () -> Unit,
     onGoToAccounts: () -> Unit,
     onGoToClients: () -> Unit,
-    onOpenGuide: () -> Unit
+    onOpenGuide: () -> Unit,
+    onAiAssist: () -> Unit
 ) {
     val context = LocalContext.current
     val env = uiState.environment
@@ -149,7 +150,8 @@ fun SetupScreen(
             onDeploy = { triggerSmartAction(TermuxAction.INSTALL_AND_START) },
             onStart = { triggerSmartAction(TermuxAction.START_SERVICE) },
             onStop = { triggerSmartAction(TermuxAction.STOP_SERVICE) },
-            onUpdate = { triggerSmartAction(TermuxAction.UPDATE_AND_REBUILD) }
+            onUpdate = { triggerSmartAction(TermuxAction.UPDATE_AND_REBUILD) },
+            onAiAssist = onAiAssist
         )
 
         // 4. 首次准备（只保留 2 步，做完自动消失）
@@ -287,7 +289,8 @@ private fun PrimaryActionCard(
     onDeploy: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onUpdate: () -> Unit
+    onUpdate: () -> Unit,
+    onAiAssist: () -> Unit
 ) {
     val service = uiState.service
     val deployed = uiState.hasDeployed
@@ -470,6 +473,13 @@ private fun PrimaryActionCard(
                         modifier = Modifier.align(Alignment.End)
                     ) {
                         Text("运行异常？重新安装 / 修复")
+                    }
+                } else {
+                    TextButton(
+                        onClick = onAiAssist,
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("不会弄？让 AI 从零帮我搭建")
                     }
                 }
             }

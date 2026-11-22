@@ -171,7 +171,13 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     },
                     onGoToAccounts = { selectedTab = 1 },
                     onGoToClients = { selectedTab = 2 },
-                    onOpenGuide = { selectedTab = 2 }
+                    onOpenGuide = { selectedTab = 2 },
+                    onAiAssist = {
+                        selectedTab = 3
+                        viewModel.runAgent(
+                            "我还没开始搭建，请帮我从零把反代服务搭起来，并确认能否正常访问。"
+                        )
+                    }
                 )
 
                 1 -> AccountsScreen(

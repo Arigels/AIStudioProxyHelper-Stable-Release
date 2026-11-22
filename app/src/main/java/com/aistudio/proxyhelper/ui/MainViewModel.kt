@@ -526,6 +526,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     "已触发停止：${describeResult(r)}"
                 }
+                "wait" -> {
+                    val secs = args.trim().toIntOrNull()?.coerceIn(1, 120) ?: 30
+                    delay(secs * 1000L)
+                    "已等待 $secs 秒"
+                }
                 "set_port" -> {
                     val p = args.trim().toIntOrNull()
                     when {
