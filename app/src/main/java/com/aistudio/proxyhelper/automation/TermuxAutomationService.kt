@@ -261,14 +261,9 @@ class TermuxAutomationService : AccessibilityService() {
     }
 
     private suspend fun pressKeyboardEnter(terminalBounds: Rect): Boolean {
-        // 策略 1：对焦点输入框直接触发 IME 回车动作（部分输入法/系统支持）
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            if (focused != null) {
-                runCatching { focused.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER) }
-                delay(350L)
-            }
-        }
+        // 策略 1：对焦点输入框直接触发 IME 回车动作（API 30+，用反射兼容不同 SDK 版本）
+        tryTriggerImeEnter()
+        delay(350L)
 
         var imeWindow = findImeWindow()
         if (imeWindow == null) {
@@ -324,6 +319,24 @@ class TermuxAutomationService : AccessibilityService() {
     private fun findImeWindow(): AccessibilityWindowInfo? {
         return windows.orEmpty().firstOrNull { w ->
             w.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+        }
+    }
+
+    /**
+     * 尝试调用 AccessibilityAction.ACTION_IME_ENTER（API 30+）。
+     * 该常量不在所有 SDK 版本里暴露，用反射避免编译期依赖。
+     */
+    private fun tryTriggerImeEnter() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val focused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return
+        val action = try {
+            val cls = Class.forName("android.view.accessibility.AccessibilityNodeInfo\$AccessibilityAction")
+            cls.getField("ACTION_IME_ENTER").get(null) as? AccessibilityNodeInfo.AccessibilityAction
+        } catch (_: Throwable) {
+            null
+        }
+        if (action != null) {
+            runCatching { focused.performAction(action) }
         }
     }
 
