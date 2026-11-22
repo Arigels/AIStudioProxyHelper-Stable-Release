@@ -31,15 +31,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aistudio.proxyhelper.data.ErrorExplainer
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -218,6 +224,9 @@ fun UsageScreen(
             }
         }
 
+        // ── 报错翻译器 ──
+        ErrorCheckerCard()
+
         // ── 常见问题 ──
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
@@ -269,6 +278,87 @@ fun UsageScreen(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun ErrorCheckerCard() {
+    var input by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<ErrorExplainer.Explanation>>(emptyList()) }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "看不懂报错？粘贴进来翻译",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = "把 Termux 里红色的报错复制粘贴到下面，点「帮我看看」，用大白话告诉你哪儿错了、怎么修。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                label = { Text("粘贴报错信息") },
+                placeholder = { Text("例如：error while attempting to bind on address ...") },
+                minLines = 3,
+                maxLines = 6,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = { results = ErrorExplainer.explain(input) },
+                enabled = input.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("帮我看看")
+            }
+            results.forEach { exp ->
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = exp.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "原因：${exp.cause}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "怎么修：${exp.fix}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

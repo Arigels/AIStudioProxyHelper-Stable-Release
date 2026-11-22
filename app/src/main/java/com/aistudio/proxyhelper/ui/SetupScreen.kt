@@ -619,6 +619,15 @@ private fun AdvancedSettingsCard(
                         label = { Text("端口（默认 8080，一般不用改）") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = portInput.toIntOrNull()?.let { it in 1..1023 } == true,
+                        supportingText = {
+                            val v = portInput.toIntOrNull()
+                            if (v != null && v in 1..1023) {
+                                Text("⚠️ 小于 1024 的端口需要 root，保存时会自动改成 8080")
+                            } else {
+                                Text("可用范围 1024~65535，推荐 8080")
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
@@ -645,7 +654,8 @@ private fun AdvancedSettingsCard(
                     )
                     Button(
                         onClick = {
-                            val parsedPort = portInput.toIntOrNull()?.coerceIn(1024, 65535) ?: 8080
+                            val rawPort = portInput.toIntOrNull() ?: 8080
+                            val parsedPort = if (rawPort < 1024) 8080 else rawPort.coerceAtMost(65535)
                             portInput = parsedPort.toString()
                             onSaveSettings(
                                 uiState.settings.copy(

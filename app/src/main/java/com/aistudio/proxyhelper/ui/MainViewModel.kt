@@ -100,7 +100,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveSettings(newSettings: ProxySettings) {
         val normalized = newSettings.copy(
-            port = newSettings.port.coerceIn(1024, 65535),
+            port = if (newSettings.port < 1024) 8080 else newSettings.port.coerceAtMost(65535),
             proxyUrl = newSettings.proxyUrl.trim(),
             webPassword = newSettings.webPassword.trim(),
             installDir = newSettings.installDir.trim().ifBlank { "\$HOME/aistudio-api" },

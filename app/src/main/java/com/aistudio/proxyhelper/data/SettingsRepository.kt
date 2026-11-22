@@ -9,8 +9,9 @@ class SettingsRepository(context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun load(): ProxySettings {
+        val storedPort = prefs.getInt(KEY_PORT, 8080)
         return ProxySettings(
-            port = prefs.getInt(KEY_PORT, 8080).coerceIn(1024, 65535),
+            port = if (storedPort < 1024) 8080 else storedPort.coerceAtMost(65535),
             proxyUrl = prefs.getString(KEY_PROXY_URL, "") ?: "",
             webPassword = prefs.getString(KEY_WEB_PASSWORD, "") ?: "",
             installDir = prefs.getString(KEY_INSTALL_DIR, "\$HOME/aistudio-api")
