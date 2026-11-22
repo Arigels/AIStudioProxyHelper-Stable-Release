@@ -652,7 +652,7 @@ private fun PrerequisitesCard(
             )
             if (!canDrawOverlay) {
                 FilledTonalButton(
-                    onClick = onOpenOverlaySettings,
+                    onClick = { openOverlaySettings() },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
