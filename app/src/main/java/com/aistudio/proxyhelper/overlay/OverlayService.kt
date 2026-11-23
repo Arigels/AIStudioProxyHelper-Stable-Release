@@ -749,11 +749,17 @@ class OverlayService : Service() {
         if (cookieMaxStage == 0 && chosen != null) cookieMaxStage = 1
         if (cookieClipLength > 0) cookieMaxStage = 4
         val stage = cookieMaxStage
+        // 回看定位：只允许停在 0..stage-1，超出即跟随最新
+        val view = if (cookieViewStage in 0 until stage) cookieViewStage else stage
+        val readonly = view < stage
+        cookieViewStage = if (readonly) view else -1
+        if (view != 1) tutorialFailHint = null
+        if (view != 2) vpnConfirmShown = false
 
         tut.setTypeface(null, Typeface.NORMAL)
         tut.background = tutorialPanelBackground()
         continueRow?.visibility = View.GONE
-        switchRow?.visibility = if (bothInstalled) View.VISIBLE else View.GONE
+        switchRow?.visibility = if (bothInstalled && !readonly) View.VISIBLE else View.GONE
         tutorialEdgeSwitch?.let {
             it.setTextColor(Color.parseColor(if (browserLabel == "Edge") "#FDE047" else "#93C5FD"))
             it.setTypeface(it.typeface, if (browserLabel == "Edge") Typeface.BOLD else Typeface.NORMAL)
@@ -763,7 +769,24 @@ class OverlayService : Service() {
             it.setTypeface(it.typeface, if (browserLabel == "火狐") Typeface.BOLD else Typeface.NORMAL)
         }
 
-        when (stage) {
+        tutorialBadge?.visibility = if (readonly) View.VISIBLE else View.GONE
+        tutorialBadge?.text = "已完成的第 ${view + 1} 步"
+        tutorialPrev?.visibility = if (view > 0) View.VISIBLE else View.GONE
+        tutorialNext?.visibility = if (view < stage) View.VISIBLE else View.GONE
+        tutorialNavRow?.visibility = if (view > 0 || view < stage) View.VISIBLE else View.GONE
+        tutorialPrev?.setOnClickListener { cookieViewStage = (view - 1).coerceAtLeast(0); render() }
+        tutorialNext?.setOnClickListener {
+            cookieViewStage = if (view + 1 >= stage) -1 else view + 1
+            render()
+        }
+        btn?.isEnabled = !readonly
+        btn?.alpha = if (readonly) 0.5f else 1f
+        altBtn?.isEnabled = !readonly
+        altBtn?.alpha = if (readonly) 0.5f else 1f
+        tutorialEdgeSwitch?.isEnabled = !readonly
+        tutorialFirefoxSwitch?.isEnabled = !readonly
+
+        when (view) {
             4 -> renderTutorialStage4(tut, btn, altBtn, continueRow)
             1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             2 -> renderTutorialStage2(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
@@ -776,6 +799,10 @@ class OverlayService : Service() {
                 btn?.text = "🌐 在 $browserLabel 打开 AI Studio"
                 altBtn?.visibility = View.GONE
             }
+        }
+        if (readonly) {
+            continueRow?.visibility = View.GONE
+            switchRow?.visibility = View.GONE
         }
     }
 
@@ -981,7 +1008,9 @@ class OverlayService : Service() {
         btn?.setOnClickListener {
             TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
         }
-        altBtn?.visibility = View.GONE
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = "已导出，去粘贴 →"
+        altBtn?.setOnClickListener { cookieMaxStage = 4; render() }
     }
 
     /** S1 推进链接：装好扩展后点这里进入下一步（S2 打开 AI Studio）。 */
