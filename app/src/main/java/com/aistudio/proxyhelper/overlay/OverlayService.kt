@@ -311,6 +311,7 @@ class OverlayService : Service() {
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, dp(4), 0, 0)
+            setOnClickListener { openApp() }
         }
         // 悬浮窗内嵌的 Cookie 教程：只在「已启动但还没导入账号」时出现，每次只显示当前一步
         val tutorial = TextView(this).apply {
@@ -699,6 +700,9 @@ class OverlayService : Service() {
             val guideVisibility = if (guideMode) View.GONE else View.VISIBLE
             aiText?.visibility = guideVisibility
             elapsedText?.visibility = guideVisibility
+            // 教程期只保留「还差 1 步」这句，正常态引导（点半自动部署…）必须隐藏，避免两张卡同屏
+            guideText?.visibility =
+                if (guideMode && !needCookie) View.GONE else View.VISIBLE
         }
 
         if (!expanded && !reportMode) {
@@ -812,7 +816,7 @@ class OverlayService : Service() {
             1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             2 -> renderTutorialStage2(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             3 -> renderTutorialStage3(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            0 -> renderTutorialStage0(tut, btn, altBtn)
+            0 -> renderTutorialStage0(tut, btn, altBtn, continueRow)
             else -> {
                 tut.text = "① 用 ${browserLabel ?: "浏览器"} 打开 aistudio.google.com 并登录"
                 tut.setTextColor(Color.parseColor("#DBEAFE"))
@@ -831,7 +835,8 @@ class OverlayService : Service() {
     private fun renderTutorialStage0(
         tut: TextView,
         btn: TextView?,
-        altBtn: TextView?
+        altBtn: TextView?,
+        continueRow: LinearLayout?
     ) {
         tut.text = "请安装一个支持扩展的浏览器（手机默认浏览器、Chrome 等不支持扩展）\n装好后点这段字重新检测"
         tut.setOnClickListener { refreshBrowserCache(); render() }
@@ -842,6 +847,23 @@ class OverlayService : Service() {
         altBtn?.visibility = View.VISIBLE
         altBtn?.text = "下载火狐（官网）"
         altBtn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_FIREFOX_ANDROID) }
+        // 手动出口：检测不到也不锁死，用户确认装好即可进 S1
+        renderTutorialStage0Exit(continueRow)
+    }
+
+    /** S0 的「我已经装好了 →」：不依赖包名检测，直接推进到装扩展这一步。 */
+    private fun renderTutorialStage0Exit(host: LinearLayout?) {
+        host ?: return
+        host.removeAllViews()
+        val link = TextView(this).apply {
+            text = "我已经装好了 →"
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            setOnClickListener { cookieMaxStage = 1; render() }
+        }
+        host.addView(link)
+        host.visibility = View.VISIBLE
     }
 
     /** S1：检测到浏览器、扩展还没装；主按钮用指定浏览器打开扩展页，次按钮复制链接。 */
@@ -864,10 +886,15 @@ class OverlayService : Service() {
         btn?.visibility = View.VISIBLE
         btn?.text = if (label == "火狐") "在 火狐 打开扩展安装页" else "在 Edge 打开扩展安装页"
         btn?.setOnClickListener {
-            val ok = TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
-            if (!ok) {
-                tutorialFailHint = label
-                render()
+            if (browserPkg.isNullOrBlank()) {
+                // 没有检测到包名时退化为系统浏览器，别让按钮变成死键
+                TermuxBridge.openUrl(this, addonUrl)
+            } else {
+                val ok = TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
+                if (!ok) {
+                    tutorialFailHint = label
+                    render()
+                }
             }
         }
         altBtn?.visibility = View.VISIBLE
@@ -900,7 +927,11 @@ class OverlayService : Service() {
             btn?.visibility = View.VISIBLE
             btn?.text = "已开，继续"
             btn?.setOnClickListener {
-                TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+                if (browserPkg.isNullOrBlank()) {
+                    TermuxBridge.openUrl(this, TermuxBridge.URL_AISTUDIO)
+                } else {
+                    TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+                }
                 vpnConfirmShown = false
                 cookieMaxStage = 3
                 render()
@@ -1028,7 +1059,11 @@ class OverlayService : Service() {
         btn?.visibility = View.VISIBLE
         btn?.text = "🔁 再开一次 AI Studio"
         btn?.setOnClickListener {
-            TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+            if (browserPkg.isNullOrBlank()) {
+                TermuxBridge.openUrl(this, TermuxBridge.URL_AISTUDIO)
+            } else {
+                TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+            }
         }
         altBtn?.visibility = View.VISIBLE
         altBtn?.text = "已导出，去粘贴 →"
