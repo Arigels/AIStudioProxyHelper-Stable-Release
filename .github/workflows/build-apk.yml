@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.1.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.2.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.1.apk
+          path: dist/AIStudioProxyHelper-v2.6.2.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.1"
+          TAG="v2.6.2"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.1.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.2.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.1.apk \
-              --title "v2.6.1 — AI Studio 反代助手（Edge 支持与账号等级标签）" \
-              --notes "① 账号页支持 Microsoft Edge：官网下载与打开按钮，自动识别 Edge/火狐，打开扩展页与 AI Studio 时直接使用对应浏览器；② 保留 Edge / 火狐 / AI Studio 复制链接；③ 账号列表每个账号增加 Free / Pro / Ultra 彩色等级标签。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.2.apk \
+              --title "v2.6.2 — AI Studio 反代助手（部署完成高亮提醒）" \
+              --notes "Termux 部署完成、服务上线但还没导入账号时，悬浮窗标题变为「部署完成 🎉」，并闪动高亮提醒：打开 App →「账号」页导出并粘贴 Cookie，之后即可使用 AI Studio 反代。"
           fi

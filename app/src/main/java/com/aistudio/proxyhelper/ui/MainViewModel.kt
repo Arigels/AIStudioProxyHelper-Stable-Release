@@ -187,7 +187,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = _uiState.value
         val guidance = when {
             status.online && status.accounts.isEmpty() ->
-                "服务已启动，下一步：去「账号」页导入 Cookie"
+                "服务已启动！下一步：去「账号」页导出并粘贴 Cookie，之后就能用 AI Studio 反代"
             status.online && state.lastTestResult?.first != true ->
                 "下一步：在「反代」页拉取模型列表，并复制地址填进酒馆"
             status.online -> "一切就绪，可以连酒馆开玩了"
@@ -199,7 +199,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.deploying -> "正在${phase.label}，编译阶段没输出是正常的，请耐心等"
             !env.termuxInstalled -> "还没安装 Termux，去 F-Droid 下载"
             !env.accessibilityEnabled -> "建议开启自动操控权限，可全自动搭建"
-            else -> "点「一键搭建并启动」开始"
+            else -> "点「一键部署反代」开始"
         }
 
         _uiState.update {
@@ -211,6 +211,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         OverlayState.update(
             OverlaySnapshot(
                 online = status.online,
+                accountsReady = status.accounts.isNotEmpty(),
                 port = state.settings.port,
                 stage = phase.label,
                 error = phase.error,

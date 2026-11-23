@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 /** 悬浮窗展示的快照，由 App 主界面轮询时写入。 */
 data class OverlaySnapshot(
     val online: Boolean = false,
+    val accountsReady: Boolean = false,
     val port: Int = 8080,
     val stage: String = "准备中",
     val error: String? = null,
@@ -88,9 +89,13 @@ class OverlayService : Service() {
     private var running = true
     private var expanded = false
 
+    /** 部署完成待导入 Cookie 时，引导文字闪烁高亮用 */
+    private var highlightPulse = false
+
     private val ticker = object : Runnable {
         override fun run() {
             if (!running) return
+            highlightPulse = !highlightPulse
             render()
             handler.postDelayed(this, 1500L)
         }
@@ -177,7 +182,6 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, dp(4), 0, 0)
         }
-
         val details = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -343,8 +347,12 @@ class OverlayService : Service() {
             0L
         }
 
+        // 部署完成但还没导入账号：进入「高亮提醒去获取 Cookie」模式
+        val needCookie = snapshot.online && !snapshot.accountsReady
+
         val color = when {
             snapshot.error != null -> "#EF4444"
+            needCookie -> "#22C55E"
             snapshot.online -> "#22C55E"
             OverlayState.deployStartedAt > 0L -> "#F59E0B"
             else -> "#94A3B8"
@@ -353,6 +361,7 @@ class OverlayService : Service() {
 
         titleText?.text = when {
             snapshot.error != null -> "反代助手 · 出错了"
+            needCookie -> "反代助手 · 部署完成 🎉"
             snapshot.online -> "反代助手 · 运行中 :${snapshot.port}"
             OverlayState.deployStartedAt > 0L -> "反代助手 · 搭建中"
             else -> "反代助手"
@@ -360,21 +369,52 @@ class OverlayService : Service() {
 
         stageText?.text = when {
             snapshot.error != null -> "阶段：失败（${snapshot.error}）"
+            needCookie -> "阶段：服务已启动，还差导入 Cookie"
             snapshot.online -> "阶段：服务已启动"
             else -> "阶段：${snapshot.stage}"
         }
 
-        guideText?.text = "👉 ${snapshot.guidance}"
+        if (needCookie) {
+            // 闪动高亮：文字颜色与底色在两种状态间切换，确保一眼看到
+            guideText?.text =
+                "👉 下一步：打开 App →「账号」页 → 用浏览器导出 Cookie 粘贴导入，之后就能在酒馆用 AI Studio 反代"
+            guideText?.setTextColor(
+                Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC")
+            )
+            guideText?.setTextSize(
+                TypedValue.COMPLEX_UNIT_SP,
+                if (highlightPulse) 13f else 12.5f
+            )
+            guideText?.setTypeface(guideText?.typeface, Typeface.BOLD)
+            guideText?.setPadding(dp(8), dp(6), dp(8), dp(6))
+            guideText?.background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
+                setStroke(dp(1), Color.parseColor("#66FDE047"))
+            }
+        } else {
+            guideText?.text = "👉 ${snapshot.guidance}"
+            guideText?.setTextColor(Color.parseColor("#93C5FD"))
+            guideText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            guideText?.setTypeface(null, Typeface.NORMAL)
+            guideText?.setPadding(0, dp(4), 0, 0)
+            guideText?.background = null
+        }
 
         if (!reportMode) {
             aiText?.text = snapshot.aiHint?.let { "AI：$it" }
-                ?: "AI：还没有结论，点「🩺 报错」让我自动分析"
+                ?: if (needCookie) {
+                    "AI：部署已成功。建议现在去「账号」页导入 Cookie，模型列表才能刷出来。"
+                } else {
+                    "AI：还没有结论，点「🩺 报错」让我自动分析"
+                }
         }
 
-        elapsedText?.text = if (OverlayState.deployStartedAt > 0L) {
-            "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
-        } else {
-            "拖动可移动 · 点「🩺 报错」自动分析后台错误"
+        elapsedText?.text = when {
+            needCookie -> "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
+            OverlayState.deployStartedAt > 0L ->
+                "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
+            else -> "拖动可移动 · 点「🩺 报错」自动分析后台错误"
         }
 
         if (!expanded && !reportMode) {
