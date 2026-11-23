@@ -60,6 +60,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +78,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.data.AccountSummary
+import com.aistudio.proxyhelper.data.CookiePreflight
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.data.ModelDailyQuotaDetail
 import com.aistudio.proxyhelper.data.QuotaPolicyResolver
@@ -118,13 +120,36 @@ fun AccountsScreen(
     onDetectAccount: (String) -> Unit,
     onForceNextAccount: () -> Unit,
     onDeleteAccount: (String) -> Unit,
-    onShowMessage: (String) -> Unit
+    onShowMessage: (String) -> Unit,
+    /** 悬浮窗第 5 步请求「打开账号页并在前台读一次剪贴板」；每 +1 触发一次 */
+    autoPasteSignal: Int = 0,
+    onAutoPasteHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var cookieText by rememberSaveable { mutableStateOf("") }
     var showPasteLimitTips by rememberSaveable { mutableStateOf(false) }
     var pendingDeleteAccount by remember { mutableStateOf<AccountSummary?>(null) }
+    // App 在前台读剪贴板比悬浮窗后台读可靠：悬浮窗第 5 步会带这个信号跳进来
+    LaunchedEffect(autoPasteSignal) {
+        if (autoPasteSignal <= 0) return@LaunchedEffect
+        val clip = TermuxBridge.readFromClipboard(context)
+        if (clip.isBlank()) {
+            onShowMessage("剪贴板是空的。请在浏览器里用 Cookie-Editor 点 Export → Export as JSON 后再回来")
+        } else {
+            cookieText = clip
+            val preflight = CookiePreflight.inspect(clip)
+            onShowMessage(
+                if (preflight.ok) {
+                    "已从剪贴板读取（${clip.length} 字符，${preflight.cookieCount} 条 Cookie），点下方按钮导入"
+                } else {
+                    preflight.errorChecklist?.lineSequence()?.firstOrNull()
+                        ?: "这份内容不像 AI Studio 登录 Cookie"
+                }
+            )
+        }
+        onAutoPasteHandled()
+    }
 
     val policy = uiState.service.quotaPolicy ?: remember { QuotaPolicyResolver.builtInDefaultPolicy() }
     val hasAccounts = uiState.service.accounts.isNotEmpty()
@@ -376,7 +401,7 @@ fun AccountsScreen(
                     ) {
                         Row(
                             modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
                             Icon(
                                 imageVector = if (res.success) {
@@ -392,7 +417,8 @@ fun AccountsScreen(
                             Text(
                                 text = res.message,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (res.success) Color(0xFF14532D) else MaterialTheme.colorScheme.onErrorContainer
+                                color = if (res.success) Color(0xFF14532D) else MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
@@ -1668,7 +1694,17 @@ private fun CookieGuideCard(
                                 .putInt("guide_stage_max", 0)
                                 .putBoolean("guide_ext_installed", false)
                                 .putBoolean("guide_migrated", true)
+                                // 已按证据迁移过，重置时直接标记 schema，避免又被旧值搬回去
+                                .putInt("guide_schema", 2)
                                 .putBoolean("cookie_done", false)
+                                .putBoolean("paste_step_confirmed", false)
+                                // 掉线统计一并清零，免得重置完立刻弹「频繁掉线」
+                                .remove("drop_window_start")
+                                .remove("drop_count")
+                                .remove("offline_window_start")
+                                .remove("offline_total_ms")
+                                .remove("drop_tip_shown_at")
+                                .remove("drop_tip_ack_at")
                                 .apply()
                             onShowMessage("已重置教程：悬浮窗会从第一步重新带你走")
                         }
@@ -1920,7 +1956,12 @@ private fun CookieGuideCard(
                             }
                         } else {
                             OutlinedButton(
-                                onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_AISTUDIO) },
+                                onClick = {
+                                    val ok = TermuxBridge.openUrl(context, TermuxBridge.URL_AISTUDIO)
+                                    if (!ok) {
+                                        onShowMessage("未能打开浏览器，请用下方「复制链接」手动粘贴")
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
@@ -1936,14 +1977,14 @@ private fun CookieGuideCard(
                                     "AI Studio 链接",
                                     TermuxBridge.URL_AISTUDIO
                                 )
-                                onShowMessage("AI Studio 链接已复制，去浏览器地址栏粘贴打开")
+                                onShowMessage("AI Studio 链接已复制（注意：这会覆盖剪贴板里已导出的 Cookie）")
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("复制 AI Studio 链接", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("复制 AI Studio 链接（会覆盖剪贴板）", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
 

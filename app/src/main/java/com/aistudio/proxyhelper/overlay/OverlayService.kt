@@ -27,6 +27,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aistudio.proxyhelper.MainActivity
@@ -66,9 +67,21 @@ object OverlayState {
     @Volatile
     var snapshot: OverlaySnapshot = OverlaySnapshot()
 
+    /** 最近一次收到 App 状态快照的时刻（0 = 本进程还从未收到过） */
+    @Volatile
+    var lastStatusAt: Long = 0L
+
+    /** App 主界面心跳是 6 秒一次；超过 20 秒没收到就不能再断言「反代断线」 */
+    private const val STATUS_TIMEOUT_MS = 20_000L
+
     fun update(snapshot: OverlaySnapshot) {
         this.snapshot = snapshot
+        lastStatusAt = System.currentTimeMillis()
     }
+
+    /** 状态是否已失联（App 进程被杀 / 主界面长时间没轮询到） */
+    fun statusStale(now: Long = System.currentTimeMillis()): Boolean =
+        lastStatusAt == 0L || now - lastStatusAt > STATUS_TIMEOUT_MS
 }
 
 /**
@@ -126,11 +139,22 @@ class OverlayService : Service() {
     /** S1 主按钮打开失败时的红色提示行 */
     private var tutorialFailHint: String? = null
 
-    /** S2 是否已弹出 VPN 确认卡 */
-    private var vpnConfirmShown = false
-
     /** 部署步是否已弹出 VPN 确认卡 */
     private var deployVpnConfirmShown = false
+
+    /** S3 点「复制 AI Studio 链接」前的覆盖确认：避免把剪贴板里的 Cookie JSON 冲成网址 */
+    private var linkCopyConfirmShown = false
+
+    /** S3 打开浏览器失败时的红字提示（成功时清空） */
+    private var studioOpenError: String? = null
+
+    /** S3 成功打开浏览器的时刻；60 秒内在卡里回显「已打开，去登录导出」 */
+    private var studioOpenedAt = 0L
+
+    /** S4→S5 的证据闸门：用户本次明确点过「已导出，去粘贴」才允许停在粘贴步 */
+    private var pasteStepConfirmed: Boolean
+        get() = guidePrefs.getBoolean("paste_step_confirmed", false)
+        set(value) = guidePrefs.edit().putBoolean("paste_step_confirmed", value).apply()
 
     /** 刚点过「开始部署」的时刻：Activity 启动前 20 秒内按部署中显示，避免卡片闪回 */
     private var deployTapAt = 0L
@@ -147,6 +171,9 @@ class OverlayService : Service() {
 
     /** online 变 false 的时刻；恢复 true 立即清零。心跳 6 秒，阈值取 15 秒≈丢两次以上 */
     private var offlineSince: Long = 0L
+
+    /** 本次服务运行期间是否已经收到过「在线」状态；用于排除服务刚拉起时那次假掉线 */
+    private var sawOnlineThisRun = false
 
     /** 服务重建时刻：头 3 秒不判抢占，等第一次心跳结果 */
     private val rebuiltAt: Long = System.currentTimeMillis()
@@ -170,38 +197,74 @@ class OverlayService : Service() {
 
     /**
      * 五步引导到达的最远步骤：0 部署、1 浏览器、2 扩展、3 Cookie、4 粘贴、5 完成。
-     * 与原 cookie_max_stage 并存，迁移一次后新逻辑只读写这个键。
+     * 常规写入只增不减（防止来回跳）；需要回退时走 forceGuideStage()。
      */
     private var guideStageMax: Int
         get() = guidePrefs.getInt("guide_stage_max", 0)
-        set(value) = guidePrefs.edit()
-            .putInt("guide_stage_max", maxOf(guidePrefs.getInt("guide_stage_max", 0), value))
-            .apply()
+        set(value) {
+            val old = guidePrefs.getInt("guide_stage_max", 0)
+            if (value > old) guidePrefs.edit().putInt("guide_stage_max", value).apply()
+        }
+
+    /** 直接覆盖步骤（迁移 / 回退 / 证据闸门用）。常规 setter 只增不减，不能用来回退。 */
+    private fun forceGuideStage(stage: Int) {
+        val target = stage.coerceIn(0, 5)
+        if (guidePrefs.getInt("guide_stage_max", 0) == target) return
+        guidePrefs.edit().putInt("guide_stage_max", target).apply()
+    }
 
     /** 扩展已确认安装（安卓读不到浏览器扩展列表，只能手动确认或剪贴板反推） */
     private var guideExtInstalled: Boolean
         get() = guidePrefs.getBoolean("guide_ext_installed", false)
         set(value) = guidePrefs.edit().putBoolean("guide_ext_installed", value).apply()
 
-    /** 老用户从 cookie_max_stage(0–4) 映射到五步状态机；只迁移一次 */
+    /**
+     * 引导状态迁移到 guide_schema = 2。
+     *
+     * 2.6.16 的一次性迁移把旧 cookie_max_stage 原样搬成新步骤（4 -> 4），
+     * 老用户升级后直接落在「粘贴」步，跳过了部署 / 浏览器 / 扩展，而且从没真正导出过 Cookie。
+     * 这里按「证据」重算：
+     *   cookie_done = true  -> 5
+     *   旧 0                -> 0
+     *   旧 1                -> 2（浏览器装过了）
+     *   旧 2 / 3            -> 3（扩展装过了）
+     *   旧 4 / 5            -> 3（回 Cookie 步，等真实剪贴板命中或手动确认才进 4）
+     * 另外：从没部署成功过的用户不进 Cookie 步，先回第 1 步部署。
+     * 注意 2.6.16 已写入 guide_migrated=true，所以这里判的是 guide_schema，不是 guide_migrated。
+     */
     private fun migrateGuidePrefs() {
-        if (guidePrefs.getBoolean("guide_migrated", false)) return
+        if (guidePrefs.getInt("guide_schema", 1) >= GUIDE_SCHEMA) return
         val hasOld = guidePrefs.contains("cookie_max_stage")
         val old = guidePrefs.getInt("cookie_max_stage", 0)
-        val mapped = when (old) {
-            0 -> 0
-            1 -> 2
-            2 -> 3
-            3 -> 3
-            4 -> 4
-            else -> 0
-        }
+        val current = guidePrefs.getInt("guide_stage_max", 0)
         val done = guidePrefs.getBoolean("cookie_done", false)
+        // 2.6.16 已经把 4 写进 guide_stage_max，取两者较大值当作「旧进度」再降级
+        val legacy = maxOf(
+            if (hasOld) old else 0,
+            if (guidePrefs.getBoolean("guide_migrated", false)) current else 0
+        )
+        val everDeployed = SettingsRepository(applicationContext).hasDeployed ||
+            guidePrefs.getBoolean("proxy_ever_online", false)
+
+        var stage = when {
+            done -> 5
+            legacy <= 0 -> 0
+            legacy == 1 -> 2
+            else -> 3
+        }
+        if (!done && stage >= 2 && !everDeployed) stage = 0
+        val extInstalled = !done && hasOld && old >= 2
+
         guidePrefs.edit()
-            .putInt("guide_stage_max", if (done) 5 else if (hasOld) mapped else 0)
-            .putBoolean("guide_ext_installed", hasOld && old >= 2)
-            .putBoolean("guide_migrated", true)
+            .putInt("guide_stage_max", stage)
+            .putBoolean("guide_ext_installed", extInstalled)
+            .putBoolean("paste_step_confirmed", false)
+            .putInt("guide_schema", GUIDE_SCHEMA)
             .apply()
+        LogCollector.append(
+            "[引导] 迁移 guide_schema=$GUIDE_SCHEMA：old=$old current=$current done=$done " +
+                "everDeployed=$everDeployed -> stage=$stage"
+        )
     }
 
     /** Cookie 向导整体结束（导入成功即 true），置 true 后 A 阶段永久不再出现 */
@@ -216,14 +279,28 @@ class OverlayService : Service() {
         set(value) = guidePrefs.edit().putBoolean("proxy_ever_online", value).apply()
 
     private val clipWatcher = ClipboardManager.OnPrimaryClipChangedListener {
+        refreshClipboardState()
+        handler.post { render() }
+    }
+
+    /**
+     * 读一次剪贴板并更新 cookieClipLength。
+     * 安卓 10+ 后台读剪贴板可能直接返回空，所以这里只是「尽力而为」：
+     * 读不到就算了，主路径是第 4 步的「已经导出好了，去粘贴」和第 5 步的「打开 App 并读取剪贴板」。
+     */
+    private fun refreshClipboardState() {
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
-        cookieClipLength = if (looksLikeCookieJson(text)) text.length else 0
-        if (cookieClipLength > 0 && !cookieDone) {
+        val looksCookie = looksLikeCookieJson(text)
+        cookieClipLength = if (looksCookie) text.length else 0
+        val deployedEver = SettingsRepository(applicationContext).hasDeployed ||
+            SettingsRepository(applicationContext).deploySucceeded ||
+            proxyEverOnline
+        if (looksCookie && !cookieDone && deployedEver) {
             // 能导出 JSON 说明扩展已经装好；直接推进到粘贴步，不等用户手点
             guideExtInstalled = true
             guideStageMax = 4
+            LogCollector.append("[引导] 剪贴板命中 Cookie JSON（${text.length} 字符）")
         }
-        handler.post { render() }
     }
 
     private var tickCount = 0
@@ -278,6 +355,9 @@ class OverlayService : Service() {
             (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
                 ?.addPrimaryClipChangedListener(clipWatcher)
         }
+        // 服务重建后不会再收到「原来那次」剪贴板变化回调：先主动读一次，
+        // 避免 Cookie 已经在剪贴板里、界面却还停在导出步
+        runCatching { refreshClipboardState() }
         runCatching {
             registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
         }
@@ -655,32 +735,44 @@ class OverlayService : Service() {
             0L
         }
 
-        // 断线防抖：online 变 false 记时间戳，恢复 true 立即清零
+        val now = System.currentTimeMillis()
+        val statusStale = OverlayState.statusStale(now)
+        // 断线防抖：online 变 false 记时间戳，恢复 true 立即清零；恢复时记一次掉线事件（P1）
+        val wasOnlineBefore = sawOnlineThisRun
         if (snapshot.online) {
-            proxyEverOnline = true
+            if (!proxyEverOnline) proxyEverOnline = true
+            // 只有「先在线过、再掉线、又恢复」才算一次掉线事件；
+            // 服务刚拉起时那一次不算，否则重启几次悬浮窗就会误报频繁掉线
+            if (offlineSince > 0L && !statusStale && wasOnlineBefore) {
+                recordDropRecovery(now, now - offlineSince)
+            }
+            sawOnlineThisRun = true
             offlineSince = 0L
         } else if (offlineSince == 0L) {
-            offlineSince = System.currentTimeMillis()
+            offlineSince = now
         }
-        val now = System.currentTimeMillis()
-        val takeover = proxyEverOnline && !snapshot.online &&
+        // 状态失联（App 进程被杀 / 主界面长时间没轮询）时不能断言「反代断线」，
+        // 否则服务刚拉起、第一次状态还没回来就会误报已掉线。
+        val takeover = proxyEverOnline && !snapshot.online && !statusStale &&
             offlineSince > 0L && now - offlineSince >= offlineThresholdMs &&
             now - rebuiltAt >= rebuildGraceMs
 
         // 老用户迁移：cookie_done 未写过时，等拿到真实服务状态再判定，避免升级被教程糊脸
         if (!guidePrefs.contains("cookie_done") && snapshot.online) {
             if (snapshot.accountsReady) {
-                guideStageMax = 5
                 cookieDone = true
+                forceGuideStage(5)
             } else {
                 cookieDone = false
             }
         }
-        if (snapshot.accountsReady && !cookieDone) {
-            guideStageMax = 5
-            cookieDone = true
+        if (snapshot.accountsReady) {
+            if (!cookieDone) cookieDone = true
+            // 只在没到 5 时才写，避免每次重绘都写一遍 SharedPreferences
+            if (guideStageMax < 5) forceGuideStage(5)
+        } else if (cookieDone && guideStageMax < 5) {
+            forceGuideStage(5)
         }
-        if (cookieDone) guideStageMax = 5
 
         val cookieMode = !cookieDone
         val tavernMode = cookieDone && !tavernDone
@@ -710,6 +802,7 @@ class OverlayService : Service() {
         val offlineSec = if (offlineSince > 0L) ((now - offlineSince) / 1000L).coerceAtLeast(0L) else 0L
         stageText?.text = when {
             showTakeover -> "已掉线 ${offlineSec} 秒 · 教程进度不会清零"
+            statusStale -> "状态待同步 · 打开 App 刷新"
             snapshot.error != null -> "阶段：失败（${snapshot.error}）"
             needCookie -> "阶段：服务已启动，还差导入 Cookie"
             snapshot.online -> "阶段：服务已启动"
@@ -753,15 +846,23 @@ class OverlayService : Service() {
         if (cookieDone) {
             cookieClipLength = 0
             tutorialBrowser = null
-            vpnConfirmShown = false
             deployVpnConfirmShown = false
+            linkCopyConfirmShown = false
+            studioOpenError = null
+            studioOpenedAt = 0L
             tutorialFailHint = null
         }
         when {
             showTakeover -> {
                 renderTutorial(false)
                 renderTavernGuide(false)
-                renderTakeoverCard(true)
+                // 频繁掉线提示复用断线卡的位置，一次只出现一张卡
+                if (shouldWarnFrequentDrops(now)) {
+                    guidePrefs.edit().putLong("drop_tip_shown_at", now).apply()
+                    renderFrequentDropCard(dropCount(now))
+                } else {
+                    renderTakeoverCard(true)
+                }
             }
             cookieMode -> {
                 renderTakeoverCard(false)
@@ -823,30 +924,42 @@ class OverlayService : Service() {
         val browserLabel = chosen?.first
         val browserPkg = chosen?.second
         val bothInstalled = edge != null && firefox != null
+        val repo = SettingsRepository(applicationContext)
         val deployedEver = snapshot.hasDeployed ||
-            SettingsRepository(applicationContext).hasDeployed ||
-            guideStageMax > 0
+            repo.hasDeployed ||
+            repo.deploySucceeded ||
+            proxyEverOnline
         val deployed = snapshot.online || deployedEver
 
         // 五步：0 部署、1 浏览器、2 扩展、3 Cookie、4 粘贴；没部署过就永远停在第 1 步
         val computed = when {
             cookieDone || snapshot.accountsReady -> 5
-            cookieClipLength > 0 -> 4
             !deployed -> 0
+            cookieClipLength > 0 -> 4
             chosen != null && guideExtInstalled -> 3
             chosen != null -> 2
             else -> 1
         }
-        // 浏览器被卸载：回到重新安装那一步，不能卡在扩展/ Cookie 卡
-        if (chosen == null && guideStageMax >= 2) guideStageMax = 1
+        // 未部署过：强制停在部署步（第 0 步），不能直接跳到浏览器/扩展/Cookie/粘贴
+        if (!deployed && guideStageMax > 0) forceGuideStage(0)
+        // 浏览器被卸载：回到重新安装那一步，不能卡在扩展 / Cookie 卡（回退必须走 force）
+        if (deployed && chosen == null && guideStageMax >= 2) forceGuideStage(1)
         if (computed > guideStageMax) guideStageMax = computed
+        // 证据闸门：停在「粘贴」步必须有证据（剪贴板命中 JSON，或用户本次明确点过「已导出，去粘贴」），
+        // 否则退回 Cookie 步——这正是升级后直接落在粘贴步的根因
+        if (!cookieDone && guideStageMax >= 4 && cookieClipLength <= 0 && !pasteStepConfirmed) {
+            forceGuideStage(3)
+        }
         val stage = guideStageMax
         // 回看定位：只允许停在 0..stage-1，超出即跟随最新
         val view = if (cookieViewStage in 0 until stage) cookieViewStage else stage
         val readonly = view < stage
         cookieViewStage = if (readonly) view else -1
         if (view != 1) tutorialFailHint = null
-        if (view != 3) vpnConfirmShown = false
+        if (view != 3) {
+            linkCopyConfirmShown = false
+            studioOpenError = null
+        }
         if (view != 0) deployVpnConfirmShown = false
 
         tut.setTypeface(null, Typeface.NORMAL)
@@ -941,6 +1054,106 @@ class OverlayService : Service() {
         tutorialNavRow?.visibility = View.GONE
         tutorialContinueRow?.visibility = View.GONE
         tutorialSwitchRow?.visibility = View.GONE
+    }
+
+    /** 频繁掉线提示：复用断线卡的位置，不新增第二张卡。 */
+    private fun renderFrequentDropCard(count: Int) {
+        val tut = tutorialText ?: return
+        val btn = tutorialButton
+        val altBtn = tutorialAltButton
+        val minuteTotal = (offlineTotal(System.currentTimeMillis()) / 1000L).toInt()
+        val reason = if (count >= 3) "10 分钟内 $count 次" else "30 分钟内累计离线 ${minuteTotal} 秒"
+        tut.visibility = View.VISIBLE
+        tut.text = "反代在频繁掉线（$reason）\n" +
+            "安卓可能把 Termux 挂起了：\n" +
+            "把 Termux 拉成小窗 / 分屏挂在前台，\n" +
+            "并在系统设置里允许 Termux 后台运行、关闭电池优化。"
+        tut.setTextColor(Color.parseColor("#FDE68A"))
+        tut.background = tutorialPanelBackground()
+        tut.setOnClickListener(null)
+        btn?.visibility = View.VISIBLE
+        btn?.text = "打开 Termux"
+        btn?.setOnClickListener {
+            if (!TermuxBridge.openTermux(this)) {
+                Toast.makeText(this, "没能打开 Termux，请从桌面手动启动", Toast.LENGTH_LONG).show()
+            }
+        }
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = "知道了"
+        altBtn?.setOnClickListener { ackDropTip() }
+        tutorialBadge?.visibility = View.GONE
+        tutorialNavRow?.visibility = View.GONE
+        tutorialContinueRow?.visibility = View.GONE
+        tutorialSwitchRow?.visibility = View.GONE
+    }
+
+    // ── P1 频繁掉线统计 ────────────────────────────────────────────────────────
+
+    /**
+     * 记录一次「掉线 → 恢复」事件。只在恢复时刻记一次，避免同一段掉线被重复计数。
+     * 用户主动点「停止反代」造成的那一次下线不计入。
+     */
+    private fun recordDropRecovery(now: Long, offlineMs: Long) {
+        val manualStopAt = guidePrefs.getLong("manual_stop_at", 0L)
+        if (manualStopAt > 0L && now - manualStopAt < 2 * 60_000L) return
+        if (OverlayState.snapshot.deploying || OverlayState.deployStartedAt > 0L) return
+
+        var winStart = guidePrefs.getLong("drop_window_start", 0L)
+        var count = guidePrefs.getInt("drop_count", 0)
+        if (winStart <= 0L || now - winStart > DROP_WINDOW_MS) {
+            winStart = now
+            count = 0
+        }
+        var offStart = guidePrefs.getLong("offline_window_start", 0L)
+        var total = guidePrefs.getLong("offline_total_ms", 0L)
+        if (offStart <= 0L || now - offStart > OFFLINE_WINDOW_MS) {
+            offStart = now
+            total = 0L
+        }
+        guidePrefs.edit()
+            .putLong("drop_window_start", winStart)
+            .putInt("drop_count", count + 1)
+            .putLong("offline_window_start", offStart)
+            .putLong("offline_total_ms", total + offlineMs.coerceAtLeast(0L))
+            .apply()
+        LogCollector.append("[掉线] 掉线恢复第 ${count + 1} 次，本次离线 ${offlineMs / 1000} 秒")
+    }
+
+    /** 当前是否该提示「频繁掉线」（含冷却、手动停服、部署中、刚启动的排除条件）。 */
+    private fun shouldWarnFrequentDrops(now: Long): Boolean {
+        if (!proxyEverOnline) return false
+        val snapshot = OverlayState.snapshot
+        if (snapshot.deploying || OverlayState.deployStartedAt > 0L) return false
+        if (now - rebuiltAt < DROP_GRACE_MS) return false
+        val manualStopAt = guidePrefs.getLong("manual_stop_at", 0L)
+        if (manualStopAt > 0L && now - manualStopAt < DROP_GRACE_MS) return false
+        val ackAt = guidePrefs.getLong("drop_tip_ack_at", 0L)
+        if (ackAt > 0L && now - ackAt < DROP_TIP_ACK_MS) return false
+        val shownAt = guidePrefs.getLong("drop_tip_shown_at", 0L)
+        if (shownAt > 0L && now - shownAt < DROP_TIP_COOLDOWN_MS) return false
+        return dropCount(now) >= 3 || offlineTotal(now) >= OFFLINE_TOTAL_LIMIT_MS
+    }
+
+    private fun dropCount(now: Long): Int {
+        val start = guidePrefs.getLong("drop_window_start", 0L)
+        if (start <= 0L || now - start > DROP_WINDOW_MS) return 0
+        return guidePrefs.getInt("drop_count", 0)
+    }
+
+    private fun offlineTotal(now: Long): Long {
+        val start = guidePrefs.getLong("offline_window_start", 0L)
+        if (start <= 0L || now - start > OFFLINE_WINDOW_MS) return 0L
+        return guidePrefs.getLong("offline_total_ms", 0L)
+    }
+
+    /** 用户点「知道了」：7 天内不再提示，并把计数清零。 */
+    private fun ackDropTip() {
+        guidePrefs.edit()
+            .putLong("drop_tip_ack_at", System.currentTimeMillis())
+            .putInt("drop_count", 0)
+            .putLong("offline_total_ms", 0L)
+            .apply()
+        render()
     }
 
     /** 第 1 步：半自动部署。Termux 没装先装；VPN 在卡内确认；部署中显示实时阶段。 */
@@ -1042,7 +1255,11 @@ class OverlayService : Service() {
         altBtn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_FIREFOX_ANDROID) }
     }
 
-    /** 第 4 步：打开 AI Studio 登录并导出 Cookie；剪贴板命中 JSON 会自动跳到粘贴。 */
+    /**
+     * 第 4 步：打开 AI Studio 登录并导出 Cookie。
+     * 一次点击就真的去打开浏览器（VPN 只当正文提醒），失败给红字 + 自动复制链接兜底；
+     * 剪贴板命中 JSON 仍会自动推进，但手动「已经导出好了，去粘贴」才是主路径。
+     */
     private fun renderCookieStage(
         tut: TextView,
         btn: TextView?,
@@ -1053,40 +1270,84 @@ class OverlayService : Service() {
     ) {
         val label = browserLabel ?: "Edge"
         continueRow?.visibility = View.GONE
-        if (vpnConfirmShown) {
-            tut.text = "⚠️ 先确认 VPN 已开启\n需要能访问 Google，否则页面打不开"
-            tut.setTextColor(Color.parseColor("#FDE68A"))
-            btn?.visibility = View.VISIBLE
-            btn?.text = "已开，继续"
-            btn?.setOnClickListener {
-                openAiStudio(browserPkg)
-                vpnConfirmShown = false
-                render()
-            }
-            altBtn?.visibility = View.VISIBLE
-            altBtn?.text = "取消"
-            altBtn?.setOnClickListener {
-                vpnConfirmShown = false
-                render()
-            }
-            return
-        }
         val menuPath = if (label == "火狐") {
             "② 点右上「⋮」→ 扩展 → Cookie-Editor"
         } else {
             "② 点底部「≡」→ 扩展 → Cookie-Editor"
         }
-        tut.text = "① 用 $label 打开 AI Studio 并登录\n$menuPath\n③ 点 Export → 选 Export as JSON（会自动复制）"
+        tut.text = "① 用 $label 打开 AI Studio 并登录（打不开先检查 VPN）\n" +
+            "$menuPath\n" +
+            "③ 点 Export → 选 Export as JSON（会自动复制）"
         tut.setTextColor(Color.parseColor("#DBEAFE"))
+
+        // 复制链接会覆盖剪贴板里的 Cookie：覆盖前先确认一次
+        if (linkCopyConfirmShown) {
+            tut.text = "⚠️ 剪贴板里已经有疑似 Cookie 的内容。\n" +
+                "再复制「AI Studio 链接」会把它覆盖成网址，\n" +
+                "刚导出好的 Cookie 就得重新导一次。"
+            tut.setTextColor(Color.parseColor("#FDE68A"))
+            btn?.visibility = View.VISIBLE
+            btn?.text = "仍然复制链接"
+            btn?.setOnClickListener {
+                TermuxBridge.copyToClipboard(this, "AI Studio 链接", TermuxBridge.URL_AISTUDIO)
+                linkCopyConfirmShown = false
+                Toast.makeText(this, "AI Studio 链接已复制（剪贴板里的 Cookie 已被替换）", Toast.LENGTH_LONG).show()
+                render()
+            }
+            altBtn?.visibility = View.VISIBLE
+            altBtn?.text = "取消"
+            altBtn?.setOnClickListener {
+                linkCopyConfirmShown = false
+                render()
+            }
+            renderTutorialActionLink(continueRow, "已经导出好了，去粘贴 →", primary = true) {
+                pasteStepConfirmed = true
+                guideStageMax = 4
+                render()
+            }
+            return
+        }
+
+        // 打开结果直接写在卡里：成功说「已打开」，失败给红字
+        val openedRecently = studioOpenedAt > 0L && System.currentTimeMillis() - studioOpenedAt < 60_000L
+        val openError = studioOpenError
+        when {
+            openError != null -> {
+                tut.text = "⚠️ $openError\n\n${tut.text}"
+                tut.setTextColor(Color.parseColor("#FCA5A5"))
+            }
+            openedRecently -> {
+                tut.text = "✅ 已用 $label 打开 AI Studio，登录后导出 JSON\n${tut.text}"
+                tut.setTextColor(Color.parseColor("#86EFAC"))
+            }
+        }
+
         btn?.visibility = View.VISIBLE
         btn?.text = if (label == "火狐") "用 火狐 打开 AI Studio" else "用 Edge 打开 AI Studio"
-        btn?.setOnClickListener { vpnConfirmShown = true; render() }
+        btn?.setOnClickListener {
+            val ok = openAiStudio(browserPkg)
+            if (ok) {
+                studioOpenError = null
+            } else {
+                studioOpenError = "没能打开浏览器，链接已复制，请手动粘贴到地址栏"
+                Toast.makeText(this, "没能打开浏览器，链接已复制到剪贴板", Toast.LENGTH_LONG).show()
+            }
+            render()
+        }
         altBtn?.visibility = View.VISIBLE
         altBtn?.text = "复制 AI Studio 链接"
         altBtn?.setOnClickListener {
-            TermuxBridge.copyToClipboard(this, "AI Studio 链接", TermuxBridge.URL_AISTUDIO)
+            if (cookieClipLength > 0) {
+                linkCopyConfirmShown = true
+                render()
+            } else {
+                TermuxBridge.copyToClipboard(this, "AI Studio 链接", TermuxBridge.URL_AISTUDIO)
+                Toast.makeText(this, "AI Studio 链接已复制", Toast.LENGTH_SHORT).show()
+            }
         }
-        renderTutorialActionLink(continueRow, "已导出，去粘贴 →") {
+        // 手动推进是主路径，不再依赖剪贴板自动检测
+        renderTutorialActionLink(continueRow, "已经导出好了，去粘贴 →", primary = true) {
+            pasteStepConfirmed = true
             guideStageMax = 4
             render()
         }
@@ -1152,7 +1413,7 @@ class OverlayService : Service() {
         altBtn?.setOnClickListener { tavernConfirmShown = true; render() }
     }
 
-    /** 第 5 步：剪贴板命中 Cookie 后回账号页粘贴；导入成功由 accountsReady 自动完成。 */
+    /** 第 5 步：回账号页粘贴导入（App 前台读剪贴板，比悬浮窗后台读可靠）。 */
     private fun renderPasteStage(
         tut: TextView,
         btn: TextView?,
@@ -1161,12 +1422,14 @@ class OverlayService : Service() {
         browserPkg: String?
     ) {
         continueRow?.visibility = View.GONE
-        val head = if (cookieClipLength > 0) {
+        val hasClip = cookieClipLength > 0
+        val head = if (hasClip) {
             "✅ 已检测到 Cookie（${cookieClipLength} 字符）\n"
         } else {
-            "还没检测到 Cookie，先回上一步导出\n"
+            // 后台读不到剪贴板时不再说「没检测到」，避免打击真实已导出的用户
+            "如果已经导出好了，点下面按钮继续\n"
         }
-        tut.text = "${head}回 App →「账号」页 → 点「粘贴剪贴板」→ 导入\n导入成功后这个悬浮窗会自动消失"
+        tut.text = "${head}回 App →「账号」页 →「粘贴剪贴板」→ 导入\n导入成功后这个悬浮窗会自动消失"
         tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
         tut.setTypeface(null, Typeface.BOLD)
         tut.background = GradientDrawable().apply {
@@ -1175,16 +1438,11 @@ class OverlayService : Service() {
             setStroke(dp(1), Color.parseColor("#66FDE047"))
         }
         btn?.visibility = View.VISIBLE
-        btn?.text = "📲 打开 App 账号页"
-        btn?.setOnClickListener { openApp(tab = 1) }
-        if (cookieClipLength > 0) {
-            altBtn?.visibility = View.GONE
-        } else {
-            // 手动点了「已导出」但剪贴板读不到时，留一条重新导出的出口，避免卡死
-            altBtn?.visibility = View.VISIBLE
-            altBtn?.text = "重新导出 Cookie"
-            altBtn?.setOnClickListener { openAiStudio(browserPkg) }
-        }
+        btn?.text = "📲 打开 App 并读取剪贴板"
+        btn?.setOnClickListener { openApp(tab = 1, pasteFromClipboard = true) }
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = "重新导出 Cookie"
+        altBtn?.setOnClickListener { openAiStudio(browserPkg) }
     }
 
     /** 第 3 步：装 Cookie-Editor；安卓读不到扩展列表，只能「装好了」或剪贴板反推。 */
@@ -1209,14 +1467,14 @@ class OverlayService : Service() {
         btn?.visibility = View.VISIBLE
         btn?.text = if (label == "火狐") "在 火狐 打开扩展安装页" else "在 Edge 打开扩展安装页"
         btn?.setOnClickListener {
-            if (browserPkg.isNullOrBlank()) {
+            val ok = if (browserPkg.isNullOrBlank()) {
                 TermuxBridge.openUrl(this, addonUrl)
             } else {
-                val ok = TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
-                if (!ok) {
-                    tutorialFailHint = label
-                    render()
-                }
+                TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
+            }
+            if (!ok) {
+                tutorialFailHint = label
+                render()
             }
         }
         altBtn?.visibility = View.VISIBLE
@@ -1246,15 +1504,32 @@ class OverlayService : Service() {
         }
     }
 
-    /** 教程卡底部的手动推进链接（只给自动检测不到的那一步用）。 */
-    private fun renderTutorialActionLink(host: LinearLayout?, text: String, action: () -> Unit) {
+    /**
+     * 教程卡底部的手动推进链接（只给自动检测不到的那一步用）。
+     * primary = true 时做成醒目的主按钮：剪贴板在后台读不到时，这就是唯一可靠的推进路径。
+     */
+    private fun renderTutorialActionLink(
+        host: LinearLayout?,
+        text: String,
+        primary: Boolean = false,
+        action: () -> Unit
+    ) {
         host ?: return
         host.removeAllViews()
         val link = TextView(this).apply {
             this.text = text
-            setTextColor(Color.parseColor("#93C5FD"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(Color.parseColor(if (primary) "#86EFAC" else "#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (primary) 13f else 11f)
             setPadding(dp(8), dp(2), dp(8), dp(2))
+            if (primary) {
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(Color.parseColor("#1F22C55E"))
+                    setStroke(dp(1), Color.parseColor("#8622C55E"))
+                }
+            }
             setOnClickListener { action() }
         }
         host.addView(link)
@@ -1332,12 +1607,17 @@ class OverlayService : Service() {
         return t.contains("\"name\"") && t.contains("\"value\"")
     }
 
-    private fun openApp(tab: Int? = null) {
+    private fun openApp(tab: Int? = null, pasteFromClipboard: Boolean = false) {
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (tab != null) putExtra(MainActivity.EXTRA_TAB, tab)
+            if (pasteFromClipboard) putExtra(MainActivity.EXTRA_ACCOUNTS_PASTE, true)
         }
-        runCatching { startActivity(intent) }
+        val ok = runCatching { startActivity(intent) }.isSuccess
+        if (!ok) {
+            LogCollector.append("[引导] 打开 App 失败")
+            Toast.makeText(this, "打不开 App，请从桌面手动打开「反代助手」", Toast.LENGTH_LONG).show()
+        }
         handler.post { render() }
     }
 
@@ -1359,12 +1639,52 @@ class OverlayService : Service() {
         runCatching { startActivity(intent) }
     }
 
-    private fun openAiStudio(browserPkg: String?) {
-        if (browserPkg.isNullOrBlank()) {
-            TermuxBridge.openUrl(this, TermuxBridge.URL_AISTUDIO)
-        } else {
-            TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+    /**
+     * 打开 AI Studio：一次点击就要有结果。
+     * 校验包是否真的能打开 → 定向打开 → 回退默认浏览器 → 全部失败时复制链接兜底。
+     * 返回 false 表示所有打开方式都失败，调用方必须给红字 / Toast（链接此时已复制好）。
+     */
+    private fun openAiStudio(browserPkg: String?): Boolean {
+        val url = TermuxBridge.URL_AISTUDIO
+        val pkg = browserPkg?.takeIf { it.isNotBlank() }
+        if (pkg != null) {
+            val installed = isPackageInstalled(pkg)
+            val canOpen = installed && TermuxBridge.canOpenUrl(this, url, pkg)
+            LogCollector.append("[引导] 定向打开 AI Studio：pkg=$pkg installed=$installed canOpen=$canOpen")
+            if (!installed) {
+                // 包已卸载 / 被禁用：清掉缓存，回退到「装浏览器」那一步
+                if (edgePkgCache == pkg) {
+                    edgePkgCache = ""
+                    guidePrefs.edit().remove("browser_edge_pkg").apply()
+                }
+                if (firefoxPkgCache == pkg) {
+                    firefoxPkgCache = ""
+                    guidePrefs.edit().remove("browser_firefox_pkg").apply()
+                }
+                forceGuideStage(minOf(guideStageMax, 1))
+                LogCollector.append("[引导] 浏览器 $pkg 已不可用，回到「装浏览器」步")
+            } else if (canOpen && TermuxBridge.openUrlInPackage(this, url, pkg)) {
+                studioOpenedAt = System.currentTimeMillis()
+                studioOpenError = null
+                LogCollector.append("[引导] 已用 $pkg 打开 AI Studio")
+                return true
+            } else if (TermuxBridge.openUrl(this, url)) {
+                studioOpenedAt = System.currentTimeMillis()
+                studioOpenError = null
+                LogCollector.append("[引导] 定向失败，已用默认浏览器打开 AI Studio")
+                return true
+            }
+        } else if (TermuxBridge.openUrl(this, url)) {
+            studioOpenedAt = System.currentTimeMillis()
+            studioOpenError = null
+            LogCollector.append("[引导] 已用默认浏览器打开 AI Studio")
+            return true
         }
+
+        // 全部失败：至少把链接复制好，保证有兜底
+        TermuxBridge.copyToClipboard(this, "AI Studio 链接", url)
+        LogCollector.append("[引导] 打开 AI Studio 全部失败，已复制链接兜底")
+        return false
     }
 
     /** 抓日志 + 当前屏幕文本，严格按当前选中的 AI 书签（自定义 / 本地反代）单路径分析错误。 */
@@ -1525,6 +1845,19 @@ class OverlayService : Service() {
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        /** 引导状态 schema：2 = 按证据重算，不再照搬旧 cookie_max_stage=4 */
+        private const val GUIDE_SCHEMA = 2
+
+        /** P1 频繁掉线：10 分钟内 >= 3 次，或 30 分钟内累计离线 >= 90 秒 */
+        private const val DROP_WINDOW_MS = 10 * 60_000L
+        private const val OFFLINE_WINDOW_MS = 30 * 60_000L
+        private const val OFFLINE_TOTAL_LIMIT_MS = 90_000L
+        /** 同一提示 24 小时内只出现一次；用户点过「知道了」后 7 天不再提示 */
+        private const val DROP_TIP_COOLDOWN_MS = 24 * 60 * 60_000L
+        private const val DROP_TIP_ACK_MS = 7L * 24 * 60 * 60_000L
+        /** 服务刚启动 5 分钟内不统计，避免冷启动误报 */
+        private const val DROP_GRACE_MS = 5 * 60_000L
 
         fun start(context: Context) {
             if (!Settings.canDrawOverlays(context)) return

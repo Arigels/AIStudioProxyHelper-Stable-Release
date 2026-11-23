@@ -94,6 +94,9 @@ class MainActivity : ComponentActivity() {
     }
     private var requestedTab by mutableStateOf<Int?>(null)
 
+    /** 悬浮窗请求「打开账号页并读取剪贴板」的次数；每 +1 触发一次，读完由界面回调清零 */
+    private var accountsPasteRequest by mutableStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LogCollector.start()
@@ -104,7 +107,9 @@ class MainActivity : ComponentActivity() {
                 AIStudioProxyApp(
                     viewModel = appViewModel,
                     requestedTab = requestedTab,
-                    onTabHandled = { requestedTab = null }
+                    onTabHandled = { requestedTab = null },
+                    accountsPasteRequest = accountsPasteRequest,
+                    onAccountsPasteHandled = { accountsPasteRequest = 0 }
                 )
             }
         }
@@ -124,6 +129,11 @@ class MainActivity : ComponentActivity() {
             requestedTab = tab
             intent.removeExtra(EXTRA_TAB)
         }
+        if (intent.getBooleanExtra(EXTRA_ACCOUNTS_PASTE, false)) {
+            intent.removeExtra(EXTRA_ACCOUNTS_PASTE)
+            requestedTab = 1
+            accountsPasteRequest += 1
+        }
         if (intent.getBooleanExtra(EXTRA_DEPLOY_NOW, false)) {
             intent.removeExtra(EXTRA_DEPLOY_NOW)
             appViewModel.startDeployFromOverlay()
@@ -138,6 +148,9 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_TAB = "extra_tab"
         const val EXTRA_DEPLOY_NOW = "extra_deploy_now"
         const val EXTRA_START_SERVICE = "extra_start_service"
+
+        /** 悬浮窗第 5 步：打开账号页并在前台读一次剪贴板 */
+        const val EXTRA_ACCOUNTS_PASTE = "extra_accounts_paste"
     }
 }
 
@@ -151,7 +164,9 @@ private data class NavTab(
 fun AIStudioProxyApp(
     viewModel: MainViewModel = viewModel(),
     requestedTab: Int? = null,
-    onTabHandled: () -> Unit = {}
+    onTabHandled: () -> Unit = {},
+    accountsPasteRequest: Int = 0,
+    onAccountsPasteHandled: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -487,7 +502,9 @@ fun AIStudioProxyApp(
                         onDetectAccount = viewModel::detectAccountEmailAndTier,
                         onForceNextAccount = viewModel::forceNextAccount,
                         onDeleteAccount = viewModel::deleteAccount,
-                        onShowMessage = viewModel::showMessage
+                        onShowMessage = viewModel::showMessage,
+                        autoPasteSignal = accountsPasteRequest,
+                        onAutoPasteHandled = onAccountsPasteHandled
                     )
 
                     2 -> UsageScreen(
