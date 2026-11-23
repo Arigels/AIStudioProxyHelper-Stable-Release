@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -72,6 +74,7 @@ private val providers = listOf(
     Provider("自定义地址", "", "")
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AgentScreen(
     uiState: MainUiState,
@@ -82,7 +85,7 @@ fun AgentScreen(
 ) {
     var problem by remember { mutableStateOf("") }
     var mode by remember { mutableIntStateOf(0) }
-    var showConfig by remember(uiState.agentApiKey) {
+    var showConfig by remember {
         mutableStateOf(uiState.agentApiKey.isBlank() && !uiState.agentUseLocal)
     }
 
@@ -283,13 +286,6 @@ fun AgentScreen(
 
                         Button(
                             onClick = {
-                                onSaveConfig(
-                                    baseUrl.trim(),
-                                    apiKey.trim(),
-                                    model.trim(),
-                                    useLocal,
-                                    localModel.trim()
-                                )
                                 onFetchModels(
                                     baseUrl.trim(),
                                     apiKey.trim(),
@@ -331,6 +327,42 @@ fun AgentScreen(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text("保存设置")
+                        }
+
+                        if (uiState.agentModels.isNotEmpty()) {
+                            Text(
+                                text = "可用模型（${uiState.agentModels.size} 个，点一个选中）",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                maxItemsInEachRow = 2
+                            ) {
+                                uiState.agentModels.take(60).forEach { name ->
+                                    val chosen = if (useLocal) localModel else model
+                                    FilterChip(
+                                        selected = chosen == name,
+                                        onClick = {
+                                            if (useLocal) localModel = name else model = name
+                                        },
+                                        label = {
+                                            Text(
+                                                text = name,
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        } else if (!uiState.agentFetchingModels) {
+                            Text(
+                                text = "还没有模型列表，点上面「连接并拉取模型」",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }

@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.4.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.5.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.4.4.apk
+          path: dist/AIStudioProxyHelper-v2.4.5.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.4.4"
+          TAG="v2.4.5"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.4.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.5.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.4.apk \
-              --title "v2.4.4 — AI Studio 反代助手" \
-              --notes "「使用」页新增一键复制代理地址与 /v1beta 地址按钮，地址按你当前设置的端口实时生成，方便直接粘贴到酒馆。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.5.apk \
+              --title "v2.4.5 — AI Studio 反代助手" \
+              --notes "AI 配置交互修复：拉取模型后面板不再自动收起，直接列出可用模型供点选；「连接并拉取模型」只连接+拉取，「保存设置」才保存。"
           fi
