@@ -120,7 +120,6 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val prefs = remember { SettingsRepository(context) }
     var showWizard by remember { mutableStateOf(false) }
-    var showRestrictionGuide by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         if (!prefs.permissionWizardShown) {
@@ -332,26 +331,10 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     )
                 }
             },
-            onShowRestrictionGuide = { showRestrictionGuide = true },
             onOpenAppDetails = {
                 BrandGuide.openPermissionEditor(context)
             },
             onOpenRestrictionSettings = {
-                runCatching {
-                    context.startActivity(
-                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            }
-        )
-    }
-
-    if (showRestrictionGuide) {
-        AccessibilityGuideDialog(
-            onDismiss = { showRestrictionGuide = false },
-            onOpenSettings = {
-                showRestrictionGuide = false
                 runCatching {
                     context.startActivity(
                         Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)

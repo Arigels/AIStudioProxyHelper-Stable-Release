@@ -30,7 +30,6 @@ fun PermissionWizardDialog(
     onOpenOverlay: () -> Unit,
     onOpenA11y: () -> Unit,
     onOpenAppDetails: () -> Unit,
-    onShowRestrictionGuide: () -> Unit,
     onOpenRestrictionSettings: () -> Unit
 ) {
     AlertDialog(
@@ -54,8 +53,8 @@ fun PermissionWizardDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "⚠️ 本 App 可能被安卓手机限制权限。如果开关打不开、是灰的，或提示「已限制设置」，" +
-                            "请按系统提示先解除限制，再回来开启。",
+                        text = "⚠️ 本 App 可能会被安卓手机限制权限。请注意权限无法开启时的系统提示，" +
+                            "按照系统的提示步骤解除限制后，再回来开启下面的权限。",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF8A6D00),
                         fontWeight = FontWeight.SemiBold,
@@ -76,9 +75,6 @@ fun PermissionWizardDialog(
                     actionLabel = "去开启",
                     onAction = onOpenA11y
                 )
-                TextButton(onClick = onShowRestrictionGuide) {
-                    Text("开关打不开？看分品牌解除方法")
-                }
             }
         },
         confirmButton = {
