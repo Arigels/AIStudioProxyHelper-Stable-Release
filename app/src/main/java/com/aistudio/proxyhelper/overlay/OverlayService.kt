@@ -23,6 +23,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Space
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -313,7 +314,8 @@ class OverlayService : Service() {
         }
         val navRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(8), dp(6), dp(8), 0)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(8), 0)
             visibility = View.GONE
         }
         val navPrev = TextView(this).apply {
@@ -329,6 +331,7 @@ class OverlayService : Service() {
             visibility = View.GONE
         }
         navRow.addView(navPrev)
+        navRow.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
         navRow.addView(navNext)
         val tutorialBtn = TextView(this).apply {
             text = "教程加载中"
@@ -458,7 +461,9 @@ class OverlayService : Service() {
         panel.addView(switchRow)
         panel.addView(tutorialBtn)
         panel.addView(tutorialAltBtn)
-        panel.addView(navRow)
+        panel.addView(navRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(30)
+        ).apply { topMargin = dp(6) })
         panel.addView(modelTip)
         val continueRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
