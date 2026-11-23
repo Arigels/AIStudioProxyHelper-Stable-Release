@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.1.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.5.0.apk
+          path: dist/AIStudioProxyHelper-v2.5.1.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.5.0"
+          TAG="v2.5.1"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.0.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.1.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.0.apk \
-              --title "v2.5.0 — AI Studio 反代助手（三页版）" \
-              --notes "界面重排：三页「反代 / 账号 / 解疑」。启动反代与拉取模型移到反代页；AI 助手移入解疑页底部，并新增「外接模型 / 本地反代」两个书签，严格单一路径调用。悬浮窗权限状态改为自动刷新。移除解除限制引导，改为提示按系统提示解除。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.1.apk \
+              --title "v2.5.1 — AI Studio 反代助手（三页版）" \
+              --notes "三页「反代 / 账号 / 解疑」；启动反代与拉取模型只在服务成功跑起来之后才显示；AI 助手移入解疑页底部并支持「外接模型 / 本地反代」双书签；悬浮窗权限状态自动刷新；移除解除限制引导，改为提示按系统提示解除。"
           fi

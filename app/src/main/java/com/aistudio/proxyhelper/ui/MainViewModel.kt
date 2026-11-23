@@ -66,7 +66,8 @@ data class MainUiState(
     val pasteDialogCommand: String = "",
     val showVpnReminder: Boolean = false,
     val pendingDeployAction: TermuxAction? = null,
-    val canDrawOverlays: Boolean = false
+    val canDrawOverlays: Boolean = false,
+    val deploySucceeded: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -86,7 +87,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             agentUseLocal = settingsRepo.agentUseLocal,
             agentLocalModel = settingsRepo.agentLocalModel,
             agentLocalKey = settingsRepo.agentLocalKey,
-            canDrawOverlays = android.provider.Settings.canDrawOverlays(application)
+            canDrawOverlays = android.provider.Settings.canDrawOverlays(application),
+            deploySucceeded = settingsRepo.deploySucceeded
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -129,12 +131,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val status = apiClient.fetchServiceStatus(currentSettings)
             if (status.online) {
                 settingsRepo.hasDeployed = true
+                settingsRepo.deploySucceeded = true
                 OverlayState.deployStartedAt = 0L
             }
             _uiState.update {
                 it.copy(
                     service = status,
                     hasDeployed = it.hasDeployed || status.online,
+                    deploySucceeded = it.deploySucceeded || status.online,
                     deploying = if (status.online) false else it.deploying,
                     deployStartedAt = if (status.online) 0L else it.deployStartedAt
                 )
@@ -151,7 +155,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             status.online && status.accounts.isEmpty() ->
                 "服务已启动，下一步：去「账号」页导入 Cookie"
             status.online && state.lastTestResult?.first != true ->
-                "下一步：去「使用」页测试模型，把地址填进酒馆"
+                "下一步：去「解疑」页测试模型，把地址填进酒馆"
             status.online -> "一切就绪，可以连酒馆开玩了"
             phase.error != null && phase.error.contains("梯子") ->
                 "梯子可能没开或已断，检查代理后再试"

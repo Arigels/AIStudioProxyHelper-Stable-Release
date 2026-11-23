@@ -117,6 +117,13 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_PERMISSION_WIZARD, value).apply()
         }
 
+    /** 是否至少成功启动过一次服务（用于「部署完成」后才显示启动反代）。 */
+    var deploySucceeded: Boolean
+        get() = prefs.getBoolean(KEY_DEPLOY_SUCCEEDED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_DEPLOY_SUCCEEDED, value).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "aistudio_proxy_helper_prefs"
         private const val KEY_PORT = "port"
@@ -136,5 +143,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_OVERLAY_DESIRED = "overlay_desired"
         private const val KEY_OVERLAY_PROMPTED = "overlay_prompted"
         private const val KEY_PERMISSION_WIZARD = "permission_wizard"
+        private const val KEY_DEPLOY_SUCCEEDED = "deploy_succeeded"
     }
 }

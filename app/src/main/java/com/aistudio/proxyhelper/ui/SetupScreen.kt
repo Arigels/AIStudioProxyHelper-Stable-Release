@@ -150,16 +150,16 @@ fun SetupScreen(
         // 2.5 悬浮窗开关（显眼位置）
         OverlayToggleCard(canDrawOverlays = uiState.canDrawOverlays)
 
-        // 2.6 启动反代（部署成功后出现）
-        if (uiState.hasDeployed) {
+        // 2.6 启动反代（部署成功、服务跑起来过之后才出现）
+        if (uiState.deploySucceeded) {
             RestartProxyCard(
                 online = uiState.service.online,
                 onRestart = onRestartService
             )
         }
 
-        // 2.7 拉取反代模型（从使用页挪过来）
-        if (uiState.hasDeployed) {
+        // 2.7 拉取反代模型
+        if (uiState.deploySucceeded) {
             ModelPullCard(
                 uiState = uiState,
                 onTestModels = onTestModels
