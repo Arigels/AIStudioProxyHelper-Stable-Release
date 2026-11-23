@@ -49,6 +49,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aistudio.proxyhelper.data.BrandGuide
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.net.LogCollector
@@ -256,7 +257,7 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
             },
             onShowRestrictionGuide = { showRestrictionGuide = true },
             onOpenAppDetails = {
-                EnvironmentChecker.openAppDetails(context)
+                BrandGuide.openPermissionEditor(context)
             },
             onOpenRestrictionSettings = {
                 runCatching {

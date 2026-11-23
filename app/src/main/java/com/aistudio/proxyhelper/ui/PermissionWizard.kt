@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aistudio.proxyhelper.data.BrandGuide
 
 /**
  * 首次使用引导：按「解除限制 → 悬浮窗 → 无障碍」的顺序走，先讲清楚再跳系统设置。
@@ -40,30 +41,29 @@ fun PermissionWizardDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val brand = BrandGuide.current()
                 Text(
-                    text = "按顺序做完这三步，之后就能点一下自动搭建。没做完也能用，只是要多点几下。",
+                    text = "已识别你的机型：${brand.brandName}。下面是这台机器上的具体路径，按顺序做完三步即可。",
                     style = MaterialTheme.typography.bodySmall
                 )
                 WizardStep(
                     number = "①",
                     title = "先解除系统的「授权限制」",
-                    desc = "ColorOS（OPPO/一加/realme）：应用详情 → 权限管理 → 右上角「⋮」→「解除所有授权限制」。\n" +
-                        "HyperOS（小米/红米）：无障碍开关弹窗里点小字「解除限制」。\n" +
-                        "不解除的话，下面两步都会被挡住。",
-                    actionLabel = "打开应用详情去解除",
+                    desc = brand.restrictionPath + "\n（不解除的话，下面两步都会被挡住）",
+                    actionLabel = "打开权限管理去解除",
                     onAction = onOpenAppDetails
                 )
                 WizardStep(
                     number = "②",
                     title = "允许显示悬浮窗",
-                    desc = "授权后 Termux 上方会显示搭建进度和下一步提示。",
+                    desc = brand.overlayPath + "\n授权后 Termux 上方会显示搭建进度。",
                     actionLabel = "去授权",
                     onAction = onOpenOverlay
                 )
                 WizardStep(
                     number = "③",
                     title = "开启无障碍（自动操控）",
-                    desc = "开启后能自动粘贴命令并回车；开不了也不影响，App 会提示你手动粘贴一次。服务在「已下载的应用」里。",
+                    desc = brand.a11yPath + "\n开不了也不影响，App 会提示你手动粘贴一次。",
                     actionLabel = "去开启",
                     onAction = onOpenA11y
                 )

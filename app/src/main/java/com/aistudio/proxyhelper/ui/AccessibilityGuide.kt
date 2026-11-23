@@ -17,13 +17,43 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aistudio.proxyhelper.data.BrandGuide
 
 /**
  * 无障碍（自动操控）开启教程内容，供弹窗与「使用」页共用。
  */
 @Composable
 fun AccessibilityGuideBody() {
+    val brand = BrandGuide.current()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "已识别你的机型：${brand.brandName}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "① 解除限制：${brand.restrictionPath}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "② 悬浮窗：${brand.overlayPath}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    text = "③ 无障碍：${brand.a11yPath}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
         Text(
             text = "为什么要开？",
             style = MaterialTheme.typography.bodyMedium,
