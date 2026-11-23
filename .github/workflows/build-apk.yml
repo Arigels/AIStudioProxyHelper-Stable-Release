@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.4.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.5.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.3.4.apk
+          path: dist/AIStudioProxyHelper-v2.3.5.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.3.4"
+          TAG="v2.3.5"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.4.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.5.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.4.apk \
-              --title "v2.3.4 — AI Studio 反代助手" \
-              --notes "取消所有默认模型：选服务商只填接口地址，模型必须通过「连接并拉取模型」拉取后选择，避免默认模型已下线导致失败；未选模型时会明确提示。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.5.apk \
+              --title "v2.3.5 — AI Studio 反代助手" \
+              --notes "无障碍诊断增强：区分「开关已开但服务未连接」，自动操控不可用时明确提示原因并降级为手动粘贴，避免点了没反应。"
           fi

@@ -54,6 +54,9 @@ object AutomationController {
         }
     }
 
+    /** 无障碍服务是否已经真正连接（仅开关打开但进程未起时会返回 false）。 */
+    fun isServiceConnected(): Boolean = activeService != null
+
     fun openAccessibilitySettings(context: Context) {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -282,6 +282,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     result.command.contains("allow-external-apps")
                 if (markDeployed) settingsRepo.hasDeployed = true
                 if (markExternal) settingsRepo.externalAppsSetupDone = true
+                val a11yHint = if (AutomationController.isServiceEnabled(ctx) &&
+                    !AutomationController.isServiceConnected()
+                ) {
+                    "（注：无障碍开关是开的，但服务没连上——去系统设置里关掉再打开一次，或重启手机）"
+                } else {
+                    ""
+                }
                 _uiState.update {
                     it.copy(
                         lastDispatchedCommand = result.command,
@@ -293,7 +300,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             it.deployStartedAt
                         },
-                        snackbarMessage = result.reason
+                        snackbarMessage = result.reason + a11yHint
                     )
                 }
             }

@@ -170,7 +170,7 @@ object TermuxBridge {
         }
 
         // First-time / accessibility-preferred path: let our AccessibilityService handle everything
-        if (preferAccessibility && AutomationController.isServiceEnabled(context)) {
+        if (preferAccessibility && AutomationController.isServiceConnected()) {
             if (AutomationController.enqueueAndRun(context, command, action.title)) {
                 return TermuxDispatchResult.AutomatedByAccessibility(command)
             }
@@ -215,7 +215,7 @@ object TermuxBridge {
             }
             TermuxDispatchResult.SentToTermux(command)
         } catch (_: Exception) {
-            if (AutomationController.isServiceEnabled(context) &&
+            if (AutomationController.isServiceConnected() &&
                 AutomationController.enqueueAndRun(context, command, action.title)
             ) {
                 TermuxDispatchResult.AutomatedByAccessibility(command)
