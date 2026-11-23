@@ -96,6 +96,7 @@ class OverlayService : Service() {
     private var detailsBox: LinearLayout? = null
     private var aiText: TextView? = null
     private var elapsedText: TextView? = null
+    private var modelTipText: TextView? = null
 
     private var running = true
     private var expanded = false
@@ -300,6 +301,30 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, dp(4), 0, 0)
         }
+        val modelTip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), dp(4), dp(8), dp(2))
+            visibility = View.GONE
+        }
+        val tipClose = TextView(this).apply {
+            text = "✕"
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setPadding(0, 0, dp(6), 0)
+            setOnClickListener {
+                modelTipDismissed = true
+                getSharedPreferences("overlay_guide", MODE_PRIVATE)
+                    .edit().putBoolean("model_tip_dismissed", true).apply()
+                render()
+            }
+        }
+        val tipText = TextView(this).apply {
+            text = "💡 反代页可点「拉取模型列表」确认模型可用"
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+        }
+        modelTip.addView(tipClose)
+        modelTip.addView(tipText)
 
         // 操作行：报错 + 打开 App，始终可见
         val actionRow = LinearLayout(this).apply {
@@ -356,6 +381,7 @@ class OverlayService : Service() {
         panel.addView(switchRow)
         panel.addView(tutorialBtn)
         panel.addView(tutorialAltBtn)
+        panel.addView(modelTip)
         val continueRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
@@ -456,6 +482,7 @@ class OverlayService : Service() {
             detailsBox = details
             aiText = ai
             elapsedText = elapsed
+            modelTipText = modelTip
         }
     }
 
@@ -568,6 +595,13 @@ class OverlayService : Service() {
                 renderTavernGuide(false)
             }
         }
+        renderModelTip(snapshot.online && snapshot.accountsReady && tavernDone && !modelTipDismissed && !reportMode)
+    }
+
+    /** 一次性拉模型提示：✕ 可点，静默永久消失，不弹任何提示。 */
+    private fun renderModelTip(show: Boolean) {
+        val tip = modelTipText ?: return
+        tip.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     /** 悬浮窗教程：一次只显示当前一步，按检测到的浏览器给对应路径，控制在两三行内。 */
