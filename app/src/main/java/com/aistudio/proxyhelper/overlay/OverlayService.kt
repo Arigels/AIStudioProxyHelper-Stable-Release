@@ -101,11 +101,13 @@ class OverlayService : Service() {
     /** 剪贴板里已确认是 Cookie-Editor 导出的 JSON 时的字符数（读不到剪贴板时为 0） */
     private var cookieClipLength = 0
 
-    /** 最近一次剪贴板变化时间；读不到内容时用它做「有东西被复制了」的温和提示 */
-    private var clipChangedAt = 0L
+    /** 悬浮窗教程进度：0=还没在浏览器里打开，1=已在浏览器里取 Cookie，2=已复制好待导入 */
+    private var tutorialStage = 0
+
+    /** 上一阶段用的浏览器名（Edge / 火狐），用于只显示对应那套点击路径 */
+    private var tutorialBrowser: String? = null
 
     private val clipWatcher = ClipboardManager.OnPrimaryClipChangedListener {
-        clipChangedAt = System.currentTimeMillis()
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
         cookieClipLength = if (looksLikeCookieJson(text)) text.length else 0
         handler.post { render() }
@@ -214,12 +216,12 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, dp(4), 0, 0)
         }
-        // 悬浮窗内嵌的 Cookie 教程：只在「已启动但还没导入账号」时出现
+        // 悬浮窗内嵌的 Cookie 教程：只在「已启动但还没导入账号」时出现，每次只显示当前一步
         val tutorial = TextView(this).apply {
             setTextColor(Color.parseColor("#DBEAFE"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            setLineSpacing(dp(3).toFloat(), 1.2f)
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setLineSpacing(dp(2).toFloat(), 1.1f)
+            setPadding(dp(8), dp(5), dp(8), dp(5))
             visibility = View.GONE
         }
         val tutorialBtn = TextView(this).apply {
@@ -230,8 +232,15 @@ class OverlayService : Service() {
             setPadding(dp(8), dp(6), dp(8), dp(2))
             visibility = View.GONE
             setOnClickListener {
+                if (tutorialStage >= 2) {
+                    openApp()
+                    return@setOnClickListener
+                }
                 val browser = detectBrowser()
+                tutorialBrowser = browser?.first
+                tutorialStage = 1
                 TermuxBridge.openUrlInPackage(this@OverlayService, TermuxBridge.URL_AISTUDIO, browser?.second)
+                render()
             }
         }
         val details = LinearLayout(this).apply {
@@ -433,7 +442,7 @@ class OverlayService : Service() {
         if (!reportMode) {
             if (needCookie) {
                 // 闪动高亮：文字颜色与底色在两种状态间切换，确保一眼看到
-                guideText?.text = "👉 还差最后一步：照下面 4 步拿到 Cookie，复制好这里会变绿提醒"
+                guideText?.text = "👉 还差 1 步：拿 Cookie，照下面提示点就行"
                 guideText?.setTextColor(
                     Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC")
                 )
@@ -479,12 +488,13 @@ class OverlayService : Service() {
 
         if (!needCookie) {
             cookieClipLength = 0
-            clipChangedAt = 0L
+            tutorialStage = 0
+            tutorialBrowser = null
         }
         renderTutorial(needCookie && !reportMode)
     }
 
-    /** 悬浮窗里的 4 步 Cookie 教程；识别到剪贴板里的 Cookie JSON 时整块变绿提示导入。 */
+    /** 悬浮窗教程：一次只显示当前一步，按检测到的浏览器给对应路径，控制在两三行内。 */
     private fun renderTutorial(show: Boolean) {
         val tut = tutorialText ?: return
         val btn = tutorialButton
@@ -495,52 +505,54 @@ class OverlayService : Service() {
         }
         tut.visibility = View.VISIBLE
         btn?.visibility = View.VISIBLE
-        val browser = detectBrowser()
-        btn?.text = if (browser != null) "🌐 在 ${browser.first} 打开 AI Studio" else "🌐 打开 AI Studio"
 
-        if (cookieClipLength > 0) {
-            tut.text = "✅ 已识别到你复制的 Cookie（${cookieClipLength} 字符）\n" +
-                "→ 打开 App →「账号」页 → 点「粘贴剪贴板」→ 导入"
-            tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
-            tut.setTypeface(null, Typeface.BOLD)
-            tut.background = GradientDrawable().apply {
-                cornerRadius = dp(8).toFloat()
-                setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
-                setStroke(dp(1), Color.parseColor("#66FDE047"))
-            }
-            return
-        }
+        val browser = tutorialBrowser ?: detectBrowser()?.first
+        if (cookieClipLength > 0) tutorialStage = 2
 
-        val steps = when (browser?.first) {
-            "Edge" -> "① 用 Edge 打开 aistudio.google.com 并登录（多号点右上头像「添加其他账号」）\n" +
-                "② 点底部「…」→「扩展」→ 点 Cookie-Editor\n" +
-                "③ 点 Export → 选 Export as JSON（会自动复制）\n" +
-                "④ 复制好后这里会变绿 → 打开 App「账号」页点「粘贴剪贴板」"
-            "火狐" -> "① 用火狐打开 aistudio.google.com 并登录（多号点右上头像「添加其他账号」）\n" +
-                "② 点右上「⋮」→「扩展」→ 点 Cookie-Editor\n" +
-                "③ 点 Export → 选 Export as JSON（会自动复制）\n" +
-                "④ 复制好后这里会变绿 → 打开 App「账号」页点「粘贴剪贴板」"
-            else -> "① 用 Edge 或火狐打开 aistudio.google.com 并登录\n" +
-                "② 打开「扩展」→ 点 Cookie-Editor（Edge 底部「…」→「扩展」；火狐 右上「⋮」→「扩展」）\n" +
-                "③ 点 Export → 选 Export as JSON（会自动复制）\n" +
-                "④ 复制好后这里会变绿 → 打开 App「账号」页点「粘贴剪贴板」"
-        }
-
-        // 部分系统不允许后台窗口读剪贴板，这时只能确认「有内容被复制」，给个温和提示
-        val recentlyCopied = clipChangedAt > 0L &&
-            System.currentTimeMillis() - clipChangedAt < 10 * 60 * 1000L
-        tut.text = if (recentlyCopied) {
-            "📋 检测到刚复制了内容；如果那是 Cookie JSON：\n" +
-                "→ 打开 App →「账号」页 →「粘贴剪贴板」→ 导入\n\n$steps"
-        } else {
-            steps
-        }
-        tut.setTextColor(Color.parseColor("#DBEAFE"))
         tut.setTypeface(null, Typeface.NORMAL)
-        tut.background = GradientDrawable().apply {
-            cornerRadius = dp(8).toFloat()
-            setColor(Color.parseColor("#14FFFFFF"))
+        when (tutorialStage) {
+            2 -> {
+                tut.text = if (cookieClipLength > 0) {
+                    "✅ Cookie 已复制（${cookieClipLength} 字符）\n④ 回 App →「账号」页 → 点「粘贴剪贴板」"
+                } else {
+                    "④ 回 App →「账号」页 → 点「粘贴剪贴板」→ 导入"
+                }
+                tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
+                tut.setTypeface(null, Typeface.BOLD)
+                tut.background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
+                    setStroke(dp(1), Color.parseColor("#66FDE047"))
+                }
+                btn?.text = "📲 打开 App 去粘贴"
+            }
+            1 -> {
+                val path = when (browser) {
+                    "Edge" -> "点底部「…」→「扩展」→ Cookie-Editor"
+                    "火狐" -> "点右上「⋮」→「扩展」→ Cookie-Editor"
+                    else -> "在浏览器菜单里打开「扩展」→ Cookie-Editor"
+                }
+                tut.text = "② $path\n③ 点 Export → 选 Export as JSON（会自动复制）"
+                tut.setTextColor(Color.parseColor("#DBEAFE"))
+                tut.background = tutorialPanelBackground()
+                btn?.text = "🔁 再开一次 AI Studio"
+            }
+            else -> {
+                tut.text = if (browser != null) {
+                    "① 用 ${browser} 打开 aistudio.google.com 并登录"
+                } else {
+                    "① 先装 Edge 或火狐（手机 Chrome 不支持扩展）"
+                }
+                tut.setTextColor(Color.parseColor("#DBEAFE"))
+                tut.background = tutorialPanelBackground()
+                btn?.text = if (browser != null) "🌐 在 $browser 打开 AI Studio" else "🌐 打开 AI Studio"
+            }
         }
+    }
+
+    private fun tutorialPanelBackground(): GradientDrawable = GradientDrawable().apply {
+        cornerRadius = dp(8).toFloat()
+        setColor(Color.parseColor("#14FFFFFF"))
     }
 
     /** 找已安装的可用浏览器：Edge 优先，其次火狐。 */
@@ -565,10 +577,14 @@ class OverlayService : Service() {
     }
 
     private fun openApp() {
+        // 已经从浏览器那一步过来、但剪贴板内容读不到时，也把教程推进到「回 App 粘贴」这一步
+        val snapshot = OverlayState.snapshot
+        if (snapshot.online && !snapshot.accountsReady && tutorialStage >= 1) tutorialStage = 2
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         runCatching { startActivity(intent) }
+        handler.post { render() }
     }
 
     /** 抓日志 + 当前屏幕文本，严格按当前选中的 AI 书签（自定义 / 本地反代）单路径分析错误。 */
