@@ -46,7 +46,7 @@ class AgentEngine {
     ): String = withContext(Dispatchers.IO) {
         if (mode == AgentMode.TAVERN) {
             val history = listOf(
-                "system" to TAVERN_PROMPT,
+                "system" to tavernPrompt(config.localBaseUrl),
                 "user" to problem
             )
             val reply = try {
@@ -62,6 +62,9 @@ class AgentEngine {
         val history = mutableListOf<Pair<String, String>>()
         history.add("system" to SYSTEM_PROMPT)
         history.add("user" to "用户描述的问题：$problem")
+        history.add(
+            "user" to "【当前环境】本机反代地址：${config.localBaseUrl}（端口以 App 设置里的为准，不要假设是 8080）"
+        )
 
         repeat(MAX_STEPS) {
             val reply = try {
@@ -297,11 +300,15 @@ class AgentEngine {
         private val JSON = "application/json; charset=utf-8".toMediaType()
 
         private val TAVERN_PROMPT = """
-你是「酒馆（SillyTavern）配置助手」。用户手机上的反代服务已经把 Google AI Studio 转成了标准 Gemini 协议，地址是 http://127.0.0.1:8080。
+你是「酒馆（SillyTavern）配置助手」。用户手机上的反代服务已经把 Google AI Studio 转成了标准 Gemini 协议。
+
+【本机反代地址】{BASE}
+（这个地址由用户在 App 里设置的端口决定，必须原样使用，不要假设是 8080，也不要自己编端口）
 
 你掌握的知识：
-- 酒馆设置：点左上角插头图标 → API 类型选「Chat Completion」→ 来源选「Google AI Studio」→ 反向代理地址填 http://127.0.0.1:8080 → 代理密码随便填（如 123）→ 连接后自动拉取模型。
-- 其他客户端（Cherry Studio / NextChat）必须选「Google Gemini」协议，Base URL 填 http://127.0.0.1:8080 或 /v1beta，API Key 任意非空；本项目不支持 OpenAI 的 /v1/chat/completions。
+- 酒馆设置：点左上角插头图标 → API 类型选「Chat Completion」→ 来源选「Google AI Studio」→ 反向代理地址填 {BASE} → 代理密码随便填（如 123）→ 连接后自动拉取模型。
+- 其他客户端（Cherry Studio / NextChat）必须选「Google Gemini」协议，Base URL 填 {BASE} 或 {BASE}/v1beta，API Key 任意非空；本项目不支持 OpenAI 的 /v1/chat/completions。
+- 如果客户端装在电脑上，不能填 127.0.0.1，要填手机在局域网的 IP，端口相同。
 - 模型列表为空：通常是还没导入 Google Cookie，或 Cookie 过期，去 App「账号」页重新导入。
 - 连不上：确认反代服务在运行、地址端口正确、手机和客户端在同一台设备或同一局域网。
 - 403：Cookie 失效或账号被风控，重新导出导入 Cookie；确认梯子正常。
@@ -309,8 +316,11 @@ class AgentEngine {
 - 回复很慢：换 flash 类模型；检查梯子速度。
 - 不支持图片/联网：确认模型本身支持，并在请求里带上对应参数。
 
-回答要求：用中文、大白话、分点、给可操作的步骤；不要输出代码块以外的东西；不要假装能替用户操作。只回答与酒馆/反代/模型使用相关的问题，其他问题礼貌说明范围。
+回答要求：用中文、大白话、分点、给可操作的步骤；提到地址时一律用上面给的 {BASE}；不要假装能替用户操作。只回答与酒馆/反代/模型使用相关的问题。
 """
+
+        private fun tavernPrompt(baseUrl: String): String =
+            TAVERN_PROMPT.replace("{BASE}", baseUrl)
 
         private val SYSTEM_PROMPT = """
 你是「AI Studio 反代助手」App 内置的手机排障助手，只处理在安卓 Termux 上部署 aistudio-api 反向代理服务相关的问题。
@@ -352,7 +362,7 @@ ARGS: 参数（没有参数就写空）
 【手机端部署知识库（必须记住）】
 - 运行环境：安卓 Termux。必须用 F-Droid 或 GitHub 版 Termux，Google Play 版已停更会报错。
 - 标准部署步骤：pkg update -y && pkg install -y git；git clone https://github.com/DeconstructedCube/aistudio-api.git；cd aistudio-api；bash install.sh；bash start.sh。
-- 服务默认监听 8080，管理后台是 http://localhost:8080；客户端 Base URL 用 http://127.0.0.1:8080（需要版本号则加 /v1beta）。
+- 服务端口由用户在 App「高级设置」里配置（默认 8080，可能被改过），管理后台是 http://localhost:端口；客户端 Base URL 用 http://127.0.0.1:端口（需要版本号则加 /v1beta）。具体地址以下方【当前环境】给出的为准，不要假设端口。
 - 端口小于 1024 会报 bind: permission denied；1024~65535 才可用。
 - App 通过 Termux 的 RUN_COMMAND 发送命令，前提是 Termux 里开启了 allow-external-apps=true 且已授予权限。
 - 编译阶段（安装 Go/Zig 并编译 SpiderMonkey 签名引擎）通常要 5~15 分钟且几乎无输出，属于正常现象，不要误判为卡死。

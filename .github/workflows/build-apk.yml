@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.2.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.3.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.4.2.apk
+          path: dist/AIStudioProxyHelper-v2.4.3.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.4.2"
+          TAG="v2.4.3"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.2.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.3.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.2.apk \
-              --title "v2.4.2 — AI Studio 反代助手" \
-              --notes "按机型自动识别权限路径：小米/红米、OPPO/一加/realme、vivo/iQOO、荣耀、华为、三星、魅族、原生安卓分别给出解除限制、悬浮窗、无障碍的具体入口，并尝试跳到该机型的权限管理页。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.3.apk \
+              --title "v2.4.3 — AI Studio 反代助手" \
+              --notes "代理地址不再写死：酒馆问答与排障助手都按用户在 App 里设置的实际端口生成地址，不会再错误地给出 127.0.0.1:8080。"
           fi
