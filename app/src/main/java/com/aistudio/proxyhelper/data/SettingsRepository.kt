@@ -68,9 +68,9 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_AGENT_API_KEY, value.trim()).apply()
         }
 
-    /** AI 助手使用的模型名。 */
+    /** AI 助手使用的模型名（默认留空，等用户拉取后选择）。 */
     var agentModel: String
-        get() = prefs.getString(KEY_AGENT_MODEL, "deepseek-chat") ?: ""
+        get() = prefs.getString(KEY_AGENT_MODEL, "") ?: ""
         set(value) {
             prefs.edit().putString(KEY_AGENT_MODEL, value.trim()).apply()
         }
@@ -82,9 +82,9 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_AGENT_USE_LOCAL, value).apply()
         }
 
-    /** 本机反代模型名。 */
+    /** 本机反代模型名（默认留空，等拉取后选择）。 */
     var agentLocalModel: String
-        get() = prefs.getString(KEY_AGENT_LOCAL_MODEL, "gemini-3.7-flash") ?: ""
+        get() = prefs.getString(KEY_AGENT_LOCAL_MODEL, "") ?: ""
         set(value) {
             prefs.edit().putString(KEY_AGENT_LOCAL_MODEL, value.trim()).apply()
         }

@@ -179,8 +179,10 @@ class AgentEngine {
             messages.put(JSONObject().put("role", role).put("content", content))
         }
         val url = if (base.endsWith("/chat/completions")) base else "$base/chat/completions"
+        val chosenModel = config.model.trim()
+        if (chosenModel.isBlank()) throw IllegalStateException("还没有选择模型，请先拉取模型列表再选一个")
         val payload = JSONObject().apply {
-            put("model", config.model.ifBlank { "deepseek-chat" })
+            put("model", chosenModel)
             put("messages", messages)
             put("temperature", 0.2)
             put("stream", false)
@@ -210,7 +212,8 @@ class AgentEngine {
     private fun chatLocalGemini(config: AgentConfig, history: List<Pair<String, String>>): String {
         val base = config.localBaseUrl.trim().trimEnd('/')
         if (base.isBlank()) throw IllegalStateException("本机反代地址为空")
-        val model = config.localModel.ifBlank { "gemini-3.7-flash" }
+        val model = config.localModel.trim()
+        if (model.isBlank()) throw IllegalStateException("还没有选择本机反代模型，请先拉取模型列表再选一个")
         val url = "$base/v1beta/models/$model:generateContent"
 
         var systemText: String? = null

@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.3.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.4.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.3.3.apk
+          path: dist/AIStudioProxyHelper-v2.3.4.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.3.3"
+          TAG="v2.3.4"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.3.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.4.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.3.apk \
-              --title "v2.3.3 — AI Studio 反代助手" \
-              --notes "按真机修正权限引导：ColorOS（OPPO/一加/realme）的解除限制入口在「应用详情 → 权限管理 → 右上角⋮ → 解除所有授权限制」，引导页可直接跳转该页面；同步更新 HyperOS 等品牌路径。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.4.apk \
+              --title "v2.3.4 — AI Studio 反代助手" \
+              --notes "取消所有默认模型：选服务商只填接口地址，模型必须通过「连接并拉取模型」拉取后选择，避免默认模型已下线导致失败；未选模型时会明确提示。"
           fi

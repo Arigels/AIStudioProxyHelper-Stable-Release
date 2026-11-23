@@ -62,13 +62,13 @@ private data class Provider(
 
 private val providers = listOf(
     Provider("本机反代（免费，不用 Key）", "", "", isLocal = true),
-    Provider("DeepSeek", "https://api.deepseek.com", "deepseek-chat"),
-    Provider("硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3"),
-    Provider("Kimi 月之暗面", "https://api.moonshot.cn/v1", "moonshot-v1-8k"),
-    Provider("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash"),
-    Provider("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
-    Provider("Claude（Anthropic 兼容）", "https://api.anthropic.com/v1", "claude-sonnet-4-20250514"),
-    Provider("Gemini（官方 Key）", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
+    Provider("DeepSeek", "https://api.deepseek.com", ""),
+    Provider("硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1", ""),
+    Provider("Kimi 月之暗面", "https://api.moonshot.cn/v1", ""),
+    Provider("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", ""),
+    Provider("OpenAI", "https://api.openai.com/v1", ""),
+    Provider("Claude（Anthropic 兼容）", "https://api.anthropic.com/v1", ""),
+    Provider("Gemini（官方 Key）", "https://generativelanguage.googleapis.com/v1beta/openai", ""),
     Provider("自定义地址", "", "")
 )
 

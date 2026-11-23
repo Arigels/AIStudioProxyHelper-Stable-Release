@@ -426,9 +426,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             model = s.agentModel,
             useLocalProxy = useLocal,
             localBaseUrl = s.settings.localBaseUrl,
-            localModel = s.agentLocalModel.ifBlank { "gemini-3.7-flash" },
+            localModel = s.agentLocalModel,
             localApiKey = s.agentLocalKey.ifBlank { "aistudio-api" }
         )
+    }
+
+    private fun requireModelMessage(config: AgentConfig): String? {
+        val chosen = if (config.useLocalProxy) config.localModel else config.model
+        return if (chosen.isBlank()) {
+            "还没有选择模型：请先点「连接并拉取模型」，再从模型下拉里选一个。"
+        } else {
+            null
+        }
     }
 
     fun askTavern(question: String) {
@@ -440,6 +449,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(agentAnswer = "酒馆问答需要本机反代正在运行，或者先配置一个外部 API Key。")
             }
+            return
+        }
+        requireModelMessage(config)?.let { msg ->
+            _uiState.update { it.copy(agentAnswer = msg) }
             return
         }
         viewModelScope.launch {
@@ -470,6 +483,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(agentAnswer = "本机反代服务还没运行，无法使用本机模型。请先在「搭建」页启动服务，或改用外部 API。")
             }
+            return
+        }
+        requireModelMessage(buildAgentConfig())?.let { msg ->
+            _uiState.update { it.copy(agentAnswer = msg) }
             return
         }
         viewModelScope.launch {
