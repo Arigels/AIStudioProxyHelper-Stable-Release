@@ -628,14 +628,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun clearAllCooldowns() {
-        viewModelScope.launch {
-            val (ok, msg) = apiClient.clearAllCooldowns(_uiState.value.settings)
-            _uiState.update { it.copy(snackbarMessage = msg) }
-            if (ok) refreshServiceStatus(silent = true)
-        }
-    }
-
     fun refreshQuotaDetection(showToast: Boolean = true) {
         viewModelScope.launch {
             _uiState.update { it.copy(quotaChecking = true) }
@@ -693,15 +685,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(busyAccountId = accountId) }
             val (ok, msg) = apiClient.detectAccountEmailAndTier(_uiState.value.settings, accountId)
-            _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
-            if (ok) refreshServiceStatus(silent = true)
-        }
-    }
-
-    fun clearAccountCooldown(accountId: String, model: String? = null) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(busyAccountId = accountId) }
-            val (ok, msg) = apiClient.clearAccountCooldown(_uiState.value.settings, accountId, model)
             _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
             if (ok) refreshServiceStatus(silent = true)
         }

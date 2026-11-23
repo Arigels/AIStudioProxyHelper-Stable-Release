@@ -116,8 +116,6 @@ fun AccountsScreen(
     onActivateAccount: (String) -> Unit,
     onToggleAccount: (String, Boolean?) -> Unit,
     onDetectAccount: (String) -> Unit,
-    onClearAccountCooldown: (String, String?) -> Unit,
-    onClearAllCooldowns: () -> Unit,
     onForceNextAccount: () -> Unit,
     onDeleteAccount: (String) -> Unit,
     onShowMessage: (String) -> Unit
@@ -175,7 +173,6 @@ fun AccountsScreen(
             policy = policy,
             onRefreshQuota = onRefreshQuota,
             onForceNextAccount = onForceNextAccount,
-            onClearAllCooldowns = onClearAllCooldowns,
             onOpenConsole = onOpenConsole
         )
 
@@ -186,7 +183,6 @@ fun AccountsScreen(
             onActivateAccount = onActivateAccount,
             onToggleAccount = onToggleAccount,
             onDetectAccount = onDetectAccount,
-            onClearAccountCooldown = onClearAccountCooldown,
             onRequestDeleteAccount = { pendingDeleteAccount = it }
         )
 
@@ -441,7 +437,6 @@ private fun QuotaDetectionOverviewCard(
     policy: QuotaPolicySnapshot,
     onRefreshQuota: () -> Unit,
     onForceNextAccount: () -> Unit,
-    onClearAllCooldowns: () -> Unit,
     onOpenConsole: () -> Unit
 ) {
     val service = uiState.service
@@ -630,16 +625,6 @@ private fun QuotaDetectionOverviewCard(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("切换下一账号", maxLines = 1)
                     }
-                    OutlinedButton(
-                        onClick = onClearAllCooldowns,
-                        enabled = !uiState.quotaChecking && accounts.isNotEmpty(),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("重置全部 429", maxLines = 1)
-                    }
                     TextButton(
                         onClick = onOpenConsole,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
@@ -714,7 +699,6 @@ private fun AccountsQuotaSectionCard(
     onActivateAccount: (String) -> Unit,
     onToggleAccount: (String, Boolean?) -> Unit,
     onDetectAccount: (String) -> Unit,
-    onClearAccountCooldown: (String, String?) -> Unit,
     onRequestDeleteAccount: (AccountSummary) -> Unit
 ) {
     val accounts = uiState.service.accounts
@@ -817,7 +801,6 @@ private fun AccountsQuotaSectionCard(
                         onActivate = { onActivateAccount(acc.id) },
                         onToggleEnabled = { onToggleAccount(acc.id, !acc.enabled) },
                         onDetect = { onDetectAccount(acc.id) },
-                        onClearCooldown = { model -> onClearAccountCooldown(acc.id, model) },
                         onDelete = { onRequestDeleteAccount(acc) }
                     )
                     if (idx < filteredAccounts.lastIndex) {
@@ -842,7 +825,6 @@ private fun AccountQuotaItemCard(
     onActivate: () -> Unit,
     onToggleEnabled: () -> Unit,
     onDetect: () -> Unit,
-    onClearCooldown: (String?) -> Unit,
     onDelete: () -> Unit
 ) {
     val normTier = QuotaPolicyResolver.normalizeTier(acc.tier)
@@ -1033,26 +1015,15 @@ private fun AccountQuotaItemCard(
                     )
                 }
 
-                if (!isActive && acc.enabled && !acc.sessionExpired) {
+                if (acc.enabled && (!isActive || acc.sessionExpired)) {
                     OutlinedButton(
                         onClick = onActivate,
                         enabled = !isBusy,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("激活", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-
-                if (acc.sessionExpired || acc.totalRateLimited > 0 || acc.cooldownRemainingSec > 0 || acc.modelCooldowns.isNotEmpty()) {
-                    OutlinedButton(
-                        onClick = { onClearCooldown(null) },
-                        enabled = !isBusy,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
                         Text(
-                            text = if (acc.sessionExpired) "恢复账号" else "清 429 冷却",
+                            text = if (acc.sessionExpired) "重新激活" else "激活",
                             style = MaterialTheme.typography.labelMedium
                         )
                     }
@@ -1114,8 +1085,7 @@ private fun AccountQuotaItemCard(
                             detail = detail,
                             dailyQuota = dailyQuota,
                             tokenQuota = tokenQuota,
-                            cooldownSec = cooldownSec,
-                            onClearModelCooldown = { onClearCooldown(cleanKey) }
+                            cooldownSec = cooldownSec
                         )
                     }
 
@@ -1145,8 +1115,7 @@ private fun ModelQuotaRowItem(
     detail: ModelDailyQuotaDetail?,
     dailyQuota: Int,
     tokenQuota: Long?,
-    cooldownSec: Int,
-    onClearModelCooldown: () -> Unit
+    cooldownSec: Int
 ) {
     val usedReqs = detail?.requests ?: 0
     val usedTokens = detail?.totalTokens ?: 0L
@@ -1189,11 +1158,10 @@ private fun ModelQuotaRowItem(
                     cooldownSec > 0 -> {
                         Surface(
                             color = Color(0xFFFEE2E2),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.clickable { onClearModelCooldown() }
+                            shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "429 (${cooldownSec}s) · 点此重置",
+                                text = "429 冷却 (${cooldownSec}s)",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFB91C1C),
                                 fontWeight = FontWeight.SemiBold,

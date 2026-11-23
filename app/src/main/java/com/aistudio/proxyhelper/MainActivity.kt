@@ -403,7 +403,6 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                         onExecuteAction = viewModel::executeTermuxAction,
                         onCopyActionCommand = viewModel::copyActionCommand,
                         onCopyText = viewModel::copyText,
-                        onClearCooldowns = viewModel::clearAllCooldowns,
                         onOpenConsole = {
                             TermuxBridge.openUrl(context, uiState.settings.localBaseUrl)
                         },
@@ -433,8 +432,6 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                         onActivateAccount = viewModel::activateAccount,
                         onToggleAccount = viewModel::toggleAccountEnabled,
                         onDetectAccount = viewModel::detectAccountEmailAndTier,
-                        onClearAccountCooldown = viewModel::clearAccountCooldown,
-                        onClearAllCooldowns = viewModel::clearAllCooldowns,
                         onForceNextAccount = viewModel::forceNextAccount,
                         onDeleteAccount = viewModel::deleteAccount,
                         onShowMessage = viewModel::showMessage

@@ -1,6 +1,7 @@
 package com.aistudio.proxyhelper.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -89,7 +90,6 @@ fun SetupScreen(
     onExecuteAction: (TermuxAction) -> Unit,
     onCopyActionCommand: (TermuxAction) -> Unit,
     onCopyText: (String, String) -> Unit,
-    onClearCooldowns: () -> Unit,
     onOpenConsole: () -> Unit,
     onGoToAccounts: () -> Unit,
     onGoToClients: () -> Unit,
@@ -125,6 +125,9 @@ fun SetupScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // 0. 常驻公网安全提醒
+        PublicProxySecurityBanner()
+
         // 1. 状态（反代服务运行中/未运行 + 唯一本机地址复制区）
         ServiceStatusCard(
             uiState = uiState,
@@ -188,7 +191,6 @@ fun SetupScreen(
             onSaveSettings = onSaveSettings,
             onExecuteAction = onExecuteAction,
             onCopyActionCommand = onCopyActionCommand,
-            onClearCooldowns = onClearCooldowns,
             onRequestTermuxPermission = onRequestTermuxPermission,
             onOpenAccessibilitySettings = { openA11yWithHint() },
             onOpenTermuxBatterySettings = {
@@ -235,6 +237,51 @@ fun SetupScreen(
                 AutomationController.openAccessibilitySettings(context)
             }
         )
+    }
+}
+
+@Composable
+private fun PublicProxySecurityBanner() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .padding(top = 1.dp)
+                    .size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = "公网反代安全提醒",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    text = "公网反代有风险！请勿在连接公共 Wi-Fi、公司/校园网等公网场景下使用，请切换为手机 4G/5G 流量或家庭 Wi-Fi 等安全网络后再使用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
     }
 }
 
@@ -639,7 +686,6 @@ private fun AdvancedSettingsCard(
     onSaveSettings: (ProxySettings) -> Unit,
     onExecuteAction: (TermuxAction) -> Unit,
     onCopyActionCommand: (TermuxAction) -> Unit,
-    onClearCooldowns: () -> Unit,
     onRequestTermuxPermission: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenTermuxBatterySettings: () -> Unit,
@@ -871,13 +917,6 @@ private fun AdvancedSettingsCard(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("开启唤醒锁（防锁屏休眠，不防杀后台）")
-                    }
-                    OutlinedButton(
-                        onClick = onClearCooldowns,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("重置 429 冷却（限流报错时清除计时）")
                     }
                     OutlinedButton(
                         onClick = { onCopyActionCommand(TermuxAction.INSTALL_AND_START) },

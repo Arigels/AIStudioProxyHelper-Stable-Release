@@ -491,41 +491,6 @@ class ProxyApiClient {
         }
     }
 
-    suspend fun clearAllCooldowns(settings: ProxySettings): Pair<Boolean, String> =
-        clearAccountCooldown(settings, accountId = null, model = null)
-
-    suspend fun clearAccountCooldown(
-        settings: ProxySettings,
-        accountId: String?,
-        model: String? = null
-    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val payload = JSONObject().apply {
-            if (!accountId.isNullOrBlank()) put("account_id", accountId)
-            if (!model.isNullOrBlank()) put("model", model)
-        }
-        val req = Request.Builder()
-            .url("${settings.localBaseUrl}/rotation/clear-cooldown")
-            .applyWebAuth(settings)
-            .post(payload.toString().toRequestBody(jsonMediaType))
-            .build()
-        return@withContext try {
-            actionClient.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val msg = when {
-                        !accountId.isNullOrBlank() && !model.isNullOrBlank() -> "已重置 $model 的 429 冷却"
-                        !accountId.isNullOrBlank() -> "已清除该账号的 429 冷却状态"
-                        else -> "已清除所有账号的 429 冷却状态"
-                    }
-                    true to msg
-                } else {
-                    false to extractErrorMessage(resp.body?.string().orEmpty(), resp.code)
-                }
-            }
-        } catch (e: Exception) {
-            false to (e.message ?: "网络请求失败")
-        }
-    }
-
     suspend fun activateAccount(
         settings: ProxySettings,
         accountId: String

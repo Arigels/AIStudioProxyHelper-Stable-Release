@@ -356,7 +356,7 @@ class AgentEngine {
 - Address already in use：端口被占用，先停止服务或换一个端口再启动。
 - Could not resolve host / Failed to fetch / Connection refused / 超时：VPN（梯子）没开或断了；先开 VPN，再重试。
 - 403 / 401：Google Cookie 失效或被风控，或 VPN 节点被拦截，换节点并重新在「账号」页导入 Cookie。
-- 429：额度限流，可去「反代」页高级设置点「重置 429 冷却」，或导入更多备用小号。
+- 429：Google 账号限流或额度耗尽，请等待冷却自动结束或切换/导入更多备用小号（不要强行重试以免触发风控）。
 - 编译阶段无输出：Go/Zig 编译签名引擎需 5~15 分钟且少输出，属正常，请耐心等待。
 """
 
