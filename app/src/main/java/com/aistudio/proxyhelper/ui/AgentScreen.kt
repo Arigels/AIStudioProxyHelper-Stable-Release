@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -29,6 +31,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -45,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.agent.AgentLine
 
@@ -71,7 +76,6 @@ private val providers = listOf(
 fun AgentScreen(
     uiState: MainUiState,
     onSaveConfig: (String, String, String, Boolean, String) -> Unit,
-    onTest: () -> Unit,
     onFetchModels: (String, String, String, Boolean, String) -> Unit,
     onRun: (String) -> Unit,
     onAskTavern: (String) -> Unit
@@ -90,6 +94,7 @@ fun AgentScreen(
 
     var providerMenu by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
+    var keyVisible by remember { mutableStateOf(false) }
 
     val currentProvider = providers.firstOrNull { p ->
         if (p.isLocal) {
@@ -219,6 +224,23 @@ fun AgentScreen(
                                 label = { Text("API Key") },
                                 placeholder = { Text("粘贴你的 Key") },
                                 singleLine = true,
+                                visualTransformation = if (keyVisible) {
+                                    VisualTransformation.None
+                                } else {
+                                    PasswordVisualTransformation()
+                                },
+                                trailingIcon = {
+                                    IconButton(onClick = { keyVisible = !keyVisible }) {
+                                        Icon(
+                                            imageVector = if (keyVisible) {
+                                                Icons.Filled.VisibilityOff
+                                            } else {
+                                                Icons.Filled.Visibility
+                                            },
+                                            contentDescription = if (keyVisible) "隐藏密钥" else "显示密钥"
+                                        )
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -259,8 +281,15 @@ fun AgentScreen(
                             }
                         }
 
-                        OutlinedButton(
+                        Button(
                             onClick = {
+                                onSaveConfig(
+                                    baseUrl.trim(),
+                                    apiKey.trim(),
+                                    model.trim(),
+                                    useLocal,
+                                    localModel.trim()
+                                )
                                 onFetchModels(
                                     baseUrl.trim(),
                                     apiKey.trim(),
@@ -270,18 +299,21 @@ fun AgentScreen(
                                 )
                             },
                             enabled = !uiState.agentFetchingModels,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             if (uiState.agentFetchingModels) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("正在拉取模型列表…")
+                                Text("正在连接…")
                             } else {
-                                Text("拉取模型列表")
+                                Text("连接并拉取模型")
                             }
                         }
 
@@ -294,44 +326,11 @@ fun AgentScreen(
                                     useLocal,
                                     localModel.trim()
                                 )
-                                onTest()
                             },
-                            enabled = !uiState.agentTesting,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            if (uiState.agentTesting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("正在测试连接…")
-                            } else {
-                                Text("保存并测试连接")
-                            }
-                        }
-
-                        uiState.agentTestResult?.let { result ->
-                            Surface(
-                                color = if (result.startsWith("连接失败")) {
-                                    MaterialTheme.colorScheme.errorContainer
-                                } else {
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = if (result.startsWith("连接失败")) {
-                                        result
-                                    } else {
-                                        "连接成功，模型回复：$result"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(10.dp)
-                                )
-                            }
+                            Text("保存设置")
                         }
                     }
                 }

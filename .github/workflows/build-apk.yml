@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.1.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.2.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.3.1.apk
+          path: dist/AIStudioProxyHelper-v2.3.2.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.3.1"
+          TAG="v2.3.2"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.1.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.2.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.1.apk \
-              --title "v2.3.1 — AI Studio 反代助手" \
-              --notes "修复两处问题：① 首次启动不再直接弹悬浮窗，改为「解除限制→悬浮窗→无障碍」三步引导；② 拉取模型/测试连接改用输入框里的当前值（之前读的是已保存配置，没点保存就会被判定为未填写）。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.2.apk \
+              --title "v2.3.2 — AI Studio 反代助手" \
+              --notes "AI 配置交互修正：按钮改为「连接并拉取模型」（保存+连接+拉取）与「保存设置」（仅保存）；API Key 默认隐藏，带眼睛按钮切换显示。"
           fi

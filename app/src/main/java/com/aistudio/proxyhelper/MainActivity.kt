@@ -225,7 +225,6 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 3 -> AgentScreen(
                     uiState = uiState,
                     onSaveConfig = viewModel::saveAgentConfig,
-                    onTest = viewModel::testAgentConnection,
                     onFetchModels = viewModel::fetchAgentModels,
                     onRun = viewModel::runAgent,
                     onAskTavern = viewModel::askTavern
@@ -233,9 +232,6 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
             }
         }
     }
-
-    var showWizard by remember { mutableStateOf(!SettingsRepository(context).permissionWizardShown) }
-    var showRestrictionGuide by remember { mutableStateOf(false) }
 
     if (showWizard) {
         PermissionWizardDialog(
