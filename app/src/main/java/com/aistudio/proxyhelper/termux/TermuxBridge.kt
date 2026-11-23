@@ -118,9 +118,9 @@ object TermuxBridge {
             }
 
             TermuxAction.STOP_SERVICE -> {
-                "pkill -f 'main.py server' 2>/dev/null || true; " +
-                    "pkill -f 'waa-signer' 2>/dev/null || true; " +
-                    "echo '[OK] 已发送停止信号'"
+                "if pkill -f 'main.py server' 2>/dev/null || pkill -f 'waa-signer' 2>/dev/null; then " +
+                    "echo '[OK] 已停止反代进程'; " +
+                    "else echo '[提示] 没有找到正在运行的反代进程（可能本来就没启动）'; fi"
             }
 
             TermuxAction.UPDATE_AND_REBUILD -> {
@@ -130,7 +130,10 @@ object TermuxBridge {
             }
 
             TermuxAction.ACQUIRE_WAKELOCK -> {
-                "termux-wake-lock && echo '[OK] Termux 唤醒锁已激活'"
+                "if command -v termux-wake-lock >/dev/null 2>&1; then " +
+                    "termux-wake-lock && echo '[OK] 已申请唤醒锁：Termux 会尽量保持 CPU 唤醒，减少锁屏后被挂起。' " +
+                    "&& echo '[提示] 唤醒锁不能防止系统杀后台，请同时在「电池 → 本 App/Termux」里设为「无限制」。'; " +
+                    "else echo '[错误] 没有找到 termux-wake-lock，请确认用的是 F-Droid 版 Termux 且 termux-tools 完整。'; fi"
             }
         }
     }

@@ -85,7 +85,7 @@ enum class TermuxAction(
     ),
     ACQUIRE_WAKELOCK(
         title = "开启 Termux 唤醒锁",
-        subtitle = "执行 termux-wake-lock，减少锁屏断网或杀后台",
+        subtitle = "减少锁屏后被系统挂起；不能防止被杀后台，建议同时关闭电池优化",
         runInBackground = true
     ),
     ENABLE_EXTERNAL_APPS(

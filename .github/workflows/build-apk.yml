@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.5.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.6.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.5.5.apk
+          path: dist/AIStudioProxyHelper-v2.5.6.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.5.5"
+          TAG="v2.5.6"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.5.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.6.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.5.apk \
-              --title "v2.5.5 — AI Studio 反代助手" \
-              --notes "部署流程改为：先弹窗讲清步骤（命令已复制），用户看清后再点「打开 Termux 去粘贴」，不再自动跳转导致提示看不清。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.6.apk \
+              --title "v2.5.6 — AI Studio 反代助手" \
+              --notes "高级设置命令核对：唤醒锁改为真实检测（找不到命令直接报错）并说明局限；停止服务改为如实反馈是否真的停掉了进程。" 
           fi
