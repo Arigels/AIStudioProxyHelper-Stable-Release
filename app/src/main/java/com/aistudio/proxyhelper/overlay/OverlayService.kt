@@ -319,7 +319,7 @@ class OverlayService : Service() {
     private fun runDiagnose() {
         val prefs = SettingsRepository(applicationContext)
         val settings = prefs.load()
-        val serviceOnline = isServiceOnline(settings.port)
+        val serviceOnline = OverlayState.snapshot.online
         val useLocal = prefs.agentUseLocal || serviceOnline
         if (!useLocal && prefs.agentApiKey.isBlank()) {
             aiText?.text = "AI：请先打开 App →「AI」页配置接口（或启动本机反代后重试）"
