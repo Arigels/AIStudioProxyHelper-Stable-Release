@@ -4,11 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
+import com.aistudio.proxyhelper.net.LogCollector
 
 sealed class TermuxDispatchResult {
     abstract val command: String
@@ -299,26 +301,52 @@ object TermuxBridge {
         }
     }
 
-    fun openUrl(context: Context, url: String) {
+    /** 打开系统默认浏览器；返回是否真的拉起了 Activity（失败不抛异常，交给调用方给提示）。 */
+    fun openUrl(context: Context, url: String): Boolean {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        try {
+        return try {
             context.startActivity(intent)
-        } catch (_: Exception) {
-            // 没有可用的浏览器
+            true
+        } catch (e: Exception) {
+            LogCollector.append("[浏览器] 打开 $url 失败：${e.javaClass.simpleName} ${e.message ?: ""}")
+            false
         }
+    }
+
+    /** 先解析一次，确认这个包真的能打开该 URL，避免 startActivity 静默失败后无声回退。 */
+    fun canOpenUrl(context: Context, url: String, packageName: String? = null): Boolean {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            packageName?.takeIf { it.isNotBlank() }?.let { setPackage(it) }
+        }
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.queryIntentActivities(
+                    intent,
+                    PackageManager.ResolveInfoFlags.of(0)
+                ).isNotEmpty()
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.queryIntentActivities(intent, 0).isNotEmpty()
+            }
+        }.getOrDefault(false)
     }
 
     /** 指定用某个浏览器打开链接（如 Edge / 火狐），避免被系统默认浏览器截走；失败则回退系统默认打开。 */
     fun openUrlInPackage(context: Context, url: String, packageName: String?): Boolean {
         if (!packageName.isNullOrBlank()) {
-            val targeted = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                setPackage(packageName)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (canOpenUrl(context, url, packageName)) {
+                val targeted = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                    setPackage(packageName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val ok = runCatching { context.startActivity(targeted) }.isSuccess
+                if (ok) return true
+                LogCollector.append("[浏览器] 定向打开 $packageName 失败，回退默认浏览器")
+            } else {
+                LogCollector.append("[浏览器] $packageName 无法解析 $url，回退默认浏览器")
             }
-            val ok = runCatching { context.startActivity(targeted) }.isSuccess
-            if (ok) return true
         }
         openUrl(context, url)
         return false
