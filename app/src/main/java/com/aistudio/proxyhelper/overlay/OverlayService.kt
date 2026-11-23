@@ -91,6 +91,12 @@ class OverlayService : Service() {
     private var tutorialAltButton: TextView? = null
     private var tutorialContinueRow: LinearLayout? = null
     private var tutorialSwitchRow: LinearLayout? = null
+    private var tutorialBadge: TextView? = null
+    private var tutorialNavRow: LinearLayout? = null
+    private var tutorialPrev: TextView? = null
+    private var tutorialNext: TextView? = null
+    /** 回看定位：-1 表示跟随最新一步，其余为正在回看的 0–4 阶段 */
+    private var cookieViewStage = -1
     private var tutorialEdgeSwitch: TextView? = null
     private var tutorialFirefoxSwitch: TextView? = null
     private var detailsBox: LinearLayout? = null
@@ -298,6 +304,32 @@ class OverlayService : Service() {
             setPadding(dp(8), dp(5), dp(8), dp(5))
             visibility = View.GONE
         }
+        // 回看态顶部灰色小标：说明当前卡片是已走过的一步
+        val badge = TextView(this).apply {
+            setTextColor(Color.parseColor("#9AA0A6"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(8), dp(2), dp(8), 0)
+            visibility = View.GONE
+        }
+        val navRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), dp(6), dp(8), 0)
+            visibility = View.GONE
+        }
+        val navPrev = TextView(this).apply {
+            text = "← 上一步"
+            setTextColor(Color.parseColor("#8A8A8A"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            visibility = View.GONE
+        }
+        val navNext = TextView(this).apply {
+            text = "下一步 →"
+            setTextColor(Color.parseColor("#8A8A8A"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            visibility = View.GONE
+        }
+        navRow.addView(navPrev)
+        navRow.addView(navNext)
         val tutorialBtn = TextView(this).apply {
             text = "教程加载中"
             setTextColor(Color.parseColor("#86EFAC"))
@@ -421,10 +453,12 @@ class OverlayService : Service() {
         panel.addView(titleRow)
         panel.addView(stage)
         panel.addView(guide)
+        panel.addView(badge)
         panel.addView(tutorial)
         panel.addView(switchRow)
         panel.addView(tutorialBtn)
         panel.addView(tutorialAltBtn)
+        panel.addView(navRow)
         panel.addView(modelTip)
         val continueRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -521,6 +555,10 @@ class OverlayService : Service() {
             tutorialAltButton = tutorialAltBtn
             tutorialContinueRow = continueRow
             tutorialSwitchRow = switchRow
+            tutorialBadge = badge
+            tutorialNavRow = navRow
+            tutorialPrev = navPrev
+            tutorialNext = navNext
             tutorialEdgeSwitch = edgeSwitch
             tutorialFirefoxSwitch = firefoxSwitch
             detailsBox = details
@@ -682,7 +720,10 @@ class OverlayService : Service() {
         val switchRow = tutorialSwitchRow
         val continueRow = tutorialContinueRow
         if (!show) {
+            cookieViewStage = -1
             tut.visibility = View.GONE
+            tutorialBadge?.visibility = View.GONE
+            tutorialNavRow?.visibility = View.GONE
             btn?.visibility = View.GONE
             altBtn?.visibility = View.GONE
             switchRow?.visibility = View.GONE
@@ -848,9 +889,13 @@ class OverlayService : Service() {
             altBtn?.visibility = View.GONE
             continueRow?.visibility = View.GONE
             switchRow?.visibility = View.GONE
+            tutorialBadge?.visibility = View.GONE
+            tutorialNavRow?.visibility = View.GONE
             return
         }
         tut.visibility = View.VISIBLE
+        tutorialBadge?.visibility = View.GONE
+        tutorialNavRow?.visibility = View.GONE
         switchRow?.visibility = View.GONE
         continueRow?.visibility = View.GONE
 
