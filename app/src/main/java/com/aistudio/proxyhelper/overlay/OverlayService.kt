@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -32,6 +33,7 @@ import com.aistudio.proxyhelper.agent.AgentMode
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.net.LogCollector
+import com.aistudio.proxyhelper.termux.TermuxBridge
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -84,6 +86,8 @@ class OverlayService : Service() {
     private var titleText: TextView? = null
     private var stageText: TextView? = null
     private var guideText: TextView? = null
+    private var tutorialText: TextView? = null
+    private var tutorialButton: TextView? = null
     private var detailsBox: LinearLayout? = null
     private var aiText: TextView? = null
     private var elapsedText: TextView? = null
@@ -93,6 +97,19 @@ class OverlayService : Service() {
 
     /** 部署完成待导入 Cookie 时，引导文字闪烁高亮用 */
     private var highlightPulse = false
+
+    /** 剪贴板里已确认是 Cookie-Editor 导出的 JSON 时的字符数（读不到剪贴板时为 0） */
+    private var cookieClipLength = 0
+
+    /** 最近一次剪贴板变化时间；读不到内容时用它做「有东西被复制了」的温和提示 */
+    private var clipChangedAt = 0L
+
+    private val clipWatcher = ClipboardManager.OnPrimaryClipChangedListener {
+        clipChangedAt = System.currentTimeMillis()
+        val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
+        cookieClipLength = if (looksLikeCookieJson(text)) text.length else 0
+        handler.post { render() }
+    }
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -116,6 +133,10 @@ class OverlayService : Service() {
         isRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
         buildViews()
+        runCatching {
+            (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
+                ?.addPrimaryClipChangedListener(clipWatcher)
+        }
         handler.post(ticker)
     }
 
@@ -124,6 +145,10 @@ class OverlayService : Service() {
     override fun onDestroy() {
         running = false
         isRunning = false
+        runCatching {
+            (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
+                ?.removePrimaryClipChangedListener(clipWatcher)
+        }
         handler.removeCallbacksAndMessages(null)
         diagnosisScope.cancel()
         root?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -188,6 +213,26 @@ class OverlayService : Service() {
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, dp(4), 0, 0)
+        }
+        // 悬浮窗内嵌的 Cookie 教程：只在「已启动但还没导入账号」时出现
+        val tutorial = TextView(this).apply {
+            setTextColor(Color.parseColor("#DBEAFE"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setLineSpacing(dp(3).toFloat(), 1.2f)
+            setPadding(dp(8), dp(6), dp(8), dp(6))
+            visibility = View.GONE
+        }
+        val tutorialBtn = TextView(this).apply {
+            text = "🌐 打开 AI Studio"
+            setTextColor(Color.parseColor("#86EFAC"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(8), dp(6), dp(8), dp(2))
+            visibility = View.GONE
+            setOnClickListener {
+                val browser = detectBrowser()
+                TermuxBridge.openUrlInPackage(this@OverlayService, TermuxBridge.URL_AISTUDIO, browser?.second)
+            }
         }
         val details = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -255,6 +300,8 @@ class OverlayService : Service() {
         panel.addView(titleRow)
         panel.addView(stage)
         panel.addView(guide)
+        panel.addView(tutorial)
+        panel.addView(tutorialBtn)
         panel.addView(actionRow)
         panel.addView(
             scroll,
@@ -340,6 +387,8 @@ class OverlayService : Service() {
             titleText = title
             stageText = stage
             guideText = guide
+            tutorialText = tutorial
+            tutorialButton = tutorialBtn
             detailsBox = details
             aiText = ai
             elapsedText = elapsed
@@ -384,8 +433,7 @@ class OverlayService : Service() {
         if (!reportMode) {
             if (needCookie) {
                 // 闪动高亮：文字颜色与底色在两种状态间切换，确保一眼看到
-                guideText?.text =
-                    "👉 下一步：打开 App →「账号」页最上方就是「获取 Cookie」教程 → 按提示用 Edge / 火狐导出 JSON，再粘贴导入"
+                guideText?.text = "👉 还差最后一步：照下面 4 步拿到 Cookie，复制好这里会变绿提醒"
                 guideText?.setTextColor(
                     Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC")
                 )
@@ -428,6 +476,92 @@ class OverlayService : Service() {
             detailsBox?.visibility = View.GONE
             detailsScroll?.visibility = View.GONE
         }
+
+        if (!needCookie) {
+            cookieClipLength = 0
+            clipChangedAt = 0L
+        }
+        renderTutorial(needCookie && !reportMode)
+    }
+
+    /** 悬浮窗里的 4 步 Cookie 教程；识别到剪贴板里的 Cookie JSON 时整块变绿提示导入。 */
+    private fun renderTutorial(show: Boolean) {
+        val tut = tutorialText ?: return
+        val btn = tutorialButton
+        if (!show) {
+            tut.visibility = View.GONE
+            btn?.visibility = View.GONE
+            return
+        }
+        tut.visibility = View.VISIBLE
+        btn?.visibility = View.VISIBLE
+        val browser = detectBrowser()
+        btn?.text = if (browser != null) "🌐 在 ${browser.first} 打开 AI Studio" else "🌐 打开 AI Studio"
+
+        if (cookieClipLength > 0) {
+            tut.text = "✅ 已识别到你复制的 Cookie（${cookieClipLength} 字符）\n" +
+                "→ 打开 App →「账号」页 → 点「粘贴剪贴板」→ 导入"
+            tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
+            tut.setTypeface(null, Typeface.BOLD)
+            tut.background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
+                setStroke(dp(1), Color.parseColor("#66FDE047"))
+            }
+            return
+        }
+
+        val steps = when (browser?.first) {
+            "Edge" -> "① 用 Edge 打开 aistudio.google.com 并登录（多号点右上头像「添加其他账号」）\n" +
+                "② 点底部「…」→「扩展」→ 点 Cookie-Editor\n" +
+                "③ 点 Export → 选 Export as JSON（会自动复制）\n" +
+                "④ 复制好后这里会变绿 → 打开 App「账号」页点「粘贴剪贴板」"
+            "火狐" -> "① 用火狐打开 aistudio.google.com 并登录（多号点右上头像「添加其他账号」）\n" +
+                "② 点右上「⋮」→「扩展」→ 点 Cookie-Editor\n" +
+                "③ 点 Export → 选 Export as JSON（会自动复制）\n" +
+                "④ 复制好后这里会变绿 → 打开 App「账号」页点「粘贴剪贴板」"
+            else -> "① 用 Edge 或火狐打开 aistudio.google.com 并登录\n" +
+                "② 打开「扩展」→ 点 Cookie-Editor（Edge 底部「…」→「扩展」；火狐 右上「⋮」→「扩展」）\n" +
+                "③ 点 Export → 选 Export as JSON（会自动复制）\n" +
+                "④ 复制好后这里会变绿 → 打开 App「账号」页点「粘贴剪贴板」"
+        }
+
+        // 部分系统不允许后台窗口读剪贴板，这时只能确认「有内容被复制」，给个温和提示
+        val recentlyCopied = clipChangedAt > 0L &&
+            System.currentTimeMillis() - clipChangedAt < 10 * 60 * 1000L
+        tut.text = if (recentlyCopied) {
+            "📋 检测到刚复制了内容；如果那是 Cookie JSON：\n" +
+                "→ 打开 App →「账号」页 →「粘贴剪贴板」→ 导入\n\n$steps"
+        } else {
+            steps
+        }
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        tut.setTypeface(null, Typeface.NORMAL)
+        tut.background = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(Color.parseColor("#14FFFFFF"))
+        }
+    }
+
+    /** 找已安装的可用浏览器：Edge 优先，其次火狐。 */
+    private fun detectBrowser(): Pair<String, String>? {
+        fun installed(pkg: String): Boolean = runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
+        val candidates = listOf(
+            "Edge" to TermuxBridge.PACKAGE_EDGE,
+            "Edge" to TermuxBridge.PACKAGE_EDGE_BETA,
+            "Edge" to TermuxBridge.PACKAGE_EDGE_CANARY,
+            "火狐" to TermuxBridge.PACKAGE_FIREFOX,
+            "火狐" to TermuxBridge.PACKAGE_FIREFOX_BETA,
+            "火狐" to TermuxBridge.PACKAGE_FIREFOX_NIGHTLY
+        )
+        return candidates.firstOrNull { installed(it.second) }
+    }
+
+    /** Cookie-Editor 导出的 JSON 是 name/value 数组，用这个特征判断剪贴板里是不是它。 */
+    private fun looksLikeCookieJson(text: String): Boolean {
+        val t = text.trimStart()
+        if (!t.startsWith("[") && !t.startsWith("{")) return false
+        return t.contains("\"name\"") && t.contains("\"value\"")
     }
 
     private fun openApp() {
