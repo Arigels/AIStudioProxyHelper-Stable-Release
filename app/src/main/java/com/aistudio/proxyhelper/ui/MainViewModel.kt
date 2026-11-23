@@ -182,8 +182,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun updateOverlaySnapshot(status: ServiceStatus) {
-        val env = EnvironmentChecker.inspect(getApplication())
+        val ctx = getApplication<Application>()
+        val termuxInstalled = EnvironmentChecker.isTermuxInstalled(ctx)
+        val accessibilityEnabled = AutomationController.isServiceEnabled(ctx)
         val phase = ProgressTracker.analyze(LogCollector.getLog(200))
+        val visibleError = if (status.online) null else phase.error
         val state = _uiState.value
         val guidance = when {
             status.online && status.accounts.isEmpty() ->
@@ -191,21 +194,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             status.online && state.lastTestResult?.first != true ->
                 "下一步：在「反代」页拉取模型列表，并复制地址填进酒馆"
             status.online -> "一切就绪，可以连酒馆开玩了"
-            phase.error != null && phase.error.contains("梯子") ->
+            visibleError != null && visibleError.contains("梯子") ->
                 "梯子可能没开或已断，检查代理后再试"
-            phase.error != null && phase.error.contains("403") ->
+            visibleError != null && visibleError.contains("403") ->
                 "Google 拒绝了访问：先确认梯子正常，再重新导入 Cookie"
-            phase.error != null -> "出错了，点开 App 按提示修复"
+            visibleError != null -> "出错了，点开 App 按提示修复"
             state.deploying -> "正在${phase.label}，编译阶段没输出是正常的，请耐心等"
-            !env.termuxInstalled -> "还没安装 Termux，去 F-Droid 下载"
-            !env.accessibilityEnabled -> "建议开启自动操控权限，可全自动搭建"
+            !termuxInstalled -> "还没安装 Termux，去 F-Droid 下载"
+            !accessibilityEnabled -> "建议开启自动操控权限，可全自动搭建"
             else -> "点「一键部署反代」开始"
+        }
+
+        if (visibleError != null) {
+            OverlayState.deployStartedAt = 0L
         }
 
         _uiState.update {
             it.copy(
                 deployStage = phase.label,
-                deployError = if (status.online) null else phase.error
+                deployError = visibleError,
+                deploying = if (visibleError != null) false else it.deploying
             )
         }
         OverlayState.update(
@@ -214,7 +222,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 accountsReady = status.accounts.isNotEmpty(),
                 port = state.settings.port,
                 stage = phase.label,
-                error = phase.error,
+                error = visibleError,
                 guidance = guidance,
                 aiHint = state.agentAnswer?.lineSequence()?.firstOrNull()?.take(80)
             )
@@ -285,22 +293,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        if (isDeploy || action == TermuxAction.UPDATE_AND_REBUILD) {
+            LogCollector.clear()
+        }
+
         // 部署类动作：不依赖无障碍自动操作，改为「复制 + 打开 Termux + 弹窗提示粘贴回车」
         if (action == TermuxAction.INSTALL_AND_START ||
             action == TermuxAction.INSTALL_ONLY ||
             action == TermuxAction.ENABLE_EXTERNAL_APPS
         ) {
-            OverlayState.deployStartedAt = System.currentTimeMillis()
+            if (isDeploy) {
+                OverlayState.deployStartedAt = System.currentTimeMillis()
+            }
             runManualFallback(action)
             return
         }
 
         val preferAccessibility = !settingsRepo.externalAppsSetupDone ||
             !env.termuxRunCommandGranted
-
-        if (action == TermuxAction.INSTALL_AND_START || action == TermuxAction.INSTALL_ONLY) {
-            OverlayState.deployStartedAt = System.currentTimeMillis()
-        }
 
         when (val result = TermuxBridge.runInTermux(ctx, action, settings, preferAccessibility)) {
             is TermuxDispatchResult.AutomatedByAccessibility -> {
@@ -402,6 +412,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         TermuxBridge.copyToClipboard(ctx, action.title, cmd)
         val markDeployed = action == TermuxAction.INSTALL_AND_START ||
             action == TermuxAction.INSTALL_ONLY
+        val markDeploying = action == TermuxAction.INSTALL_AND_START
         val markExternal = action == TermuxAction.INSTALL_AND_START ||
             action == TermuxAction.ENABLE_EXTERNAL_APPS
         if (markDeployed) settingsRepo.hasDeployed = true
@@ -411,8 +422,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastDispatchedCommand = cmd,
                 hasDeployed = it.hasDeployed || markDeployed,
                 externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
-                deploying = it.deploying || markDeployed,
-                deployStartedAt = if (markDeployed && !it.deploying) {
+                deploying = it.deploying || markDeploying,
+                deployError = if (markDeployed) null else it.deployError,
+                deployStartedAt = if (markDeploying && !it.deploying) {
                     System.currentTimeMillis()
                 } else {
                     it.deployStartedAt

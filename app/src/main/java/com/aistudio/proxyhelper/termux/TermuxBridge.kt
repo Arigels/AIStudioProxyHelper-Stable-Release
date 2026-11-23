@@ -60,6 +60,9 @@ object TermuxBridge {
     const val PACKAGE_EDGE_BETA = "com.microsoft.emmx.beta"
     const val PACKAGE_EDGE_CANARY = "com.microsoft.emmx.canary"
     const val PACKAGE_FIREFOX = "org.mozilla.firefox"
+    const val PACKAGE_FIREFOX_BETA = "org.mozilla.firefox_beta"
+    const val PACKAGE_FIREFOX_NIGHTLY = "org.mozilla.fenix"
+    const val PACKAGE_FENNEC = "org.mozilla.fennec_fdroid"
     const val PACKAGE_LEMUR = "com.lemurbrowser.exts"
 
     /**

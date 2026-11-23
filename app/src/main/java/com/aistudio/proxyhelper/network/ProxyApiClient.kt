@@ -100,20 +100,20 @@ class ProxyApiClient {
                         for (i in 0 until arr.length()) {
                             val item = arr.optJSONObject(i) ?: continue
                             val rawTier = listOf(
-                                item.optString("tier"),
-                                item.optString("plan"),
-                                item.optString("subscription_tier"),
-                                item.optString("quota_tier")
-                            ).firstOrNull { it.isNotBlank() && it != "null" } ?: "free"
+                                item.optCleanString("tier"),
+                                item.optCleanString("plan"),
+                                item.optCleanString("subscription_tier"),
+                                item.optCleanString("quota_tier")
+                            ).firstOrNull { it.isNotBlank() } ?: "free"
                             accounts.add(
                                 AccountSummary(
-                                    id = item.optString("id"),
-                                    name = item.optString("name", "Google Account"),
-                                    email = item.optString("email").takeIf { it.isNotBlank() && it != "null" },
-                                    authUser = item.optString("auth_user", "0"),
+                                    id = item.optCleanString("id"),
+                                    name = item.optCleanString("name").ifBlank { "Google Account" },
+                                    email = item.optCleanString("email").takeIf { it.isNotBlank() },
+                                    authUser = item.optCleanString("auth_user").ifBlank { "0" },
                                     tier = rawTier,
                                     enabled = item.optBoolean("enabled", true),
-                                    group = item.optString("group", "default")
+                                    group = item.optCleanString("group").ifBlank { "default" }
                                 )
                             )
                         }
@@ -137,7 +137,7 @@ class ProxyApiClient {
                         if (arr != null) {
                             for (i in 0 until arr.length()) {
                                 val m = arr.optJSONObject(i) ?: continue
-                                val name = m.optString("name").removePrefix("models/")
+                                val name = m.optCleanString("name").removePrefix("models/")
                                 if (name.isNotBlank()) {
                                     models.add(name)
                                 }
@@ -288,7 +288,7 @@ class ProxyApiClient {
                         val preview = buildList {
                             if (arr != null) {
                                 for (i in 0 until minOf(count, 4)) {
-                                    val n = arr.optJSONObject(i)?.optString("name")?.removePrefix("models/")
+                                    val n = arr.optJSONObject(i)?.optCleanString("name")?.removePrefix("models/")
                                     if (!n.isNullOrBlank()) add(n)
                                 }
                             }
@@ -315,13 +315,20 @@ class ProxyApiClient {
         return try {
             val obj = JSONObject(body)
             val errObj = obj.optJSONObject("error")
+            val errMsg = errObj?.optCleanString("message").orEmpty()
+            val detail = obj.optCleanString("detail")
             when {
-                errObj != null && errObj.has("message") -> "HTTP $httpCode - ${errObj.optString("message")}"
-                obj.has("detail") -> "HTTP $httpCode - ${obj.optString("detail")}"
+                errMsg.isNotBlank() -> "HTTP $httpCode - $errMsg"
+                detail.isNotBlank() -> "HTTP $httpCode - $detail"
                 else -> "HTTP $httpCode"
             }
         } catch (_: Exception) {
             "HTTP $httpCode"
         }
+    }
+
+    private fun JSONObject.optCleanString(key: String): String {
+        if (isNull(key)) return ""
+        return optString(key, "").takeUnless { it == "null" } ?: ""
     }
 }

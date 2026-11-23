@@ -39,6 +39,13 @@ object EnvironmentChecker {
             TermuxBridge.PACKAGE_EDGE_CANARY
         ).firstOrNull { isPackageInstalled(context, it) }
 
+        val detectedFirefoxPkg = listOf(
+            TermuxBridge.PACKAGE_FIREFOX,
+            TermuxBridge.PACKAGE_FIREFOX_BETA,
+            TermuxBridge.PACKAGE_FIREFOX_NIGHTLY,
+            TermuxBridge.PACKAGE_FENNEC
+        ).firstOrNull { isPackageInstalled(context, it) }
+
         return EnvironmentStatus(
             is64BitArm = is64Bit,
             abiSummary = abiSummary,
@@ -46,7 +53,8 @@ object EnvironmentChecker {
             termuxVersionName = termuxVersion,
             termuxRunCommandGranted = runCmdGranted,
             accessibilityEnabled = AutomationController.isServiceEnabled(context),
-            firefoxInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_FIREFOX),
+            firefoxInstalled = detectedFirefoxPkg != null,
+            firefoxPackage = detectedFirefoxPkg,
             edgeInstalled = detectedEdgePkg != null,
             edgePackage = detectedEdgePkg,
             lemurInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_LEMUR),
@@ -54,6 +62,8 @@ object EnvironmentChecker {
             lanIpAddress = detectLanIpv4()
         )
     }
+
+    fun isTermuxInstalled(context: Context): Boolean = isPackageInstalled(context, TermuxBridge.TERMUX_PACKAGE)
 
     fun openBatteryOptimizationSettings(context: Context) {
         val directIntent = Intent(

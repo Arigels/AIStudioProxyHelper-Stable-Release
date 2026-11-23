@@ -13,6 +13,9 @@
     <queries>
         <package android:name="com.termux" />
         <package android:name="org.mozilla.firefox" />
+        <package android:name="org.mozilla.firefox_beta" />
+        <package android:name="org.mozilla.fenix" />
+        <package android:name="org.mozilla.fennec_fdroid" />
         <package android:name="com.lemurbrowser.exts" />
         <package android:name="com.microsoft.emmx" />
         <package android:name="com.microsoft.emmx.beta" />

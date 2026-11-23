@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -404,14 +405,15 @@ private fun PrimaryActionCard(
                     OutlinedButton(
                         onClick = { TermuxBridge.openTermux(context) },
                         modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Filled.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("打开 Termux 看进度", maxLines = 1)
+                        Text("打开 Termux 看进度", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     TextButton(onClick = onDeploy) {
-                        Text("重新安装")
+                        Text("重新安装", maxLines = 1)
                     }
                 }
             } else if (deployed) {
@@ -532,18 +534,20 @@ private fun PrerequisitesCard(
                     Button(
                         onClick = onOpenFDroid,
                         modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("F-Droid 下载")
+                        Text("F-Droid 下载", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     OutlinedButton(
                         onClick = onOpenGitHub,
                         modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("GitHub 下载")
+                        Text("GitHub 下载", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             } else {
@@ -1036,18 +1040,20 @@ private fun ServiceStatusCard(
                 FilledTonalButton(
                     onClick = { onCopyText("代理地址", settings.localBaseUrl) },
                     modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("复制地址")
+                    Text("复制地址", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 OutlinedButton(
                     onClick = { onCopyText("Gemini 地址", "${settings.localBaseUrl}/v1beta") },
                     modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("复制 /v1beta")
+                    Text("复制 /v1beta", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
 
@@ -1138,12 +1144,13 @@ private fun NextStepsCard(
                 FilledTonalButton(
                     onClick = action,
                     modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(actionLabel)
+                    Text(actionLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 TextButton(onClick = onOpenGuide) {
-                    Text("使用说明")
+                    Text("使用说明", maxLines = 1)
                 }
             }
         }

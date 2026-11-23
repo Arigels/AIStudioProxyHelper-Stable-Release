@@ -170,13 +170,13 @@ class AgentEngine {
             val result = mutableListOf<String>()
             obj.optJSONArray("models")?.let { arr ->
                 for (i in 0 until arr.length()) {
-                    val name = arr.optJSONObject(i)?.optString("name").orEmpty()
+                    val name = arr.optJSONObject(i)?.optCleanString("name").orEmpty()
                     if (name.isNotBlank()) result.add(name.removePrefix("models/"))
                 }
             }
             obj.optJSONArray("data")?.let { arr ->
                 for (i in 0 until arr.length()) {
-                    val id = arr.optJSONObject(i)?.optString("id").orEmpty()
+                    val id = arr.optJSONObject(i)?.optCleanString("id").orEmpty()
                     if (id.isNotBlank()) result.add(id)
                 }
             }
@@ -220,9 +220,9 @@ class AgentEngine {
             val choices = obj.optJSONArray("choices")
                 ?: throw IllegalStateException("响应里没有 choices：${body.take(200)}")
             val message = choices.optJSONObject(0)?.optJSONObject("message")
-            val content = message?.optString("content").orEmpty()
+            val content = message?.optCleanString("content").orEmpty()
             if (content.isNotBlank()) return content
-            return message?.optString("reasoning_content").orEmpty()
+            return message?.optCleanString("reasoning_content").orEmpty()
         }
     }
 
@@ -291,10 +291,15 @@ class AgentEngine {
             if (parts == null) throw IllegalStateException("响应里没有 candidates：${body.take(200)}")
             val sb = StringBuilder()
             for (i in 0 until parts.length()) {
-                sb.append(parts.optJSONObject(i)?.optString("text").orEmpty())
+                sb.append(parts.optJSONObject(i)?.optCleanString("text").orEmpty())
             }
             return sb.toString()
         }
+    }
+
+    private fun JSONObject.optCleanString(key: String): String {
+        if (isNull(key)) return ""
+        return optString(key, "").takeUnless { it == "null" } ?: ""
     }
 
     private data class Action(val name: String, val args: String)

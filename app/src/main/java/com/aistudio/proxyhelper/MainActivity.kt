@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -92,6 +93,7 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val saveableStateHolder = rememberSaveableStateHolder()
     val context = LocalContext.current
     val versionName = remember {
         runCatching {
@@ -262,55 +264,57 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (selectedTab) {
-                0 -> SetupScreen(
-                    uiState = uiState,
-                    onRequestTermuxPermission = {
-                        termuxPermLauncher.launch(TermuxBridge.PERMISSION_RUN_COMMAND)
-                    },
-                    onRefreshStatus = { viewModel.refreshServiceStatus(silent = false) },
-                    onSaveSettings = viewModel::saveSettings,
-                    onExecuteAction = viewModel::executeTermuxAction,
-                    onCopyActionCommand = viewModel::copyActionCommand,
-                    onCopyText = viewModel::copyText,
-                    onClearCooldowns = viewModel::clearAllCooldowns,
-                    onOpenConsole = {
-                        TermuxBridge.openUrl(context, uiState.settings.localBaseUrl)
-                    },
-                    onGoToAccounts = { selectedTab = 1 },
-                    onGoToClients = { selectedTab = 2 },
-                    onOpenGuide = { selectedTab = 2 },
-                    onAiAssist = {
-                        selectedTab = 2
-                        viewModel.showMessage("已切到「解疑」页，向下滑到底部即可使用 AI 助手")
-                    },
-                    onRestartService = {
-                        viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
-                    },
-                    onTestModels = viewModel::testModelsConnectivity,
-                    onToggleOverlay = viewModel::toggleOverlay
-                )
+            saveableStateHolder.SaveableStateProvider(key = selectedTab) {
+                when (selectedTab) {
+                    0 -> SetupScreen(
+                        uiState = uiState,
+                        onRequestTermuxPermission = {
+                            termuxPermLauncher.launch(TermuxBridge.PERMISSION_RUN_COMMAND)
+                        },
+                        onRefreshStatus = { viewModel.refreshServiceStatus(silent = false) },
+                        onSaveSettings = viewModel::saveSettings,
+                        onExecuteAction = viewModel::executeTermuxAction,
+                        onCopyActionCommand = viewModel::copyActionCommand,
+                        onCopyText = viewModel::copyText,
+                        onClearCooldowns = viewModel::clearAllCooldowns,
+                        onOpenConsole = {
+                            TermuxBridge.openUrl(context, uiState.settings.localBaseUrl)
+                        },
+                        onGoToAccounts = { selectedTab = 1 },
+                        onGoToClients = { selectedTab = 2 },
+                        onOpenGuide = { selectedTab = 2 },
+                        onAiAssist = {
+                            selectedTab = 2
+                            viewModel.showMessage("已切到「解疑」页，向下滑到底部即可使用 AI 助手")
+                        },
+                        onRestartService = {
+                            viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
+                        },
+                        onTestModels = viewModel::testModelsConnectivity,
+                        onToggleOverlay = viewModel::toggleOverlay
+                    )
 
-                1 -> AccountsScreen(
-                    uiState = uiState,
-                    onImportCookies = viewModel::importCookies,
-                    onShowMessage = viewModel::showMessage
-                )
+                    1 -> AccountsScreen(
+                        uiState = uiState,
+                        onImportCookies = viewModel::importCookies,
+                        onShowMessage = viewModel::showMessage
+                    )
 
-                2 -> UsageScreen(
-                    uiState = uiState,
-                    agentContent = {
-                        AgentScreen(
-                            uiState = uiState,
-                            onSwitchSource = viewModel::switchAgentSource,
-                            onSaveConfig = viewModel::saveAgentConfig,
-                            onFetchModels = viewModel::fetchAgentModels,
-                            onRun = viewModel::runAgent,
-                            onAskTavern = viewModel::askTavern,
-                            embedded = true
-                        )
-                    }
-                )
+                    2 -> UsageScreen(
+                        uiState = uiState,
+                        agentContent = {
+                            AgentScreen(
+                                uiState = uiState,
+                                onSwitchSource = viewModel::switchAgentSource,
+                                onSaveConfig = viewModel::saveAgentConfig,
+                                onFetchModels = viewModel::fetchAgentModels,
+                                onRun = viewModel::runAgent,
+                                onAskTavern = viewModel::askTavern,
+                                embedded = true
+                            )
+                        }
+                    )
+                }
             }
         }
     }

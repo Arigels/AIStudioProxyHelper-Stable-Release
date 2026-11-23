@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -159,7 +160,7 @@ fun UsageScreen(
 
 @Composable
 private fun AccessibilityHelpCard() {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -207,7 +208,7 @@ private fun AccessibilityHelpCard() {
 
 @Composable
 private fun ErrorCheckerCard() {
-    var input by remember { mutableStateOf("") }
+    var input by rememberSaveable { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ErrorExplainer.Explanation>>(emptyList()) }
 
     ElevatedCard(

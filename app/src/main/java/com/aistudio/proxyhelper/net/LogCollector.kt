@@ -1,8 +1,8 @@
 package com.aistudio.proxyhelper.net
 
 import android.util.Log
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -18,6 +18,8 @@ object LogCollector {
     private const val TAG = "LogCollector"
     const val PORT = 8099
     private const val MAX_LINES = 400
+    private const val MAX_HEADER_BYTES = 16 * 1024
+    private const val MAX_BODY_BYTES = 512 * 1024
 
     private var serverSocket: ServerSocket? = null
     private var thread: Thread? = null
@@ -78,28 +80,30 @@ object LogCollector {
         client.use { socket ->
             try {
                 socket.soTimeout = 4000
-                val input = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-                val requestLine = input.readLine() ?: return
+                val rawIn = socket.getInputStream()
+                val headerText = readHeaders(rawIn) ?: return
+                val headerLines = headerText.split("\r\n", "\n")
+                val requestLine = headerLines.firstOrNull()?.takeIf { it.isNotBlank() } ?: return
+
                 var contentLength = 0
-                while (true) {
-                    val line = input.readLine() ?: break
-                    if (line.isEmpty()) break
-                    val lower = line.lowercase()
+                for (i in 1 until headerLines.size) {
+                    val lower = headerLines[i].lowercase()
                     if (lower.startsWith("content-length:")) {
-                        contentLength = lower.substringAfter(":").trim().toIntOrNull() ?: 0
+                        contentLength = (lower.substringAfter(":").trim().toIntOrNull() ?: 0)
+                            .coerceIn(0, MAX_BODY_BYTES)
                     }
                 }
 
                 val isPost = requestLine.startsWith("POST")
                 val body = if (isPost && contentLength > 0) {
-                    val buf = CharArray(contentLength)
+                    val buf = ByteArray(contentLength)
                     var read = 0
                     while (read < contentLength) {
-                        val n = input.read(buf, read, contentLength - read)
+                        val n = rawIn.read(buf, read, contentLength - read)
                         if (n <= 0) break
                         read += n
                     }
-                    String(buf, 0, read)
+                    String(buf, 0, read, Charsets.UTF_8)
                 } else ""
 
                 if (isPost) {
@@ -120,5 +124,26 @@ object LogCollector {
                 // 忽略该次异常
             }
         }
+    }
+
+    private fun readHeaders(input: InputStream): String? {
+        val baos = ByteArrayOutputStream(256)
+        var state = 0 // 1:\r, 2:\r\n, 3:\r\n\r
+        var count = 0
+        while (count < MAX_HEADER_BYTES) {
+            val b = input.read()
+            if (b == -1) break
+            baos.write(b)
+            count++
+            when (b) {
+                '\r'.code -> state = if (state == 2) 3 else 1
+                '\n'.code -> {
+                    if (state == 3 || state == 2) break
+                    state = 2
+                }
+                else -> state = 0
+            }
+        }
+        return if (baos.size() == 0) null else baos.toString(Charsets.ISO_8859_1.name())
     }
 }

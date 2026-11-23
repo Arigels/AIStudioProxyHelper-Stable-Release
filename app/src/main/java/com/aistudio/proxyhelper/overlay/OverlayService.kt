@@ -34,6 +34,7 @@ import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.net.LogCollector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -69,6 +70,7 @@ class OverlayService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val diagnosisScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var diagnoseJob: Job? = null
     private var windowManager: WindowManager? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var detailsScroll: ScrollView? = null
@@ -105,8 +107,13 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
         startForegroundSafely()
+        if (!Settings.canDrawOverlays(this)) {
+            isRunning = false
+            stopSelf()
+            return
+        }
+        isRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
         buildViews()
         handler.post(ticker)
@@ -374,34 +381,34 @@ class OverlayService : Service() {
             else -> "阶段：${snapshot.stage}"
         }
 
-        if (needCookie) {
-            // 闪动高亮：文字颜色与底色在两种状态间切换，确保一眼看到
-            guideText?.text =
-                "👉 下一步：打开 App →「账号」页 → 用浏览器导出 Cookie 粘贴导入，之后就能在酒馆用 AI Studio 反代"
-            guideText?.setTextColor(
-                Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC")
-            )
-            guideText?.setTextSize(
-                TypedValue.COMPLEX_UNIT_SP,
-                if (highlightPulse) 13f else 12.5f
-            )
-            guideText?.setTypeface(guideText?.typeface, Typeface.BOLD)
-            guideText?.setPadding(dp(8), dp(6), dp(8), dp(6))
-            guideText?.background = GradientDrawable().apply {
-                cornerRadius = dp(8).toFloat()
-                setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
-                setStroke(dp(1), Color.parseColor("#66FDE047"))
-            }
-        } else {
-            guideText?.text = "👉 ${snapshot.guidance}"
-            guideText?.setTextColor(Color.parseColor("#93C5FD"))
-            guideText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            guideText?.setTypeface(null, Typeface.NORMAL)
-            guideText?.setPadding(0, dp(4), 0, 0)
-            guideText?.background = null
-        }
-
         if (!reportMode) {
+            if (needCookie) {
+                // 闪动高亮：文字颜色与底色在两种状态间切换，确保一眼看到
+                guideText?.text =
+                    "👉 下一步：打开 App →「账号」页 → 用浏览器导出 Cookie 粘贴导入，之后就能在酒馆用 AI Studio 反代"
+                guideText?.setTextColor(
+                    Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC")
+                )
+                guideText?.setTextSize(
+                    TypedValue.COMPLEX_UNIT_SP,
+                    if (highlightPulse) 13f else 12.5f
+                )
+                guideText?.setTypeface(guideText?.typeface, Typeface.BOLD)
+                guideText?.setPadding(dp(8), dp(6), dp(8), dp(6))
+                guideText?.background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
+                    setStroke(dp(1), Color.parseColor("#66FDE047"))
+                }
+            } else {
+                guideText?.text = "👉 ${snapshot.guidance}"
+                guideText?.setTextColor(Color.parseColor("#93C5FD"))
+                guideText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                guideText?.setTypeface(null, Typeface.NORMAL)
+                guideText?.setPadding(0, dp(4), 0, 0)
+                guideText?.background = null
+            }
+
             aiText?.text = snapshot.aiHint?.let { "AI：$it" }
                 ?: if (needCookie) {
                     "AI：部署已成功。建议现在去「账号」页导入 Cookie，模型列表才能刷出来。"
@@ -461,7 +468,8 @@ class OverlayService : Service() {
         val sourceLabel = if (useLocal) "本地反代 (${prefs.agentLocalModel})" else "自定义 (${prefs.agentModel})"
         showReport("正在读取后台日志和屏幕内容，调用 $sourceLabel 分析中，请稍等…")
 
-        diagnosisScope.launch {
+        diagnoseJob?.cancel()
+        diagnoseJob = diagnosisScope.launch {
             val config = AgentConfig(
                 baseUrl = prefs.agentBaseUrl,
                 apiKey = prefs.agentApiKey,

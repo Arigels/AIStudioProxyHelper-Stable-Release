@@ -24,6 +24,7 @@ data class EnvironmentStatus(
     val termuxRunCommandGranted: Boolean = false,
     val accessibilityEnabled: Boolean = false,
     val firefoxInstalled: Boolean = false,
+    val firefoxPackage: String? = null,
     val edgeInstalled: Boolean = false,
     val edgePackage: String? = null,
     val lemurInstalled: Boolean = false,

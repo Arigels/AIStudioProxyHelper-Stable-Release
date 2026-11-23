@@ -3,6 +3,7 @@ package com.aistudio.proxyhelper.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -44,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +54,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.agent.AgentLine
 
@@ -82,8 +85,8 @@ fun AgentScreen(
     onAskTavern: (String) -> Unit,
     embedded: Boolean = false
 ) {
-    var problem by remember { mutableStateOf("") }
-    var mode by remember { mutableIntStateOf(0) }
+    var problem by rememberSaveable { mutableStateOf("") }
+    var mode by rememberSaveable { mutableIntStateOf(0) }
     var showConfig by remember {
         mutableStateOf(
             if (uiState.agentUseLocal) uiState.agentLocalModel.isBlank()
@@ -222,28 +225,38 @@ fun AgentScreen(
                         if (!useLocal) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 Text(
                                     text = "服务商",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f)
+                                    maxLines = 1
                                 )
-                                OutlinedButton(onClick = { providerMenu = true }) {
-                                    Text(currentProvider.label)
-                                }
-                                DropdownMenu(
-                                    expanded = providerMenu,
-                                    onDismissRequest = { providerMenu = false }
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.CenterEnd
                                 ) {
-                                    providers.forEach { p ->
-                                        DropdownMenuItem(
-                                            text = { Text(p.label) },
-                                            onClick = {
-                                                providerMenu = false
-                                                if (p.baseUrl.isNotBlank()) baseUrl = p.baseUrl
-                                            }
+                                    OutlinedButton(onClick = { providerMenu = true }) {
+                                        Text(
+                                            text = currentProvider.label,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                    }
+                                    DropdownMenu(
+                                        expanded = providerMenu,
+                                        onDismissRequest = { providerMenu = false }
+                                    ) {
+                                        providers.forEach { p ->
+                                            DropdownMenuItem(
+                                                text = { Text(p.label) },
+                                                onClick = {
+                                                    providerMenu = false
+                                                    if (p.baseUrl.isNotBlank()) baseUrl = p.baseUrl
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -294,34 +307,44 @@ fun AgentScreen(
                         // 模型下拉
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
                                 text = "模型",
                                 style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f)
+                                maxLines = 1
                             )
-                            OutlinedButton(onClick = { modelMenu = true }) {
-                                Text(currentModel.ifBlank { "选择模型" })
-                            }
-                            DropdownMenu(
-                                expanded = modelMenu,
-                                onDismissRequest = { modelMenu = false }
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.CenterEnd
                             ) {
-                                if (availableModels.isEmpty()) {
-                                    DropdownMenuItem(
-                                        text = { Text("还没有模型列表，先点「连接并拉取模型」") },
-                                        onClick = { modelMenu = false }
+                                OutlinedButton(onClick = { modelMenu = true }) {
+                                    Text(
+                                        text = currentModel.ifBlank { "选择模型" },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                } else {
-                                    availableModels.forEach { name ->
+                                }
+                                DropdownMenu(
+                                    expanded = modelMenu,
+                                    onDismissRequest = { modelMenu = false }
+                                ) {
+                                    if (availableModels.isEmpty()) {
                                         DropdownMenuItem(
-                                            text = { Text(name) },
-                                            onClick = {
-                                                modelMenu = false
-                                                if (useLocal) localModel = name else model = name
-                                            }
+                                            text = { Text("还没有模型列表，先点「连接并拉取模型」") },
+                                            onClick = { modelMenu = false }
                                         )
+                                    } else {
+                                        availableModels.forEach { name ->
+                                            DropdownMenuItem(
+                                                text = { Text(name) },
+                                                onClick = {
+                                                    modelMenu = false
+                                                    if (useLocal) localModel = name else model = name
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                             }
