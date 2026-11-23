@@ -241,13 +241,9 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 prefs.permissionWizardShown = true
             },
             onOpenOverlay = {
-                runCatching {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}")
-                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+                val ok = EnvironmentChecker.openOverlayPermissionSettings(context)
+                if (!ok) {
+                    viewModel.showMessage("打不开悬浮窗授权页，请在系统设置里手动找「显示在其他应用上层」")
                 }
             },
             onOpenA11y = {

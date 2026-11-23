@@ -80,6 +80,30 @@ object EnvironmentChecker {
         runCatching { context.startActivity(intent) }
     }
 
+    /**
+     * 打开「显示在其他应用上层」授权页。
+     * 部分系统（如 ColorOS）不认带 package 的跳转，因此逐级回退，保证能到达。
+     */
+    fun openOverlayPermissionSettings(context: Context): Boolean {
+        val candidates = listOf(
+            Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${context.packageName}")
+            ),
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION),
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${context.packageName}")
+            )
+        )
+        for (intent in candidates) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val ok = runCatching { context.startActivity(intent) }.isSuccess
+            if (ok) return true
+        }
+        return false
+    }
+
     private fun isPackageInstalled(context: Context, packageName: String): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

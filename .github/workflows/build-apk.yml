@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.0.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.1.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.4.0.apk
+          path: dist/AIStudioProxyHelper-v2.4.1.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.4.0"
+          TAG="v2.4.1"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.0.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.1.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.0.apk \
-              --title "v2.4.0 — AI Studio 反代助手（悬浮窗报错识别）" \
-              --notes "悬浮窗新增「识别报错」按钮：抓取最近命令日志与当前屏幕文本，直接调用 AI 分析错误原因并在悬浮窗显示结论，不用切回 App。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.1.apk \
+              --title "v2.4.1 — AI Studio 反代助手" \
+              --notes "修复悬浮窗授权跳转：部分系统（ColorOS）不认带包名的跳转，改为三级回退（带包名 → 不带包名 → 应用详情），并在失败时提示手动进入。"
           fi
