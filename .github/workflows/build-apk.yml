@@ -2,9 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master, fix/cookie-guide ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main, master, fix/cookie-guide ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -97,26 +97,26 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.17.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.7.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.17.apk
+          path: dist/AIStudioProxyHelper-v2.6.7.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/cookie-guide'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.17-preview.1"
+          TAG="v2.6.7"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.17.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.17.apk \
-              --title "v2.6.17 — 修复引导迁移与浏览器跳转、Cookie预检与频繁掉线提醒" \
-              --notes "1. P0-1 修复引导状态迁移：引入 guide_schema=2，按实际证据重算状态，不再照搬旧 cookie_max_stage，未部署过强制回退第 1 步；增加证据闸门，剪贴板无真实 Cookie 或未手动确认不进入粘贴步；2. P0-2 修复打开 AI Studio 跳转：取消二次确认卡，一次点击直达浏览器；定向打开失败自动回退并给出红字提示，所有失败路径均自动复制链接兜底；3. P0-3 剪贴板检测降级与手动主路径：第 4 步突出醒目的「已经导出好了，去粘贴 →」主按钮；复制 AI Studio 链接时若剪贴板已有 Cookie 则弹窗确认防止覆盖；第 5 步「打开 App 并读取剪贴板」改在前台可靠读取；4. P0-4 Cookie 结构预检与错误翻译：导入前本地纯离线预检 JSON、登录态核心字段与 Google 域名，拦截复制成网址或被截断的情况；服务端 401/未检测到账号错误自动转为排查清单；5. P1 频繁掉线提醒：10 分钟掉线 3 次或 30 分钟累计离线 90 秒自动在断线卡提示「把 Termux 拉成小窗并关闭电池优化」，用户点「知道了」后 7 天不再重复提示，手动停止不计入。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk \
+              --title "v2.6.7 — 移除无用且有风控风险的清除429功能，反代页新增常驻公网安全提醒" \
+              --notes "1. 移除所有「清除/重置 429 冷却」按钮与相关引导（该操作仅清空本地冷却计时与退避保护，无法恢复 Google 服务器端额度，反而会导致强行高频重试增加风控封号风险）；2. 在「反代」页顶部新增常驻红色安全提醒，警示公网反代风险，提示勿在公共 Wi-Fi/公网下使用，请切换为手机流量或家庭 Wi-Fi 等安全网络后再使用。"
           fi
