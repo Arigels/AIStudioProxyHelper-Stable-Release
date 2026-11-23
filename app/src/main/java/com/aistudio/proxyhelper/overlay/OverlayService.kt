@@ -4,9 +4,11 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -165,8 +167,8 @@ class OverlayService : Service() {
 
     /** Cookie 向导整体结束（导入成功即 true），置 true 后 A 阶段永久不再出现 */
     private var cookieDone: Boolean
-        // key 未写过时先按已完成处理，等首次拿到真实服务状态再迁移，避免升级用户被教程糊脸
-        get() = if (!guidePrefs.contains("cookie_done")) true else guidePrefs.getBoolean("cookie_done", false)
+        // 默认 false：全新安装要先看教程；老用户由 render() 里的一次性迁移按真实状态纠正
+        get() = guidePrefs.getBoolean("cookie_done", false)
         set(value) = guidePrefs.edit().putBoolean("cookie_done", value).apply()
 
     /** 反代曾经连上过；一旦 true 永不回退，用于区分「从没启动」和「连上又断」 */
@@ -189,6 +191,16 @@ class OverlayService : Service() {
             highlightPulse = !highlightPulse
             render()
             handler.postDelayed(this, 1500L)
+        }
+    }
+
+    /** 解锁时重探一次浏览器：装完 Edge/火狐回到桌面即能进 S1 */
+    private val unlockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_USER_PRESENT) {
+                refreshBrowserCache()
+                render()
+            }
         }
     }
 
@@ -219,6 +231,9 @@ class OverlayService : Service() {
             (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
                 ?.addPrimaryClipChangedListener(clipWatcher)
         }
+        runCatching {
+            registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
+        }
         handler.post(ticker)
     }
 
@@ -231,6 +246,7 @@ class OverlayService : Service() {
             (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
                 ?.removePrimaryClipChangedListener(clipWatcher)
         }
+        runCatching { unregisterReceiver(unlockReceiver) }
         handler.removeCallbacksAndMessages(null)
         diagnosisScope.cancel()
         root?.let { view -> runCatching { windowManager?.removeView(view) } }
@@ -817,7 +833,8 @@ class OverlayService : Service() {
         btn: TextView?,
         altBtn: TextView?
     ) {
-        tut.text = "请安装一个支持扩展的浏览器（手机默认浏览器、Chrome 等不支持扩展）"
+        tut.text = "请安装一个支持扩展的浏览器（手机默认浏览器、Chrome 等不支持扩展）\n装好后点这段字重新检测"
+        tut.setOnClickListener { refreshBrowserCache(); render() }
         tut.setTextColor(Color.parseColor("#DBEAFE"))
         btn?.visibility = View.VISIBLE
         btn?.text = "下载 Edge（官网）"
