@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.RocketLaunch
@@ -219,6 +221,62 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
             dismissButton = {
                 TextButton(onClick = { viewModel.recopyPasteCommand() }) {
                     Text("重新复制")
+                }
+            }
+        )
+    }
+
+    uiState.publicNetworkAlert?.let { risk ->
+        val noPwd = !uiState.service.authEnabled && uiState.settings.webPassword.isBlank()
+        AlertDialog(
+            onDismissRequest = { viewModel.acknowledgePublicNetworkRisk() },
+            title = {
+                Text(
+                    text = "⚠️ 检测到公共/企业网域，建议关闭反代",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "${risk.reason}（端口 ${uiState.settings.port}）。在公司网络、校园网或公共 Wi-Fi 下开启反代存在以下风险：",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "1. 同网段他人可盗刷额度：反代默认监听 0.0.0.0:${uiState.settings.port} 且接口默认免密，同一网络下的设备扫描到你的 IP 就能直接调用你的 Gemini 额度，导致 429 限流甚至 Google 账号被封。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = if (noPwd) {
+                            "2. 管理后台当前完全无密码：同网段任何人都可直接打开 http://${risk.address}:${uiState.settings.port} 查看你的账号邮箱、删除或导出凭据。"
+                        } else {
+                            "2. 内网 HTTP 明文风险：局域网通信未启用 HTTPS，密码与对话内容在公共网络下存在被同网段抓包/监听的风险。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (noPwd) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "3. 公司网络审计与 IT 告警：公司网关通常监控开放端口与高频访问 Google 的异常代理流量，可能触发公司安全审计。",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        text = "建议：如非必须，在公司/公共 Wi-Fi 下请先关闭反代，改用手机 4G/5G 流量或回家再开（是否关闭由你个人决定；若继续使用，强烈建议在「高级设置」里设置管理后台密码）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.stopServiceForNetworkRisk() }) {
+                    Text("立即关闭反代")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.acknowledgePublicNetworkRisk() }) {
+                    Text("我知道风险，继续用")
                 }
             }
         )

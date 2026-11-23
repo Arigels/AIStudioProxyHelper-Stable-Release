@@ -11,6 +11,7 @@ import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.data.ImportResult
 import com.aistudio.proxyhelper.data.ProxySettings
+import com.aistudio.proxyhelper.data.PublicNetworkRisk
 import com.aistudio.proxyhelper.data.ServiceStatus
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
@@ -70,13 +71,15 @@ data class MainUiState(
     val pendingDeployAction: TermuxAction? = null,
     val canDrawOverlays: Boolean = false,
     val overlayRunning: Boolean = false,
-    val deploySucceeded: Boolean = false
+    val deploySucceeded: Boolean = false,
+    val publicNetworkAlert: PublicNetworkRisk? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsRepo = SettingsRepository(application)
     private val apiClient = ProxyApiClient()
+    private var acknowledgedNetworkKey: String? = null
 
     private val _uiState = MutableStateFlow(
         MainUiState(
@@ -209,11 +212,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             OverlayState.deployStartedAt = 0L
         }
 
+        val networkRisk = if (status.online) {
+            EnvironmentChecker.inspectPublicNetworkRisk(ctx)
+        } else {
+            null
+        }
+        val alertToShow = networkRisk?.takeIf { it.key != acknowledgedNetworkKey }
+
         _uiState.update {
             it.copy(
                 deployStage = phase.label,
                 deployError = visibleError,
-                deploying = if (visibleError != null) false else it.deploying
+                deploying = if (visibleError != null) false else it.deploying,
+                publicNetworkAlert = alertToShow
             )
         }
         OverlayState.update(
@@ -264,6 +275,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissVpnReminder() {
         _uiState.update { it.copy(showVpnReminder = false, pendingDeployAction = null) }
+    }
+
+    fun acknowledgePublicNetworkRisk() {
+        val current = _uiState.value.publicNetworkAlert ?: return
+        acknowledgedNetworkKey = current.key
+        _uiState.update {
+            it.copy(
+                publicNetworkAlert = null,
+                snackbarMessage = "已保留反代运行；在公共网络下请注意保管好管理密码与端口"
+            )
+        }
+    }
+
+    fun stopServiceForNetworkRisk() {
+        val current = _uiState.value.publicNetworkAlert
+        if (current != null) {
+            acknowledgedNetworkKey = current.key
+        }
+        _uiState.update { it.copy(publicNetworkAlert = null) }
+        executeTermuxActionInternal(TermuxAction.STOP_SERVICE, skipVpnCheck = true)
     }
 
     private fun executeTermuxActionInternal(action: TermuxAction, skipVpnCheck: Boolean) {

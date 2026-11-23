@@ -60,6 +60,12 @@ data class ImportResult(
     val importedCount: Int = 0
 )
 
+data class PublicNetworkRisk(
+    val key: String,
+    val reason: String,
+    val address: String
+)
+
 enum class TermuxAction(
     val title: String,
     val subtitle: String,

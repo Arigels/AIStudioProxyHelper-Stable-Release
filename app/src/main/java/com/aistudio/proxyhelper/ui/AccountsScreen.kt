@@ -1,6 +1,11 @@
 package com.aistudio.proxyhelper.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +31,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Button
@@ -45,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +66,9 @@ import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.data.AccountSummary
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.termux.TermuxBridge
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AccountsScreen(
@@ -65,7 +77,39 @@ fun AccountsScreen(
     onShowMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var cookieText by rememberSaveable { mutableStateOf("") }
+    var showPasteLimitTips by rememberSaveable { mutableStateOf(false) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        val maxBytes = 2 * 1024 * 1024
+                        val bytes = stream.readNBytes(maxBytes + 1)
+                        if (bytes.size > maxBytes) {
+                            error("文件超过 2MB，请确认选择的是 Cookie JSON 文件")
+                        }
+                        String(bytes, Charsets.UTF_8)
+                    } ?: error("无法打开所选文件")
+                }
+            }
+            result.onSuccess { text ->
+                if (text.isBlank()) {
+                    onShowMessage("选中的文件是空的")
+                } else {
+                    cookieText = text
+                    onShowMessage("已从文件读取（${text.length} 字符），点下方按钮即可导入")
+                }
+            }.onFailure { e ->
+                onShowMessage("读取文件失败：${e.message ?: "未知错误"}")
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -88,32 +132,113 @@ fun AccountsScreen(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Text(
+                    text = "粘贴 Cookie 导入",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "粘贴 Cookie 导入",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    FilledTonalButton(onClick = {
-                        val clip = TermuxBridge.readFromClipboard(context)
-                        if (clip.isBlank()) {
-                            onShowMessage("剪贴板是空的，请先用 Cookie-Editor 导出")
-                        } else {
-                            cookieText = clip
-                            onShowMessage("已从剪贴板粘贴")
-                        }
-                    }) {
+                    FilledTonalButton(
+                        onClick = {
+                            val clip = TermuxBridge.readFromClipboard(context)
+                            if (clip.isBlank()) {
+                                onShowMessage("剪贴板是空的，请先用 Cookie-Editor 导出为 JSON")
+                            } else {
+                                cookieText = clip
+                                onShowMessage("已从系统剪贴板读取（${clip.length} 字符）")
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
                         Icon(
                             Icons.Filled.ContentPaste,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("粘贴剪贴板")
+                        Text("粘贴剪贴板", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            filePickerLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.FolderOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("从文件导入", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showPasteLimitTips = !showPasteLimitTips },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "手机输入法粘贴有字数上限/被截断？点此看解决办法",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                imageVector = if (showPasteLimitTips) {
+                                    Icons.Filled.ExpandLess
+                                } else {
+                                    Icons.Filled.ExpandMore
+                                },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        AnimatedVisibility(visible = showPasteLimitTips) {
+                            Column(
+                                modifier = Modifier.padding(top = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "1. 优先点上面的「粘贴剪贴板」按钮：不要点进输入框用输入法键盘工具栏粘贴（很多手机输入法剪贴板条限 1000~5000 字），该按钮直接调用系统剪贴板，不受输入法字数限制。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "2. 改用「从文件导入」：如果系统剪贴板本身也截断（或从电脑导出），可把 JSON 存成 .json / .txt 文件后点上面「从文件导入」直接读取，彻底无字数限制。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "3. 若在网页后台粘贴：长按输入框空白处选系统原生「粘贴」，不要点输入法键盘上的剪贴板历史。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "4. 减少单次 Cookie 体积：用浏览器无痕窗口或只登录需要用的 Google 账号再 Export as JSON；也可分批登录不同账号多次导入（会自动累加，不会覆盖）。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -587,18 +712,20 @@ private fun CookieGuideCard(
             }
 
             // 步骤 4
-            GuideStep(number = 4, title = "导出 Cookie") {
+            GuideStep(number = 4, title = "用 Cookie-Editor 导出为 JSON") {
                 Text(
-                    text = "点浏览器右上角（或工具栏）的 Cookie-Editor 图标 → Export → Export as JSON。内容会自动复制到剪贴板。",
+                    text = "1. 保持浏览器停留在已登录的 aistudio.google.com 页面。\n" +
+                        "2. 打开浏览器里的 Cookie-Editor 扩展（Edge 点底部/右上角菜单「≡ / …」→「扩展」→「Cookie-Editor」；火狐点地址栏旁「⋮」→「扩展」→「Cookie-Editor」）。\n" +
+                        "3. 点插件右下角 Export → 务必选择「Export as JSON」（不要选 Header String 或 Netscape）。导出后完整 JSON 会自动复制到剪贴板。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             // 步骤 5
-            GuideStep(number = 5, title = "回到本 App 粘贴导入") {
+            GuideStep(number = 5, title = "回到本 App 导入（支持剪贴板 / 文件）") {
                 Text(
-                    text = "在下方「粘贴 Cookie 导入」里点「粘贴剪贴板」，再点「导入并自动识别所有账号」即可。",
+                    text = "在下方点「粘贴剪贴板」（推荐，可绕过输入法粘贴字数限制）或「从文件导入 (.json/.txt)」，再点「导入并自动识别所有账号」即可。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

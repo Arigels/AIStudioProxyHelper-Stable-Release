@@ -3,6 +3,8 @@ package com.aistudio.proxyhelper.network
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -10,6 +12,7 @@ import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.EnvironmentStatus
+import com.aistudio.proxyhelper.data.PublicNetworkRisk
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -150,6 +153,122 @@ object EnvironmentChecker {
         null
     }
 
+    private fun isIgnoredInterface(name: String): Boolean {
+        val n = name.lowercase()
+        return n.startsWith("tun") ||
+            n.startsWith("tap") ||
+            n.startsWith("wg") ||
+            n.startsWith("ppp") ||
+            n.startsWith("rmnet") ||
+            n.startsWith("ccmni") ||
+            n.startsWith("veth") ||
+            n.startsWith("docker") ||
+            n.startsWith("dummy")
+    }
+
+    /**
+     * 检测当前是否处于公司/校园/公共 Wi-Fi 或公网 IP 环境（仅蜂窝流量或家庭 192.168.x.x 返回 null）。
+     */
+    fun inspectPublicNetworkRisk(context: Context): PublicNetworkRisk? {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return null
+
+        var hasWifiOrEthernet = false
+        var hasCaptivePortal = false
+
+        @Suppress("DEPRECATION")
+        val networks = cm.allNetworks
+        for (network in networks) {
+            val caps = cm.getNetworkCapabilities(network) ?: continue
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
+            if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            ) {
+                hasWifiOrEthernet = true
+                if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)) {
+                    hasCaptivePortal = true
+                }
+            }
+        }
+
+        if (!hasWifiOrEthernet) return null
+
+        val wifiOrEthAddrs = collectWifiOrEthernetIpv4s()
+        val publicIp = wifiOrEthAddrs.firstOrNull { !isPrivateIpv4(it) }
+        if (publicIp != null) {
+            return PublicNetworkRisk(
+                key = "pub:$publicIp",
+                reason = "当前 Wi-Fi/有线网卡分配了公网 IP（$publicIp）",
+                address = publicIp
+            )
+        }
+
+        val primaryIp = wifiOrEthAddrs.firstOrNull()
+        if (hasCaptivePortal) {
+            return PublicNetworkRisk(
+                key = "portal:${primaryIp ?: "wifi"}",
+                reason = "当前连接的是需要网页认证的公共 Wi-Fi",
+                address = primaryIp ?: "公共 Wi-Fi"
+            )
+        }
+
+        val corpIp = wifiOrEthAddrs.firstOrNull { isEnterpriseOrCampusIpv4(it) }
+        if (corpIp != null) {
+            return PublicNetworkRisk(
+                key = "corp:$corpIp",
+                reason = "当前处于企业/校园/公共局域网段（$corpIp）",
+                address = corpIp
+            )
+        }
+
+        return null
+    }
+
+    private fun collectWifiOrEthernetIpv4s(): List<String> {
+        return try {
+            val result = mutableListOf<String>()
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return emptyList()
+            while (interfaces.hasMoreElements()) {
+                val iface = interfaces.nextElement()
+                if (!iface.isUp || iface.isLoopback || iface.isVirtual) continue
+                val name = iface.name.lowercase()
+                if (isIgnoredInterface(name)) continue
+                if (!name.startsWith("wlan") && !name.startsWith("ap") &&
+                    !name.startsWith("eth") && !name.startsWith("en")
+                ) {
+                    continue
+                }
+                val addrs = iface.inetAddresses
+                while (addrs.hasMoreElements()) {
+                    val addr = addrs.nextElement()
+                    if (addr is Inet4Address && !addr.isLoopbackAddress && !addr.isLinkLocalAddress) {
+                        addr.hostAddress?.let { result.add(it) }
+                    }
+                }
+            }
+            result
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun isPrivateIpv4(ip: String): Boolean {
+        val parts = ip.split('.').mapNotNull { it.toIntOrNull() }
+        if (parts.size != 4) return true
+        val (a, b) = parts[0] to parts[1]
+        return a == 10 ||
+            (a == 172 && b in 16..31) ||
+            (a == 192 && b == 168) ||
+            (a == 100 && b in 64..127)
+    }
+
+    private fun isEnterpriseOrCampusIpv4(ip: String): Boolean {
+        val parts = ip.split('.').mapNotNull { it.toIntOrNull() }
+        if (parts.size != 4) return false
+        val (a, b) = parts[0] to parts[1]
+        return a == 10 || (a == 172 && b in 16..31)
+    }
+
     private fun detectLanIpv4(): String? {
         return try {
             val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
@@ -158,10 +277,11 @@ object EnvironmentChecker {
                 val iface = interfaces.nextElement()
                 if (!iface.isUp || iface.isLoopback || iface.isVirtual) continue
                 val name = iface.name.lowercase()
+                if (isIgnoredInterface(name)) continue
                 val addrs = iface.inetAddresses
                 while (addrs.hasMoreElements()) {
                     val addr = addrs.nextElement()
-                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
+                    if (addr is Inet4Address && !addr.isLoopbackAddress && !addr.isLinkLocalAddress) {
                         val host = addr.hostAddress ?: continue
                         val priority = when {
                             name.startsWith("wlan") || name.startsWith("ap") -> 0

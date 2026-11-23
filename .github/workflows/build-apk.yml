@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.3.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.4.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.3.apk
+          path: dist/AIStudioProxyHelper-v2.6.4.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.3"
+          TAG="v2.6.4"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.3.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.4.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.3.apk \
-              --title "v2.6.3 — 账号页浏览器自动识别与排版修复 & 稳定性修复" \
-              --notes "1. 账号页自动识别已安装浏览器（Edge / 火狐及其 Beta/Nightly），仅展示对应扩展链接复制按钮，修复火狐复制按钮挤压竖排的问题；2. 修复 LogCollector 读取 UTF-8 日志超时丢日志、ProgressTracker 误判 403/oom、悬浮窗在线后仍显示旧报错、Agent JSON null 字段及窄屏按钮换行等高影响问题。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.4.apk \
+              --title "v2.6.4 — 完善 Cookie-Editor JSON 导出与文件导入、公司/公共网域安全提醒" \
+              --notes "1. 账号页补全 Cookie-Editor Export as JSON 操作指引，新增「从文件导入 (.json/.txt)」与输入法粘贴字数上限多种解决方案；2. 新增公司/校园/公共 Wi-Fi 与公网 IP 检测，反代在线时弹出风险说明（可选立即关闭或继续使用），并过滤 VPN TUN 虚拟网卡避免误判。"
           fi
