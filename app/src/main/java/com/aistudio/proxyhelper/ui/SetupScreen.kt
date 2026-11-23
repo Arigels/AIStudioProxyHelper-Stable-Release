@@ -211,7 +211,7 @@ fun SetupScreen(
             text = {
                 Text(
                     "反代服务需要在手机的 Termux 里运行。\n\n" +
-                        "请从 F-Droid 或 GitHub 下载 64 位安装包（文件名带 arm64-v8a），切勿使用 Google Play 商店旧版。装好后回到这里点一键部署即可。"
+                        "请从 F-Droid 或 GitHub 下载 64 位安装包（文件名带 arm64-v8a），切勿使用 Google Play 商店旧版。装好后回到这里点半自动部署即可。"
                 )
             },
             confirmButton = {
@@ -514,7 +514,7 @@ private fun PrimaryActionCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "一键部署反代",
+                        text = "半自动部署反代",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium
                     )

@@ -209,7 +209,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.deploying -> "正在${phase.label}，编译阶段没输出是正常的，请耐心等"
             !termuxInstalled -> "还没安装 Termux，去 F-Droid 下载"
             !accessibilityEnabled -> "建议开启自动操控权限，可全自动搭建"
-            else -> "点「一键部署反代」开始"
+            else -> "点「半自动部署反代」开始"
         }
 
         if (visibleError != null) {
@@ -486,7 +486,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         },
                         snackbarMessage = when (action) {
                             TermuxAction.INSTALL_AND_START ->
-                                "已在 Termux 开始一键搭建，请稍候…完成后状态会自动变绿"
+                                "已在 Termux 开始半自动部署，请稍候…完成后状态会自动变绿"
                             else -> "已向 Termux 发送任务：${action.title}"
                         }
                     )
