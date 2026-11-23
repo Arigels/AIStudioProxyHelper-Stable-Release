@@ -126,6 +126,15 @@ class OverlayService : Service() {
     private var edgePkgCache: String = ""
     private var firefoxPkgCache: String = ""
 
+    /** online 变 false 的时刻；恢复 true 立即清零。心跳 6 秒，阈值取 15 秒≈丢两次以上 */
+    private var offlineSince: Long = 0L
+
+    /** 服务重建时刻：头 3 秒不判抢占，等第一次心跳结果 */
+    private val rebuiltAt: Long = System.currentTimeMillis()
+
+    private val offlineThresholdMs = 15_000L
+    private val rebuildGraceMs = 3_000L
+
     private val guidePrefs by lazy {
         getSharedPreferences("aistudio_tutorial", MODE_PRIVATE)
     }
@@ -529,12 +538,36 @@ class OverlayService : Service() {
             0L
         }
 
-        // 部署完成但还没导入账号：进入「高亮提醒去获取 Cookie」模式
+        // 断线防抖：online 变 false 记时间戳，恢复 true 立即清零
+        if (snapshot.online) {
+            proxyEverOnline = true
+            offlineSince = 0L
+        } else if (offlineSince == 0L) {
+            offlineSince = System.currentTimeMillis()
+        }
+        val now = System.currentTimeMillis()
+        val takeover = proxyEverOnline && !snapshot.online &&
+            offlineSince > 0L && now - offlineSince >= offlineThresholdMs &&
+            now - rebuiltAt >= rebuildGraceMs
+
+        // 老用户迁移：cookie_done 未写过时，等拿到真实服务状态再判定，避免升级被教程糊脸
+        if (!guidePrefs.contains("cookie_done") && snapshot.online) {
+            if (snapshot.accountsReady) {
+                cookieMaxStage = 4
+                cookieDone = true
+            } else {
+                cookieDone = false
+            }
+        }
+        if (snapshot.accountsReady && !cookieDone) {
+            cookieMaxStage = 4
+            cookieDone = true
+        }
+
+        val cookieMode = !cookieDone
+        val tavernMode = cookieDone && !tavernDone
+        val guideMode = (cookieMode || tavernMode) && !takeover
         val needCookie = snapshot.online && !snapshot.accountsReady
-        // 账号已就绪但酒馆向导还没走完：进入酒馆引导模式
-        val tavernMode = snapshot.online && snapshot.accountsReady && !tavernDone
-        // 向导模式期间精简悬浮窗，隐藏 AI 行与已用时行（不影响报错放大视图）
-        val guideMode = needCookie || tavernMode
 
         val color = when {
             snapshot.error != null -> "#EF4444"
@@ -614,7 +647,6 @@ class OverlayService : Service() {
             detailsScroll?.visibility = View.GONE
         }
 
-        // 只有整体结束后才清临时 UI 状态；进度本身绝不归零
         if (cookieDone) {
             cookieClipLength = 0
             tutorialBrowser = null
@@ -622,7 +654,11 @@ class OverlayService : Service() {
             tutorialFailHint = null
         }
         when {
-            needCookie -> renderTutorial(!reportMode)
+            takeover -> {
+                renderTutorial(false)
+                renderTavernGuide(false)
+            }
+            cookieMode -> renderTutorial(!reportMode)
             tavernMode -> renderTavernGuide(!reportMode)
             else -> {
                 renderTutorial(false)
