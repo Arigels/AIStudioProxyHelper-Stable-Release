@@ -2,9 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master, fix/cookie-guide ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main, master, fix/cookie-guide ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -97,27 +97,26 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.14.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.7.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.14.apk
+          path: dist/AIStudioProxyHelper-v2.6.7.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/cookie-guide'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.14-preview.1"
+          TAG="v2.6.7"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.14.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.14.apk \
-              --title "v2.6.14 — 火狐用户不再拿到 Edge 扩展链接 / 误点跳步修复" \
-              --notes "1. 浏览器缓存已卸载即作废，装火狐的用户不会再被塞 Edge 扩展链接；2. 记住手动选择的浏览器，两个都装时不无脑优先 Edge；3.「打开 App」不再把教程偷偷推进到粘贴步骤，误点也能看回上一步；4. 账号页新增「教程点乱了？从头再来」重置入口。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk \
+              --title "v2.6.7 — 移除无用且有风控风险的清除429功能，反代页新增常驻公网安全提醒" \
+              --notes "1. 移除所有「清除/重置 429 冷却」按钮与相关引导（该操作仅清空本地冷却计时与退避保护，无法恢复 Google 服务器端额度，反而会导致强行高频重试增加风控封号风险）；2. 在「反代」页顶部新增常驻红色安全提醒，警示公网反代风险，提示勿在公共 Wi-Fi/公网下使用，请切换为手机流量或家庭 Wi-Fi 等安全网络后再使用。"
           fi
-
