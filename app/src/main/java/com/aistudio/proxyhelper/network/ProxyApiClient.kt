@@ -1,6 +1,7 @@
 package com.aistudio.proxyhelper.network
 
 import com.aistudio.proxyhelper.data.AccountSummary
+import com.aistudio.proxyhelper.data.ApiKeySummary
 import com.aistudio.proxyhelper.data.ImportResult
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.ServiceStatus
@@ -121,10 +122,41 @@ class ProxyApiClient {
                 }
             }
 
+            // 3.5 Check /api-keys
+            val apiKeys = mutableListOf<ApiKeySummary>()
+            runCatching {
+                val req = Request.Builder()
+                    .url("$base/api-keys")
+                    .applyWebAuth(settings)
+                    .header("Accept", "application/json")
+                    .get()
+                    .build()
+                probeClient.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val arr = JSONArray(resp.body?.string().orEmpty())
+                        for (i in 0 until arr.length()) {
+                            val item = arr.optJSONObject(i) ?: continue
+                            val keyVal = item.optCleanString("key")
+                            if (keyVal.isNotBlank()) {
+                                apiKeys.add(
+                                    ApiKeySummary(
+                                        name = item.optCleanString("name").ifBlank { "API Key" },
+                                        key = keyVal,
+                                        createdAt = item.optCleanString("created_at").takeIf { it.isNotBlank() }
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 4. Check /v1beta/models
             val models = mutableListOf<String>()
             runCatching {
-                val apiKey = settings.webPassword.takeIf { it.isNotBlank() } ?: settings.apiTestKey
+                val apiKey = settings.webPassword.takeIf { it.isNotBlank() }
+                    ?: apiKeys.firstOrNull()?.key
+                    ?: settings.apiTestKey
                 val req = Request.Builder()
                     .url("$base/v1beta/models")
                     .header("x-goog-api-key", apiKey)
@@ -154,6 +186,7 @@ class ProxyApiClient {
                 signerRunning = signerRunning,
                 authEnabled = authEnabled,
                 accounts = accounts,
+                apiKeys = apiKeys,
                 models = models,
                 lastError = authError,
                 lastCheckedAt = now
@@ -248,6 +281,68 @@ class ProxyApiClient {
             }
         } catch (e: Exception) {
             ImportResult(false, "无法连接本机服务（127.0.0.1:${settings.port}），请先到「搭建」页启动服务后再试。")
+        }
+    }
+
+    suspend fun createApiKey(
+        settings: ProxySettings,
+        name: String,
+        customKey: String? = null
+    ): Triple<Boolean, String, ApiKeySummary?> = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("name", name.trim().ifBlank { "App安全密钥" })
+            if (!customKey.isNullOrBlank()) {
+                put("key", customKey.trim())
+            }
+        }
+        val req = Request.Builder()
+            .url("${settings.localBaseUrl}/api-keys")
+            .applyWebAuth(settings)
+            .header("Accept", "application/json")
+            .post(payload.toString().toRequestBody(jsonMediaType))
+            .build()
+
+        return@withContext try {
+            actionClient.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (resp.isSuccessful) {
+                    val obj = JSONObject(body)
+                    val item = ApiKeySummary(
+                        name = obj.optCleanString("name").ifBlank { "API Key" },
+                        key = obj.optCleanString("key"),
+                        createdAt = obj.optCleanString("created_at").takeIf { it.isNotBlank() }
+                    )
+                    Triple(true, "API 密钥已创建并生效", item)
+                } else {
+                    val detail = extractErrorMessage(body, resp.code)
+                    Triple(false, "创建 API 密钥失败：$detail", null)
+                }
+            }
+        } catch (e: Exception) {
+            Triple(false, "无法连接本机服务：${e.message ?: "服务未启动"}", null)
+        }
+    }
+
+    suspend fun deleteApiKey(
+        settings: ProxySettings,
+        key: String
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val encoded = android.net.Uri.encode(key, "/")
+        val req = Request.Builder()
+            .url("${settings.localBaseUrl}/api-keys/$encoded")
+            .applyWebAuth(settings)
+            .delete()
+            .build()
+        return@withContext try {
+            actionClient.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    true to "已删除该 API 密钥"
+                } else {
+                    false to extractErrorMessage(resp.body?.string().orEmpty(), resp.code)
+                }
+            }
+        } catch (e: Exception) {
+            false to (e.message ?: "请求失败")
         }
     }
 

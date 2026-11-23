@@ -23,12 +23,58 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 固定签名密钥：缓存 debug keystore，保证每次构建签名一致，后续更新可直接覆盖安装
-      - name: Restore stable signing keystore
+      # 固定正式签名证书（优先使用 GitHub Secrets；未配置则生成并缓存正式 Release Keystore，告别 Android Debug 证书）
+      - name: Restore release keystore cache
         uses: actions/cache@v4
         with:
-          path: ~/.android
-          key: android-debug-keystore-v1
+          path: ~/.keystore
+          key: android-release-keystore-v1
+
+      - name: Prepare Release Keystore
+        env:
+          SECRET_KS_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          SECRET_KS_PASS: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          SECRET_KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          mkdir -p "$HOME/.keystore"
+          KS_FILE="$HOME/.keystore/release.jks"
+          ENV_FILE="$HOME/.keystore/release.env"
+          if [ -n "$SECRET_KS_B64" ] && [ -n "$SECRET_KS_PASS" ] && [ -n "$SECRET_KEY_ALIAS" ]; then
+            echo "$SECRET_KS_B64" | base64 -d > "$KS_FILE"
+            echo "ANDROID_KEYSTORE_PATH=$KS_FILE" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$SECRET_KS_PASS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$SECRET_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=${SECRET_KEY_PASS:-$SECRET_KS_PASS}" >> "$GITHUB_ENV"
+          elif [ -f "$KS_FILE" ] && [ -f "$ENV_FILE" ]; then
+            # shellcheck disable=SC1090
+            source "$ENV_FILE"
+            echo "ANDROID_KEYSTORE_PATH=$KS_FILE" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+          else
+            RAND_PASS="$(openssl rand -hex 24)"
+            ALIAS_NAME="aistudio_release"
+            rm -f "$KS_FILE"
+            keytool -genkeypair -v \
+              -keystore "$KS_FILE" \
+              -storetype PKCS12 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias "$ALIAS_NAME" \
+              -storepass "$RAND_PASS" \
+              -keypass "$RAND_PASS" \
+              -dname "CN=AIStudioProxyHelper, OU=OpenSource, O=Arigels, C=CN" >/dev/null 2>&1
+            chmod 600 "$KS_FILE"
+            printf 'KS_PASS=%s\nKEY_ALIAS=%s\n' "$RAND_PASS" "$ALIAS_NAME" > "$ENV_FILE"
+            chmod 600 "$ENV_FILE"
+            echo "ANDROID_KEYSTORE_PATH=$KS_FILE" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$RAND_PASS" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$ALIAS_NAME" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$RAND_PASS" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
@@ -44,17 +90,21 @@ jobs:
       - name: Build Release APK
         run: gradle assembleRelease --stacktrace
 
+      - name: Verify APK Signing Certificate
+        run: |
+          keytool -printcert -jarfile app/build/outputs/apk/release/app-release.apk | grep -E "Owner:|Issuer:|SHA256:" || true
+
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.4.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.5.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.4.apk
+          path: dist/AIStudioProxyHelper-v2.6.5.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +112,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.4"
+          TAG="v2.6.5"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.4.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.5.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.4.apk \
-              --title "v2.6.4 — 完善 Cookie-Editor JSON 导出与文件导入、公司/公共网域安全提醒" \
-              --notes "1. 账号页补全 Cookie-Editor Export as JSON 操作指引，新增「从文件导入 (.json/.txt)」与输入法粘贴字数上限多种解决方案；2. 新增公司/校园/公共 Wi-Fi 与公网 IP 检测，反代在线时弹出风险说明（可选立即关闭或继续使用），并过滤 VPN TUN 虚拟网卡避免误判。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.5.apk \
+              --title "v2.6.5 — 正式 Release 签名、精简无障碍权限范围、双密钥安全保护" \
+              --notes "1. 改用正式 Release Keystore 签名（告别 Android Debug 证书；注意从旧版覆盖安装需先卸载一次旧版）；2. 将无障碍权限范围限定为 Termux 与系统权限弹窗，降低 Play Protect / 安全管家误报；3. 新增「API 访问密钥 + 管理后台密码」一键保护设置，公共/企业网络弹窗可直接开启密钥保护，并在高级设置支持查看/复制/删除 API 密钥。"
           fi

@@ -72,7 +72,9 @@ data class MainUiState(
     val canDrawOverlays: Boolean = false,
     val overlayRunning: Boolean = false,
     val deploySucceeded: Boolean = false,
-    val publicNetworkAlert: PublicNetworkRisk? = null
+    val publicNetworkAlert: PublicNetworkRisk? = null,
+    val showSecurityKeyDialog: Boolean = false,
+    val savingSecurityKeys: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -295,6 +297,102 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         _uiState.update { it.copy(publicNetworkAlert = null) }
         executeTermuxActionInternal(TermuxAction.STOP_SERVICE, skipVpnCheck = true)
+    }
+
+    fun openSecurityKeyDialog(fromNetworkAlert: Boolean = false) {
+        if (fromNetworkAlert) {
+            val current = _uiState.value.publicNetworkAlert
+            if (current != null) {
+                acknowledgedNetworkKey = current.key
+            }
+        }
+        _uiState.update {
+            it.copy(
+                publicNetworkAlert = null,
+                showSecurityKeyDialog = true
+            )
+        }
+    }
+
+    fun dismissSecurityKeyDialog() {
+        _uiState.update { it.copy(showSecurityKeyDialog = false) }
+    }
+
+    fun applySecurityKeys(
+        adminPassword: String,
+        apiKey: String,
+        restartToApplyAdminPwd: Boolean
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(savingSecurityKeys = true) }
+            val oldSettings = _uiState.value.settings
+            val cleanPwd = adminPassword.trim()
+            val cleanApiKey = apiKey.trim()
+            val serviceOnline = _uiState.value.service.online
+
+            var apiKeyNotice: String? = null
+            if (cleanApiKey.isNotEmpty() && serviceOnline) {
+                val exists = _uiState.value.service.apiKeys.any { it.key == cleanApiKey }
+                if (!exists) {
+                    val (ok, msg, _) = apiClient.createApiKey(oldSettings, "App安全密钥", cleanApiKey)
+                    apiKeyNotice = if (ok) "API 密钥已即时生效" else msg
+                } else {
+                    apiKeyNotice = "该 API 密钥已在服务端生效"
+                }
+            }
+
+            val updated = oldSettings.copy(
+                webPassword = cleanPwd,
+                apiTestKey = cleanApiKey.ifBlank { cleanPwd }.ifBlank { oldSettings.apiTestKey }
+            )
+            settingsRepo.save(updated)
+
+            val needRestart = serviceOnline &&
+                restartToApplyAdminPwd &&
+                cleanPwd != oldSettings.webPassword
+
+            _uiState.update {
+                it.copy(
+                    settings = updated,
+                    savingSecurityKeys = false,
+                    showSecurityKeyDialog = false,
+                    snackbarMessage = buildString {
+                        if (apiKeyNotice != null) append(apiKeyNotice)
+                        else append("安全密钥设置已保存")
+                        if (needRestart) append("；正在重启反代使管理后台密码生效…")
+                    }
+                )
+            }
+
+            if (needRestart) {
+                executeTermuxActionInternal(TermuxAction.START_SERVICE, skipVpnCheck = true)
+            } else {
+                refreshServiceStatus(silent = false)
+            }
+        }
+    }
+
+    fun createApiKey(name: String, customKey: String? = null) {
+        viewModelScope.launch {
+            val currentSettings = _uiState.value.settings
+            val (ok, msg, item) = apiClient.createApiKey(currentSettings, name, customKey)
+            if (ok && item != null && item.key.isNotBlank()) {
+                val updated = currentSettings.copy(apiTestKey = item.key)
+                settingsRepo.save(updated)
+                _uiState.update { it.copy(settings = updated, snackbarMessage = msg) }
+            } else {
+                _uiState.update { it.copy(snackbarMessage = msg) }
+            }
+            refreshServiceStatus(silent = true)
+        }
+    }
+
+    fun deleteApiKey(key: String) {
+        viewModelScope.launch {
+            val (ok, msg) = apiClient.deleteApiKey(_uiState.value.settings, key)
+            _uiState.update { it.copy(snackbarMessage = msg) }
+            if (ok) refreshServiceStatus(silent = true)
+        }
     }
 
     private fun executeTermuxActionInternal(action: TermuxAction, skipVpnCheck: Boolean) {

@@ -123,7 +123,12 @@ object TermuxBridge {
             TermuxAction.START_SERVICE -> {
                 "if [ ! -d $dirExpr ]; then " +
                     "echo '[错误] 尚未安装 aistudio-api，请先执行一键安装。'; exit 1; " +
-                    "fi && cd $dirExpr && $envExports && (termux-wake-lock 2>/dev/null || true) && bash start.sh --port $port"
+                    "fi && " +
+                    "if pgrep -f 'main.py server' >/dev/null 2>&1; then " +
+                    "pkill -f 'main.py server' 2>/dev/null || true; " +
+                    "pkill -f 'waa-signer' 2>/dev/null || true; sleep 1; " +
+                    "fi && " +
+                    "cd $dirExpr && $envExports && (termux-wake-lock 2>/dev/null || true) && bash start.sh --port $port"
             }
 
             TermuxAction.STOP_SERVICE -> {

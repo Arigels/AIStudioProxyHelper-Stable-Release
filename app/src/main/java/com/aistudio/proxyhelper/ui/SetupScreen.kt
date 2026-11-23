@@ -26,10 +26,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RocketLaunch
@@ -95,7 +97,9 @@ fun SetupScreen(
     onAiAssist: () -> Unit,
     onRestartService: () -> Unit,
     onTestModels: () -> Unit,
-    onToggleOverlay: () -> Unit
+    onToggleOverlay: () -> Unit,
+    onOpenSecurityKeys: () -> Unit,
+    onDeleteApiKey: (String) -> Unit
 ) {
     val context = LocalContext.current
     val env = uiState.environment
@@ -189,7 +193,10 @@ fun SetupScreen(
             onOpenAccessibilitySettings = { openA11yWithHint() },
             onOpenTermuxBatterySettings = {
                 EnvironmentChecker.openTermuxAppDetails(context)
-            }
+            },
+            onOpenSecurityKeys = onOpenSecurityKeys,
+            onDeleteApiKey = onDeleteApiKey,
+            onCopyText = onCopyText
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -623,7 +630,10 @@ private fun AdvancedSettingsCard(
     onClearCooldowns: () -> Unit,
     onRequestTermuxPermission: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
-    onOpenTermuxBatterySettings: () -> Unit
+    onOpenTermuxBatterySettings: () -> Unit,
+    onOpenSecurityKeys: () -> Unit,
+    onDeleteApiKey: (String) -> Unit,
+    onCopyText: (String, String) -> Unit
 ) {
     val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
@@ -742,6 +752,74 @@ private fun AdvancedSettingsCard(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("保存")
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                    Text(
+                        text = "安全密钥（防公司/公共 Wi-Fi 盗刷额度）",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (uiState.service.apiKeys.isEmpty()) {
+                            "当前未设置 API 访问密钥（/v1beta 接口免密开放）。在公共网络下建议设置安全密钥。"
+                        } else {
+                            "已启用 ${uiState.service.apiKeys.size} 个 API 访问密钥（需带密钥才能调用反代）。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    uiState.service.apiKeys.forEach { item ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.name,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = item.key,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(onClick = { onCopyText("API 密钥", item.key) }) {
+                                    Icon(
+                                        Icons.Filled.ContentCopy,
+                                        contentDescription = "复制密钥",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                IconButton(onClick = { onDeleteApiKey(item.key) }) {
+                                    Icon(
+                                        Icons.Filled.DeleteOutline,
+                                        contentDescription = "删除密钥",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    FilledTonalButton(
+                        onClick = onOpenSecurityKeys,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("设置安全密钥（管理密码 + API 密钥）", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
                     OutlinedButton(

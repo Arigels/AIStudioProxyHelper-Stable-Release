@@ -10,22 +10,33 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -45,11 +56,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.security.SecureRandom
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -227,12 +241,18 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     }
 
     uiState.publicNetworkAlert?.let { risk ->
-        val noPwd = !uiState.service.authEnabled && uiState.settings.webPassword.isBlank()
+        val adminProtected = uiState.service.authEnabled
+        val apiProtected = uiState.service.apiKeys.isNotEmpty()
+        val bothProtected = adminProtected && apiProtected
         AlertDialog(
             onDismissRequest = { viewModel.acknowledgePublicNetworkRisk() },
             title = {
                 Text(
-                    text = "⚠️ 检测到公共/企业网域，建议关闭反代",
+                    text = if (bothProtected) {
+                        "⚠️ 公共/企业网域提示（已设密钥保护）"
+                    } else {
+                        "⚠️ 检测到公共/企业网域，建议关闭或设密钥"
+                    },
                     fontWeight = FontWeight.Bold
                 )
             },
@@ -242,31 +262,66 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "${risk.reason}（端口 ${uiState.settings.port}）。在公司网络、校园网或公共 Wi-Fi 下开启反代存在以下风险：",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = "1. 同网段他人可盗刷额度：反代默认监听 0.0.0.0:${uiState.settings.port} 且接口默认免密，同一网络下的设备扫描到你的 IP 就能直接调用你的 Gemini 额度，导致 429 限流甚至 Google 账号被封。",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = if (noPwd) {
-                            "2. 管理后台当前完全无密码：同网段任何人都可直接打开 http://${risk.address}:${uiState.settings.port} 查看你的账号邮箱、删除或导出凭据。"
-                        } else {
-                            "2. 内网 HTTP 明文风险：局域网通信未启用 HTTPS，密码与对话内容在公共网络下存在被同网段抓包/监听的风险。"
-                        },
+                        text = "${risk.reason}（端口 ${uiState.settings.port}）。",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (noPwd) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        fontWeight = FontWeight.SemiBold
                     )
+                    Surface(
+                        color = if (bothProtected) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = "当前防护状态：",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (bothProtected) Color(0xFF14532D) else MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = "• API 访问密钥：${if (apiProtected) "已保护（${uiState.service.apiKeys.size} 个）" else "未设置（同网段可免密盗刷额度）"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (bothProtected) Color(0xFF14532D) else MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = "• 管理后台密码：${if (adminProtected) "已启用" else "未启用（同网段可打开 http://${risk.address}:${uiState.settings.port} 操作账号）"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (bothProtected) Color(0xFF14532D) else MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                    if (!bothProtected) {
+                        Text(
+                            text = "1. 同网段他人可盗刷额度/改账号：反代默认监听 0.0.0.0:${uiState.settings.port}，未同时设置「API 密钥 + 管理密码」时，公司/公共 Wi-Fi 下其他人扫到你的 IP 即可直接调用或打开后台。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        Text(
+                            text = "1. 已开启密钥隔离：同网段陌生设备无法盗刷你的 Gemini 额度，也无法进入管理后台。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     Text(
-                        text = "3. 公司网络审计与 IT 告警：公司网关通常监控开放端口与高频访问 Google 的异常代理流量，可能触发公司安全审计。",
+                        text = "2. 公司网络审计与 HTTP 明文风险：局域网访问为明文 HTTP，且公司网关仍能看到设备开放监听端口与高频外连 Google 流量，存在 IT 安全审计风险。",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
-                        text = "建议：如非必须，在公司/公共 Wi-Fi 下请先关闭反代，改用手机 4G/5G 流量或回家再开（是否关闭由你个人决定；若继续使用，强烈建议在「高级设置」里设置管理后台密码）。",
+                        text = "建议：如非必须，在公司/公共 Wi-Fi 下建议关闭反代改用手机 4G/5G 流量；若需在公共网络继续使用，请点下方按钮一键设置访问密钥，是否关闭由你个人决定。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    FilledTonalButton(
+                        onClick = { viewModel.openSecurityKeyDialog(fromNetworkAlert = true) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (bothProtected) "查看 / 修改安全密钥" else "一键设置密钥保护（推荐）")
+                    }
                 }
             },
             confirmButton = {
@@ -278,6 +333,20 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 TextButton(onClick = { viewModel.acknowledgePublicNetworkRisk() }) {
                     Text("我知道风险，继续用")
                 }
+            }
+        )
+    }
+
+    if (uiState.showSecurityKeyDialog) {
+        SecurityKeyDialog(
+            initialAdminPwd = uiState.settings.webPassword,
+            initialApiKey = uiState.service.apiKeys.firstOrNull()?.key
+                ?: uiState.settings.apiTestKey.takeUnless { it == "aistudio-api" }.orEmpty(),
+            serviceOnline = uiState.service.online,
+            saving = uiState.savingSecurityKeys,
+            onDismiss = { viewModel.dismissSecurityKeyDialog() },
+            onSave = { pwd, apiKey, restart ->
+                viewModel.applySecurityKeys(pwd, apiKey, restart)
             }
         )
     }
@@ -349,7 +418,9 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                             viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
                         },
                         onTestModels = viewModel::testModelsConnectivity,
-                        onToggleOverlay = viewModel::toggleOverlay
+                        onToggleOverlay = viewModel::toggleOverlay,
+                        onOpenSecurityKeys = { viewModel.openSecurityKeyDialog(fromNetworkAlert = false) },
+                        onDeleteApiKey = viewModel::deleteApiKey
                     )
 
                     1 -> AccountsScreen(
@@ -405,4 +476,140 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
             }
         )
     }
+}
+
+@Composable
+private fun SecurityKeyDialog(
+    initialAdminPwd: String,
+    initialApiKey: String,
+    serviceOnline: Boolean,
+    saving: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (adminPwd: String, apiKey: String, restartService: Boolean) -> Unit
+) {
+    var apiKeyInput by rememberSaveable { mutableStateOf(initialApiKey) }
+    var adminPwdInput by rememberSaveable { mutableStateOf(initialAdminPwd) }
+    var restartToApply by rememberSaveable { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        title = {
+            Text(
+                text = "设置反代安全密钥",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "同时设置「API 访问密钥 + 管理后台密码」，可有效防止同网段陌生人盗刷你的 Gemini 额度或打开后台修改账号。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = apiKeyInput,
+                    onValueChange = { apiKeyInput = it },
+                    label = { Text("1. API 访问密钥（酒馆/客户端填此 Key）") },
+                    placeholder = { Text("如 sk-aistudio-xxxxxx") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val generated = generateRandomApiKey()
+                            apiKeyInput = generated
+                            if (adminPwdInput.isBlank()) {
+                                adminPwdInput = generated
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("随机生成强密钥", maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            if (apiKeyInput.isNotBlank()) {
+                                adminPwdInput = apiKeyInput.trim()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("同步到后台密码", maxLines = 1)
+                    }
+                }
+
+                OutlinedTextField(
+                    value = adminPwdInput,
+                    onValueChange = { adminPwdInput = it },
+                    label = { Text("2. 管理后台密码（保护账号面板）") },
+                    placeholder = { Text("留空则不限制打开网页后台") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (serviceOnline && adminPwdInput.trim() != initialAdminPwd) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = restartToApply,
+                            onCheckedChange = { restartToApply = it }
+                        )
+                        Text(
+                            text = "保存后自动重启反代，让管理后台密码立即生效",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                Text(
+                    text = "提示：设置后，酒馆（代理密码）和 Cherry Studio（API Key）都需要填这里的密钥；本 App 内拉取模型会自动使用新密钥。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(adminPwdInput, apiKeyInput, restartToApply) },
+                enabled = !saving && (apiKeyInput.isNotBlank() || adminPwdInput.isNotBlank())
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+                Text("保存并启用保护")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !saving
+            ) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+private fun generateRandomApiKey(): String {
+    val bytes = ByteArray(10)
+    SecureRandom().nextBytes(bytes)
+    val hex = bytes.joinToString("") { "%02x".format(it) }
+    return "sk-aistudio-$hex"
 }

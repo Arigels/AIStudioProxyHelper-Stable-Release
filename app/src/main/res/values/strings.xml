@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">AI Studio 反代助手</string>
     <string name="accessibility_service_label">AI Studio 反代自动搭建助手</string>
-    <string name="accessibility_service_description">仅在你点击「一键全自动搭建」时，自动打开 Termux、粘贴安装/启动命令并按下回车，免去手动复制粘贴。不会收集或上传任何隐私数据。</string>
+    <string name="accessibility_service_description">可选辅助功能：仅在 Termux 窗口内协助输入命令或读取 Termux 报错内容，不会读取其他应用内容，也不会收集或上传任何隐私数据。</string>
 </resources>

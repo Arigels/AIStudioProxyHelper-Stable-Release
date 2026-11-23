@@ -42,6 +42,12 @@ data class AccountSummary(
     val group: String
 )
 
+data class ApiKeySummary(
+    val name: String,
+    val key: String,
+    val createdAt: String? = null
+)
+
 data class ServiceStatus(
     val online: Boolean = false,
     val checking: Boolean = false,
@@ -49,6 +55,7 @@ data class ServiceStatus(
     val signerRunning: Boolean? = null,
     val authEnabled: Boolean = false,
     val accounts: List<AccountSummary> = emptyList(),
+    val apiKeys: List<ApiKeySummary> = emptyList(),
     val models: List<String> = emptyList(),
     val lastError: String? = null,
     val lastCheckedAt: Long = 0L
