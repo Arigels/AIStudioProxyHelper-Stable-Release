@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.7.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.8.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.4.7.apk
+          path: dist/AIStudioProxyHelper-v2.4.8.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.4.7"
+          TAG="v2.4.8"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.7.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.8.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.7.apk \
-              --title "v2.4.7 — AI Studio 反代助手" \
-              --notes "部署改为「复制命令 + 自动打开 Termux + 弹窗教你长按粘贴和回车」，不再依赖无障碍自动操作；弹窗内可重新复制命令。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.8.apk \
+              --title "v2.4.8 — AI Studio 反代助手" \
+              --notes "VPN 提醒加强：一键部署前弹窗确认 VPN 已开；账号页教程顶部黄条提示「开始前先开 VPN」；使用页恢复按钮上方黄字提示「反代服务运行时必须开着 VPN」。"
           fi

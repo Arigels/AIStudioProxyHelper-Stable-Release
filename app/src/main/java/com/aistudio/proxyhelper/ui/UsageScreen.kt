@@ -238,13 +238,15 @@ fun UsageScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Surface(
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    color = Color(0xFFFFF4D6),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "⚠️ 恢复前请先打开梯子（VPN）：服务启动时要连 Google，没梯子会一直失败、看起来像卡住。",
+                        text = "⚠️ 反代服务运行时必须开着 VPN，没开 VPN 会一直失败。",
                         style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF8A6D00),
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(10.dp)
                     )
                 }

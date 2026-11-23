@@ -154,6 +154,36 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         viewModel.consumeMessage()
     }
 
+    if (uiState.showVpnReminder) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissVpnReminder() },
+            title = { Text("部署前请先开启 VPN") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("反代的部署和运行都需要访问 Google：")
+                    Text("1. 先打开 VPN（梯子）")
+                    Text("2. 确认能正常打开 Google 再继续")
+                    Text("3. 装好之后也别关，反代服务要一直用它")
+                    Text(
+                        "没开 VPN 的话，部署会卡在下载依赖那一步。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.confirmVpnReminder() }) {
+                    Text("VPN 已开启，继续部署")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissVpnReminder() }) {
+                    Text("还没开，先不部署")
+                }
+            }
+        )
+    }
+
     if (uiState.showPasteDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissPasteDialog() },

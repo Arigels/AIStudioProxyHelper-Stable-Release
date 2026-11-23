@@ -63,7 +63,9 @@ data class MainUiState(
     val lastDispatchedCommand: String? = null,
     val snackbarMessage: String? = null,
     val showPasteDialog: Boolean = false,
-    val pasteDialogCommand: String = ""
+    val pasteDialogCommand: String = "",
+    val showVpnReminder: Boolean = false,
+    val pendingDeployAction: TermuxAction? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -193,10 +195,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun executeTermuxAction(action: TermuxAction) {
+        executeTermuxActionInternal(action, skipVpnCheck = false)
+    }
+
+    /** 用户确认「VPN 已开启」后，继续执行挂起的部署动作。 */
+    fun confirmVpnReminder() {
+        val pending = _uiState.value.pendingDeployAction
+        _uiState.update { it.copy(showVpnReminder = false, pendingDeployAction = null) }
+        if (pending != null) {
+            executeTermuxActionInternal(pending, skipVpnCheck = true)
+        }
+    }
+
+    fun dismissVpnReminder() {
+        _uiState.update { it.copy(showVpnReminder = false, pendingDeployAction = null) }
+    }
+
+    private fun executeTermuxActionInternal(action: TermuxAction, skipVpnCheck: Boolean) {
         val ctx = getApplication<Application>()
         val settings = _uiState.value.settings
         val env = EnvironmentChecker.inspect(ctx)
         _uiState.update { it.copy(environment = env) }
+
+        val isDeploy = action == TermuxAction.INSTALL_AND_START ||
+            action == TermuxAction.INSTALL_ONLY
+        if (isDeploy && !skipVpnCheck) {
+            _uiState.update {
+                it.copy(showVpnReminder = true, pendingDeployAction = action)
+            }
+            return
+        }
 
         if (!env.termuxInstalled) {
             val cmd = TermuxBridge.buildCommand(action, settings)
