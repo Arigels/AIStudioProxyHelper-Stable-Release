@@ -57,7 +57,9 @@ data class OverlaySnapshot(
     val deploying: Boolean = false,
     val hasDeployed: Boolean = false,
     val termuxInstalled: Boolean = false,
-    val a11yEnabled: Boolean = false
+    val a11yEnabled: Boolean = false,
+    /** 运行时完整本机地址（scheme + host + port）；为空时 UI 显示「地址获取中」，不拼默认值 */
+    val localBaseUrl: String = ""
 )
 
 object OverlayState {
@@ -97,6 +99,16 @@ class OverlayService : Service() {
     private var panelParams: WindowManager.LayoutParams? = null
     private var detailsScroll: ScrollView? = null
     private var closeButton: TextView? = null
+    private var minimizeButton: TextView? = null
+    private var fullContent: LinearLayout? = null
+    private var miniBar: LinearLayout? = null
+    private var miniDot: View? = null
+    private var miniText: TextView? = null
+    private var miniAddress: TextView? = null
+    private var proxyAddressRow: LinearLayout? = null
+    private var proxyAddressText: TextView? = null
+    private var addressTipBox: LinearLayout? = null
+    private var addressTipValue: TextView? = null
     private var reportMode = false
     private var savedX = 0
     private var savedY = 0
@@ -122,10 +134,17 @@ class OverlayService : Service() {
     private var detailsBox: LinearLayout? = null
     private var aiText: TextView? = null
     private var elapsedText: TextView? = null
-    private var modelTipText: LinearLayout? = null
 
     private var running = true
-    private var expanded = false
+
+    /** 详情区（AI 结论 / 已用时）是否展开，和窗口「收起成长条」是两件事 */
+    private var detailsExpanded = false
+
+    /** 悬浮窗是否收成横向长条；持久化，重新拉起悬浮窗仍保持 */
+    private var minimized = false
+
+    /** 上次应用的收起态；避免每次 render 都 updateViewLayout */
+    private var chromeApplied: Boolean? = null
 
     /** 部署完成待导入 Cookie 时，引导文字闪烁高亮用 */
     private var highlightPulse = false
@@ -159,9 +178,6 @@ class OverlayService : Service() {
     /** 刚点过「开始部署」的时刻：Activity 启动前 20 秒内按部署中显示，避免卡片闪回 */
     private var deployTapAt = 0L
 
-    /** 酒馆向导是否已弹出完成确认卡 */
-    private var tavernConfirmShown = false
-
     /** 打开 Termux 失败时保留红色提示，避免下一次重渲染把它冲掉 */
     private var tavernFailHint = false
 
@@ -190,13 +206,18 @@ class OverlayService : Service() {
         get() = guidePrefs.getBoolean("tavern_done", false)
         set(value) = guidePrefs.edit().putBoolean("tavern_done", value).apply()
 
-    /** 拉模型提示已关闭：持久化，永久不再出现 */
-    private var modelTipDismissed: Boolean
-        get() = guidePrefs.getBoolean("model_tip_dismissed", false)
-        set(value) = guidePrefs.edit().putBoolean("model_tip_dismissed", value).apply()
+    /** 复制地址卡片已点「完成」：持久化，教程永久不再出现 */
+    private var tavernAddressTipDone: Boolean
+        get() = guidePrefs.getBoolean("tavern_address_tip_done", false)
+        set(value) = guidePrefs.edit().putBoolean("tavern_address_tip_done", value).apply()
+
+    /** 第 3 步「打开 AI Studio 并登录」已确认：用户点过「登录好了」 */
+    private var loginStepDone: Boolean
+        get() = guidePrefs.getBoolean("login_step_done", false)
+        set(value) = guidePrefs.edit().putBoolean("login_step_done", value).apply()
 
     /**
-     * 五步引导到达的最远步骤：0 部署、1 浏览器、2 扩展、3 Cookie、4 粘贴、5 完成。
+     * 六步引导到达的最远步骤：0 部署、1 浏览器、2 登录、3 扩展、4 Cookie、5 粘贴；
      * 常规写入只增不减（防止来回跳）；需要回退时走 forceGuideStage()。
      */
     private var guideStageMax: Int
@@ -250,7 +271,7 @@ class OverlayService : Service() {
             done -> 5
             legacy <= 0 -> 0
             legacy == 1 -> 2
-            else -> 3
+            else -> 4
         }
         if (!done && stage >= 2 && !everDeployed) stage = 0
         val extInstalled = !done && hasOld && old >= 2
@@ -296,9 +317,10 @@ class OverlayService : Service() {
             SettingsRepository(applicationContext).deploySucceeded ||
             proxyEverOnline
         if (looksCookie && !cookieDone && deployedEver) {
-            // 能导出 JSON 说明扩展已经装好；直接推进到粘贴步，不等用户手点
+            // 能导出 JSON 说明扩展已经装好、也登录过了；直接推进到粘贴步，不等用户手点
             guideExtInstalled = true
-            guideStageMax = 4
+            loginStepDone = true
+            guideStageMax = 5
             LogCollector.append("[引导] 剪贴板命中 Cookie JSON（${text.length} 字符）")
         }
     }
@@ -344,13 +366,12 @@ class OverlayService : Service() {
         if (!guidePrefs.contains("tavern_done") && legacy.getBoolean("tavern_guide_done", false)) {
             tavernDone = true
         }
-        if (!guidePrefs.contains("model_tip_dismissed") && legacy.getBoolean("model_tip_dismissed", false)) {
-            modelTipDismissed = true
-        }
         migrateGuidePrefs()
         loadBrowserCache()
         refreshBrowserCache()
         buildViews()
+        minimized = guidePrefs.getBoolean("overlay_minimized", false)
+        applyOverlaySize()
         runCatching {
             (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
                 ?.addPrimaryClipChangedListener(clipWatcher)
@@ -395,7 +416,7 @@ class OverlayService : Service() {
             }
         }
 
-        // 标题行：状态点 + 标题 + ✕ 关闭报错放大视图按钮
+        // 标题行：状态点 + 标题 + — 收起 + ✕ 关闭悬浮窗（任何状态都显示）
         val titleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -414,19 +435,55 @@ class OverlayService : Service() {
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(8), 0, 0, 0)
         }
+        val minimizeBtn = TextView(this).apply {
+            text = "—"
+            setTextColor(Color.parseColor("#E5E7EB"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            minWidth = dp(40)
+            minHeight = dp(40)
+            setOnClickListener { toggleMinimized() }
+        }
         val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(Color.parseColor("#FCA5A5"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(14), dp(2), dp(4), dp(2))
-            visibility = View.GONE
-            setOnClickListener { exitReportMode() }
+            gravity = Gravity.CENTER
+            minWidth = dp(40)
+            minHeight = dp(40)
+            setOnClickListener { closeOverlay() }
         }
+        this.minimizeButton = minimizeBtn
         this.closeButton = closeBtn
         titleRow.addView(dotView)
         titleRow.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        titleRow.addView(minimizeBtn)
         titleRow.addView(closeBtn)
+
+        // 常驻本机地址行：只有地址文字可点复制，「本机地址：」标签不响应
+        val addressRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, 0)
+        }
+        val addressLabel = TextView(this).apply {
+            text = "本机地址："
+            setTextColor(Color.parseColor("#94A3B8"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        }
+        val addressValue = TextView(this).apply {
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            maxLines = 1
+            setOnClickListener { copyLocalAddress() }
+        }
+        addressRow.addView(addressLabel)
+        addressRow.addView(
+            addressValue,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
 
         val stage = TextView(this).apply {
             setTextColor(Color.parseColor("#CBD5E1"))
@@ -536,28 +593,74 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, dp(4), 0, 0)
         }
-        val modelTip = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(8), dp(4), dp(8), dp(2))
+        // 第 8 步：复制地址卡片；大号「完成」在这里，点完永久不再出现
+        val addressTip = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), dp(6), dp(8), dp(2))
             visibility = View.GONE
         }
-        val tipClose = TextView(this).apply {
-            text = "✕"
-            setTextColor(Color.parseColor("#94A3B8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-            setPadding(0, 0, dp(6), 0)
-            setOnClickListener {
-                modelTipDismissed = true
-                render()
+        val tipAddressRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val tipBadge = TextView(this).apply {
+            text = "第 8/8 步 · 复制地址并完成"
+            setTextColor(Color.parseColor("#9AA0A6"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(0, 0, 0, dp(2))
+        }
+        val tipAddressLabel = TextView(this).apply {
+            text = "本机地址："
+            setTextColor(Color.parseColor("#E2E8F0"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        }
+        val tipAddressValue = TextView(this).apply {
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            maxLines = 1
+            setOnClickListener { copyLocalAddress() }
+        }
+        tipAddressRow.addView(tipAddressLabel)
+        tipAddressRow.addView(
+            tipAddressValue,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        val tipHint = TextView(this).apply {
+            text = "点上方本机地址直接复制，填进酒馆"
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(0, dp(6), 0, dp(6))
+        }
+        val doneBtn = TextView(this).apply {
+            text = "✅ 完成"
+            setTextColor(Color.parseColor("#052E16"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            minHeight = dp(44)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#4ADE80"))
             }
+            setOnClickListener { finishAddressTip() }
         }
-        val tipText = TextView(this).apply {
-            text = "💡 反代页可点「拉取模型列表」确认模型可用"
+        val tipFoot = TextView(this).apply {
+            text = "点击完成结束教程"
             setTextColor(Color.parseColor("#94A3B8"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(4), 0, 0)
         }
-        modelTip.addView(tipClose)
-        modelTip.addView(tipText)
+        addressTip.addView(tipBadge)
+        addressTip.addView(tipAddressRow)
+        addressTip.addView(tipHint)
+        addressTip.addView(
+            doneBtn,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        addressTip.addView(tipFoot)
 
         // 操作行：报错 + 打开 App，始终可见
         val actionRow = LinearLayout(this).apply {
@@ -607,31 +710,94 @@ class OverlayService : Service() {
         }
         detailsScroll = scroll
 
-        panel.addView(titleRow)
-        panel.addView(stage)
-        panel.addView(guide)
-        panel.addView(badge)
-        panel.addView(tutorial)
-        panel.addView(switchRow)
-        panel.addView(tutorialBtn)
-        panel.addView(tutorialAltBtn)
-        panel.addView(navRow, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(30)
-        ).apply { topMargin = dp(6) })
-        panel.addView(modelTip)
         val continueRow = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
         }
-        panel.addView(continueRow)
-        panel.addView(actionRow)
-        panel.addView(
+
+        // 展开态完整内容；收起时整块隐藏，只留下面那条横条
+        val full = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        full.addView(addressRow)
+        full.addView(stage)
+        full.addView(guide)
+        full.addView(badge)
+        full.addView(tutorial)
+        full.addView(switchRow)
+        full.addView(tutorialBtn)
+        full.addView(tutorialAltBtn)
+        full.addView(navRow, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(30)
+        ).apply { topMargin = dp(6) })
+        full.addView(continueRow)
+        full.addView(addressTip)
+        full.addView(actionRow)
+        full.addView(
             scroll,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         )
+
+        // 收起态横条：● 反代 :端口  地址 … - ×
+        val mini = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+        }
+        val miniDot = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#94A3B8"))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(8), dp(8))
+        }
+        val miniTitle = TextView(this).apply {
+            text = "反代"
+            setTextColor(Color.parseColor("#E5E7EB"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(6), 0, dp(8), 0)
+            maxLines = 1
+        }
+        val miniAddressView = TextView(this).apply {
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+            setPadding(0, 0, dp(10), 0)
+            setOnClickListener { copyLocalAddress() }
+        }
+        val miniExpand = TextView(this).apply {
+            text = "−"
+            setTextColor(Color.parseColor("#E5E7EB"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setOnClickListener { toggleMinimized() }
+        }
+        val miniClose = TextView(this).apply {
+            text = "×"
+            setTextColor(Color.parseColor("#FCA5A5"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setOnClickListener { closeOverlay() }
+        }
+        mini.addView(miniDot)
+        mini.addView(miniTitle)
+        mini.addView(
+            miniAddressView,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        mini.addView(miniExpand, LinearLayout.LayoutParams(dp(36), dp(36)))
+        mini.addView(miniClose, LinearLayout.LayoutParams(dp(36), dp(36)))
+
+        panel.addView(titleRow)
+        panel.addView(full)
+        panel.addView(mini)
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -690,10 +856,11 @@ class OverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!dragging && !reportMode) {
-                        expanded = !expanded
-                        details.visibility = if (expanded) View.VISIBLE else View.GONE
-                        scroll.visibility = if (expanded) View.VISIBLE else View.GONE
+                    // 收起态只响应拖动与子 View（地址 / - / ×）点击，空白处不做任何事
+                    if (!dragging && !reportMode && !minimized) {
+                        detailsExpanded = !detailsExpanded
+                        details.visibility = if (detailsExpanded) View.VISIBLE else View.GONE
+                        scroll.visibility = if (detailsExpanded) View.VISIBLE else View.GONE
                         render()
                     }
                     true
@@ -723,7 +890,15 @@ class OverlayService : Service() {
             detailsBox = details
             aiText = ai
             elapsedText = elapsed
-            modelTipText = modelTip
+            fullContent = full
+            miniBar = mini
+            this.miniDot = miniDot
+            miniText = miniTitle
+            miniAddress = miniAddressView
+            proxyAddressRow = addressRow
+            proxyAddressText = addressValue
+            addressTipBox = addressTip
+            addressTipValue = tipAddressValue
         }
     }
 
@@ -776,8 +951,10 @@ class OverlayService : Service() {
 
         val cookieMode = !cookieDone
         val tavernMode = cookieDone && !tavernDone
+        val addressTipMode = cookieDone && tavernDone && !tavernAddressTipDone
+        val tutorialDone = cookieDone && tavernDone && tavernAddressTipDone
         val showTakeover = takeover && !reportMode
-        val guideMode = (cookieMode || tavernMode || showTakeover) && !reportMode
+        val guideMode = (cookieMode || tavernMode || addressTipMode || showTakeover) && !reportMode
         val needCookie = snapshot.online && !snapshot.accountsReady
 
         val color = when {
@@ -789,6 +966,12 @@ class OverlayService : Service() {
             else -> "#94A3B8"
         }
         (dot?.background as? GradientDrawable)?.setColor(Color.parseColor(color))
+        (miniDot?.background as? GradientDrawable)?.setColor(Color.parseColor(color))
+        val addressShown = snapshot.localBaseUrl.ifBlank { "地址获取中" }
+        miniText?.text = "反代 :${snapshot.port}"
+        miniAddress?.text = addressShown
+        proxyAddressText?.text = addressShown
+        addressTipValue?.text = addressShown
 
         titleText?.text = when {
             snapshot.error != null -> "反代助手 · 出错了"
@@ -838,7 +1021,7 @@ class OverlayService : Service() {
             guideText?.visibility = guideVisibility
         }
 
-        if (!expanded && !reportMode) {
+        if (!detailsExpanded && !reportMode) {
             detailsBox?.visibility = View.GONE
             detailsScroll?.visibility = View.GONE
         }
@@ -856,6 +1039,7 @@ class OverlayService : Service() {
             showTakeover -> {
                 renderTutorial(false)
                 renderTavernGuide(false)
+                renderAddressTip(false)
                 // 频繁掉线提示复用断线卡的位置，一次只出现一张卡
                 if (shouldWarnFrequentDrops(now)) {
                     guidePrefs.edit().putLong("drop_tip_shown_at", now).apply()
@@ -866,26 +1050,106 @@ class OverlayService : Service() {
             }
             cookieMode -> {
                 renderTakeoverCard(false)
+                renderTavernGuide(false)
+                renderAddressTip(false)
                 renderTutorial(!reportMode)
             }
             tavernMode -> {
                 renderTakeoverCard(false)
                 renderTutorial(false)
+                renderAddressTip(false)
                 renderTavernGuide(!reportMode)
+            }
+            addressTipMode -> {
+                renderTakeoverCard(false)
+                renderTutorial(false)
+                renderTavernGuide(false)
+                renderAddressTip(!reportMode)
             }
             else -> {
                 renderTutorial(false)
                 renderTavernGuide(false)
+                renderAddressTip(false)
                 renderTakeoverCard(false)
             }
         }
-        renderModelTip(snapshot.online && snapshot.accountsReady && tavernDone && !modelTipDismissed && !reportMode)
+        applyOverlaySize()
     }
 
-    /** 一次性拉模型提示：✕ 可点，静默永久消失，不弹任何提示。 */
-    private fun renderModelTip(show: Boolean) {
-        val tip = modelTipText ?: return
-        tip.visibility = if (show) View.VISIBLE else View.GONE
+    /** 收起 / 展开切换：收起时只留横条；报错放大态先退出再收起。 */
+    private fun toggleMinimized() {
+        if (reportMode) exitReportMode()
+        minimized = !minimized
+        guidePrefs.edit().putBoolean("overlay_minimized", minimized).apply()
+        chromeApplied = null
+        applyOverlaySize(force = true)
+        render()
+    }
+
+    /** ✕：关闭整个悬浮窗，并写 overlayDesired=false，避免回 App 时被 ON_RESUME 自动拉起。 */
+    private fun closeOverlay() {
+        SettingsRepository(applicationContext).overlayDesired = false
+        guidePrefs.edit().putBoolean("overlay_minimized", false).apply()
+        Toast.makeText(this, "悬浮窗已关闭，可在 App「反代」页重新开启", Toast.LENGTH_SHORT).show()
+        OverlayService.stop(this)
+    }
+
+    /** 展开 280dp / 收起 240dp 的宽度、显隐和位置夹取。 */
+    private fun applyOverlaySize(force: Boolean = false) {
+        if (reportMode && !force) return
+        val panel = root ?: return
+        val params = panelParams ?: return
+        val targetWidth = dp(if (minimized) 240 else 280)
+        if (!force && chromeApplied == minimized && params.width == targetWidth) return
+        chromeApplied = minimized
+        fullContent?.visibility = if (minimized) View.GONE else View.VISIBLE
+        miniBar?.visibility = if (minimized) View.VISIBLE else View.GONE
+        val h = dp(if (minimized) 8 else 14)
+        val v = dp(if (minimized) 6 else 10)
+        panel.setPadding(h, v, h, v)
+        params.width = targetWidth
+        val screenW = resources.displayMetrics.widthPixels
+        params.x = params.x.coerceIn(0, (screenW - targetWidth).coerceAtLeast(0))
+        runCatching { windowManager?.updateViewLayout(panel, params) }
+    }
+
+    /** 复制本机地址：只读快照里的完整 URL，UI 层不拼任何 scheme/host/port。 */
+    private fun copyLocalAddress() {
+        val url = OverlayState.snapshot.localBaseUrl
+        if (url.isBlank()) {
+            Toast.makeText(this, "地址还没准备好，稍等一下", Toast.LENGTH_SHORT).show()
+            return
+        }
+        TermuxBridge.copyToClipboard(this, "本机地址", url)
+        Toast.makeText(this, "已复制本机地址", Toast.LENGTH_SHORT).show()
+    }
+
+    /** 第 8 步点「完成」：教程永久结束。 */
+    private fun finishAddressTip() {
+        tavernAddressTipDone = true
+        render()
+        Toast.makeText(
+            this,
+            "教程已结束，从此不会再出现；若有遗忘的操作或其他问题，可去「解疑」页查看",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    /** 第 8 步：复制地址卡片，只在教程最后出现。 */
+    private fun renderAddressTip(show: Boolean) {
+        val box = addressTipBox ?: return
+        if (!show) {
+            box.visibility = View.GONE
+            return
+        }
+        tutorialText?.visibility = View.GONE
+        tutorialButton?.visibility = View.GONE
+        tutorialAltButton?.visibility = View.GONE
+        tutorialBadge?.visibility = View.GONE
+        tutorialNavRow?.visibility = View.GONE
+        tutorialContinueRow?.visibility = View.GONE
+        tutorialSwitchRow?.visibility = View.GONE
+        box.visibility = View.VISIBLE
     }
 
     /** 悬浮窗教程：一次只显示当前一步，按检测到的浏览器给对应路径，控制在两三行内。 */
@@ -925,30 +1189,36 @@ class OverlayService : Service() {
         val browserPkg = chosen?.second
         val bothInstalled = edge != null && firefox != null
         val repo = SettingsRepository(applicationContext)
-        val deployedEver = snapshot.hasDeployed ||
+        // 「命令发出」不等于「部署成功」：本次部署中 / 刚失败时永远锁在 S0
+        val deployingNow = snapshot.deploying || OverlayState.deployStartedAt > 0L
+        val deployFailed = snapshot.error != null && !snapshot.online
+        val everDeployed = snapshot.hasDeployed ||
             repo.hasDeployed ||
             repo.deploySucceeded ||
             proxyEverOnline
-        val deployed = snapshot.online || deployedEver
+        val deployed = snapshot.online || (everDeployed && !deployingNow && !deployFailed)
 
-        // 五步：0 部署、1 浏览器、2 扩展、3 Cookie、4 粘贴；没部署过就永远停在第 1 步
+        // 六步：0 部署、1 浏览器、2 登录、3 扩展、4 Cookie、5 粘贴；没部署过就永远停在第 0 步
         val computed = when {
+            deployingNow || deployFailed -> 0
             cookieDone || snapshot.accountsReady -> 5
             !deployed -> 0
-            cookieClipLength > 0 -> 4
-            chosen != null && guideExtInstalled -> 3
-            chosen != null -> 2
-            else -> 1
+            cookieClipLength > 0 -> 5
+            chosen == null -> 1
+            // 扩展已装 = 之前一定登录过（老用户 / 剪贴板反推），不再拉回登录步
+            guideExtInstalled -> 4
+            !loginStepDone -> 2
+            else -> 3
         }
-        // 未部署过：强制停在部署步（第 0 步），不能直接跳到浏览器/扩展/Cookie/粘贴
-        if (!deployed && guideStageMax > 0) forceGuideStage(0)
+        // 未部署 / 部署中 / 部署失败：强制停在部署步（第 0 步），不能跳到浏览器/登录/扩展/Cookie/粘贴
+        if ((!deployed || deployingNow || deployFailed) && guideStageMax > 0) forceGuideStage(0)
         // 浏览器被卸载：回到重新安装那一步，不能卡在扩展 / Cookie 卡（回退必须走 force）
         if (deployed && chosen == null && guideStageMax >= 2) forceGuideStage(1)
         if (computed > guideStageMax) guideStageMax = computed
         // 证据闸门：停在「粘贴」步必须有证据（剪贴板命中 JSON，或用户本次明确点过「已导出，去粘贴」），
         // 否则退回 Cookie 步——这正是升级后直接落在粘贴步的根因
-        if (!cookieDone && guideStageMax >= 4 && cookieClipLength <= 0 && !pasteStepConfirmed) {
-            forceGuideStage(3)
+        if (!cookieDone && guideStageMax >= 5 && cookieClipLength <= 0 && !pasteStepConfirmed) {
+            forceGuideStage(4)
         }
         val stage = guideStageMax
         // 回看定位：只允许停在 0..stage-1，超出即跟随最新
@@ -956,7 +1226,8 @@ class OverlayService : Service() {
         val readonly = view < stage
         cookieViewStage = if (readonly) view else -1
         if (view != 1) tutorialFailHint = null
-        if (view != 3) {
+        // 只有「登录」步会用到复制链接的覆盖确认；切到别步就清掉
+        if (view != 2) {
             linkCopyConfirmShown = false
             studioOpenError = null
         }
@@ -967,7 +1238,7 @@ class OverlayService : Service() {
         tut.setOnClickListener(null)
         continueRow?.visibility = View.GONE
         switchRow?.visibility =
-            if (view == 2 && bothInstalled && !readonly) View.VISIBLE else View.GONE
+            if (view == 3 && bothInstalled && !readonly) View.VISIBLE else View.GONE
         tutorialEdgeSwitch?.let {
             it.setTextColor(Color.parseColor(if (browserLabel == "Edge") "#FDE047" else "#93C5FD"))
             it.setTypeface(it.typeface, if (browserLabel == "Edge") Typeface.BOLD else Typeface.NORMAL)
@@ -981,7 +1252,7 @@ class OverlayService : Service() {
         tutorialBadge?.text = if (readonly) {
             "已完成 · 第 ${view + 1} 步"
         } else {
-            "第 ${view + 1}/5 步 · ${stageName(view)}"
+            "第 ${view + 1}/8 步 · ${stageName(view)}"
         }
         tutorialPrev?.visibility = if (view > 0) View.VISIBLE else View.GONE
         tutorialNext?.visibility = if (view < stage) View.VISIBLE else View.GONE
@@ -1001,9 +1272,10 @@ class OverlayService : Service() {
         when (view) {
             0 -> renderDeployStage(tut, btn, altBtn, continueRow)
             1 -> renderBrowserStage(tut, btn, altBtn)
-            2 -> renderExtensionStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            3 -> renderCookieStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            4 -> renderPasteStage(tut, btn, altBtn, continueRow, browserPkg)
+            2 -> renderLoginStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            3 -> renderExtensionStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            4 -> renderCookieStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            5 -> renderPasteStage(tut, btn, altBtn, continueRow, browserPkg)
             else -> renderTutorial(false)
         }
         if (readonly) {
@@ -1015,8 +1287,9 @@ class OverlayService : Service() {
     private fun stageName(stage: Int): String = when (stage) {
         0 -> "部署"
         1 -> "浏览器"
-        2 -> "扩展"
-        3 -> "Cookie"
+        2 -> "登录"
+        3 -> "扩展"
+        4 -> "Cookie"
         else -> "导入"
     }
 
@@ -1168,7 +1441,13 @@ class OverlayService : Service() {
         tut.setTextColor(Color.parseColor("#DBEAFE"))
         val termuxNow = isPackageInstalled(TermuxBridge.TERMUX_PACKAGE)
         val snapshot = OverlayState.snapshot
-        val deployedEver = snapshot.hasDeployed || SettingsRepository(applicationContext).hasDeployed
+        // 只有「非部署中、非失败」的历史成功才算部署过；本次部署没上线前一律当没部署
+        val deployedEver = (snapshot.hasDeployed ||
+            SettingsRepository(applicationContext).hasDeployed ||
+            SettingsRepository(applicationContext).deploySucceeded) &&
+            !snapshot.deploying &&
+            OverlayState.deployStartedAt == 0L &&
+            snapshot.error == null
         val justTapped = deployTapAt > 0L && System.currentTimeMillis() - deployTapAt < 20_000L
         val deploying = snapshot.deploying || justTapped
         when {
@@ -1226,7 +1505,8 @@ class OverlayService : Service() {
                 altBtn?.setOnClickListener { runDiagnose() }
             }
             else -> {
-                tut.text = "点下面按钮：自动复制部署命令 → 打开 Termux → 自动粘贴并回车\n" +
+                tut.text = "⚠️ 手机网络必须能打开 Google（VPN 正常），否则登录和 Cookie 都会失败。\n" +
+                    "点下面按钮：自动复制部署命令 → 打开 Termux → 自动粘贴并回车\n" +
                     "没开无障碍也能部署，只是要你在 Termux 长按粘贴"
                 btn?.visibility = View.VISIBLE
                 btn?.text = "开始半自动部署"
@@ -1256,11 +1536,10 @@ class OverlayService : Service() {
     }
 
     /**
-     * 第 4 步：打开 AI Studio 登录并导出 Cookie。
-     * 一次点击就真的去打开浏览器（VPN 只当正文提醒），失败给红字 + 自动复制链接兜底；
-     * 剪贴板命中 JSON 仍会自动推进，但手动「已经导出好了，去粘贴」才是主路径。
+     * 第 3 步：打开 AI Studio 并登录（只讲登录，不讲扩展 / Cookie）。
+     * 网络前提已经放在教程第一张卡（S0），这里不再重复整句。
      */
-    private fun renderCookieStage(
+    private fun renderLoginStage(
         tut: TextView,
         btn: TextView?,
         altBtn: TextView?,
@@ -1270,15 +1549,11 @@ class OverlayService : Service() {
     ) {
         val label = browserLabel ?: "Edge"
         continueRow?.visibility = View.GONE
-        val menuPath = if (label == "火狐") {
-            "② 点右上「⋮」→ 扩展 → Cookie-Editor"
-        } else {
-            "② 点底部「≡」→ 扩展 → Cookie-Editor"
-        }
-        tut.text = "① 用 $label 打开 AI Studio 并登录（打不开先检查 VPN）\n" +
-            "$menuPath\n" +
-            "③ 点 Export → 选 Export as JSON（会自动复制）"
+        tut.text = "① 点下面按钮打开 AI Studio\n" +
+            "② 页面加载后点 Start / Get started / 开始使用进入登录\n" +
+            "③ 登录要用的 Google 账号，确认页面右上角已经出现头像"
         tut.setTextColor(Color.parseColor("#DBEAFE"))
+        tut.setOnClickListener(null)
 
         // 复制链接会覆盖剪贴板里的 Cookie：覆盖前先确认一次
         if (linkCopyConfirmShown) {
@@ -1300,9 +1575,9 @@ class OverlayService : Service() {
                 linkCopyConfirmShown = false
                 render()
             }
-            renderTutorialActionLink(continueRow, "已经导出好了，去粘贴 →", primary = true) {
-                pasteStepConfirmed = true
-                guideStageMax = 4
+            renderTutorialActionLink(continueRow, "登录好了 →", primary = true) {
+                loginStepDone = true
+                guideStageMax = 3
                 render()
             }
             return
@@ -1317,13 +1592,13 @@ class OverlayService : Service() {
                 tut.setTextColor(Color.parseColor("#FCA5A5"))
             }
             openedRecently -> {
-                tut.text = "✅ 已用 $label 打开 AI Studio，登录后导出 JSON\n${tut.text}"
+                tut.text = "✅ 已用 $label 打开 AI Studio，登录后点「登录好了」\n${tut.text}"
                 tut.setTextColor(Color.parseColor("#86EFAC"))
             }
         }
 
         btn?.visibility = View.VISIBLE
-        btn?.text = if (label == "火狐") "用 火狐 打开 AI Studio" else "用 Edge 打开 AI Studio"
+        btn?.text = "打开 AI Studio"
         btn?.setOnClickListener {
             val ok = openAiStudio(browserPkg)
             if (ok) {
@@ -1345,15 +1620,79 @@ class OverlayService : Service() {
                 Toast.makeText(this, "AI Studio 链接已复制", Toast.LENGTH_SHORT).show()
             }
         }
-        // 手动推进是主路径，不再依赖剪贴板自动检测
-        renderTutorialActionLink(continueRow, "已经导出好了，去粘贴 →", primary = true) {
-            pasteStepConfirmed = true
-            guideStageMax = 4
+        // 登录确认后进入安装扩展
+        renderTutorialActionLink(continueRow, "登录好了 →", primary = true) {
+            loginStepDone = true
+            guideStageMax = 3
             render()
         }
     }
 
-    /** 酒馆向导：账号就绪后引导在 Termux 新会话启动酒馆；完成后内嵌确认卡，确定才持久化隐藏。 */
+    /**
+     * 第 5 步：在 Cookie-Editor 里获取 Cookie（只保留打开 CE + 导出 JSON）。
+     * 「打开 AI Studio 并登录」已经在上一步完成，这里不再重复登录说明。
+     */
+    private fun renderCookieStage(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?,
+        continueRow: LinearLayout?,
+        browserLabel: String?,
+        browserPkg: String?
+    ) {
+        val label = browserLabel ?: "Edge"
+        continueRow?.visibility = View.GONE
+        tut.setOnClickListener(null)
+        val openPath = if (label == "火狐") {
+            "① 打开 Cookie-Editor：点右上「⋮」→ 扩展 → Cookie-Editor"
+        } else {
+            "① 打开 Cookie-Editor：点底部「≡」→ 扩展 → Cookie-Editor"
+        }
+        val exportPath = if (label == "火狐") {
+            "② 获取 Cookie：点右下角图标 → 选 JSON → 复制 Cookie"
+        } else {
+            "② 获取 Cookie：滑到最右边 → 点右下角图标 → 选 JSON → 复制 Cookie"
+        }
+        tut.text = "$openPath\n$exportPath"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
+
+        // 打开结果直接写在卡里：成功说「已打开」，失败给红字
+        val openedRecently = studioOpenedAt > 0L && System.currentTimeMillis() - studioOpenedAt < 60_000L
+        val openError = studioOpenError
+        when {
+            openError != null -> {
+                tut.text = "⚠️ $openError\n\n${tut.text}"
+                tut.setTextColor(Color.parseColor("#FCA5A5"))
+            }
+            openedRecently -> {
+                tut.text = "✅ 已用 $label 打开 AI Studio\n${tut.text}"
+                tut.setTextColor(Color.parseColor("#86EFAC"))
+            }
+        }
+
+        btn?.visibility = View.VISIBLE
+        btn?.text = if (label == "火狐") "用 火狐 打开 AI Studio" else "用 Edge 打开 AI Studio"
+        btn?.setOnClickListener {
+            val ok = openAiStudio(browserPkg)
+            if (ok) {
+                studioOpenError = null
+            } else {
+                studioOpenError = "没能打开浏览器，链接已复制，请手动粘贴到地址栏"
+                Toast.makeText(this, "没能打开浏览器，链接已复制到剪贴板", Toast.LENGTH_LONG).show()
+            }
+            render()
+        }
+        // 扩展已经装好，这里不再提供「复制链接」，避免覆盖刚导出的 Cookie
+        altBtn?.visibility = View.GONE
+        // 手动推进是主路径，不再依赖剪贴板自动检测
+        renderTutorialActionLink(continueRow, "去粘贴 →", primary = true) {
+            pasteStepConfirmed = true
+            guideStageMax = 5
+            render()
+        }
+    }
+
+    /** 酒馆向导：账号就绪后引导在 Termux 新会话启动酒馆；最后一步是「下一步」，不是「完成」。 */
     private fun renderTavernGuide(show: Boolean) {
         val tut = tutorialText ?: return
         val btn = tutorialButton
@@ -1371,32 +1710,17 @@ class OverlayService : Service() {
             return
         }
         tut.visibility = View.VISIBLE
-        tutorialBadge?.visibility = View.GONE
+        tutorialBadge?.visibility = View.VISIBLE
+        tutorialBadge?.text = "第 7/8 步 · Termux 双窗口"
         tutorialNavRow?.visibility = View.GONE
         switchRow?.visibility = View.GONE
         continueRow?.visibility = View.GONE
 
-        if (tavernConfirmShown) {
-            tut.text = "点击完成后这段教程不再在悬浮窗显示，可在 App「解疑」页再次查看。"
-            tut.setTextColor(Color.parseColor("#DBEAFE"))
-            tut.background = tutorialPanelBackground()
-            btn?.visibility = View.VISIBLE
-            btn?.text = "确定"
-            btn?.setOnClickListener {
-                tavernDone = true
-                tavernConfirmShown = false
-                render()
-            }
-            altBtn?.visibility = View.VISIBLE
-            altBtn?.text = "取消"
-            altBtn?.setOnClickListener {
-                tavernConfirmShown = false
-                render()
-            }
-            return
-        }
-
-        val steps = "① 打开 Termux\n② 从屏幕左边缘向右滑，拉出白色小窗\n③ 点 NEW SESSION\n④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh）"
+        val steps = "① 打开 Termux\n" +
+            "② 从屏幕左边缘向右滑，拉出白色小窗\n" +
+            "③ 点 NEW SESSION\n" +
+            "④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh）\n" +
+            "⑤ 以后每次用反代都保持两个窗口：一个跑反代，一个跑酒馆"
         tut.text = if (tavernFailHint) "未能打开 Termux，请手动从桌面启动\n\n$steps" else steps
         tut.setTextColor(
             Color.parseColor(if (tavernFailHint) "#FCA5A5" else "#DBEAFE")
@@ -1408,9 +1732,12 @@ class OverlayService : Service() {
             tavernFailHint = !TermuxBridge.openTermux(this)
             render()
         }
-        altBtn?.visibility = View.VISIBLE
-        altBtn?.text = "完成"
-        altBtn?.setOnClickListener { tavernConfirmShown = true; render() }
+        altBtn?.visibility = View.GONE
+        // 「下一步」进入第 8 步「复制地址并完成」；大号「完成」在那一张卡里
+        renderTutorialActionLink(continueRow, "下一步 →", primary = true) {
+            tavernDone = true
+            render()
+        }
     }
 
     /** 第 5 步：回账号页粘贴导入（App 前台读剪贴板，比悬浮窗后台读可靠）。 */
@@ -1456,9 +1783,9 @@ class OverlayService : Service() {
     ) {
         val label = browserLabel ?: "Edge"
         tut.text = if (label == "火狐") {
-            "① 打开火狐 → 右上「⋮」→ 扩展 → 浏览全部扩展\n② 搜 Cookie-Editor → 添加"
+            "① 点主按钮，用火狐打开 Cookie-Editor 安装页\n② 在安装页点添加"
         } else {
-            "① 打开 Edge → 底部「≡」→ 扩展\n② 搜 Cookie-Editor → 安装"
+            "① 点主按钮，用 Edge 打开 Cookie-Editor 安装页\n② 在安装页点安装"
         }
         tut.setTextColor(
             Color.parseColor(if (tutorialFailHint != null) "#FCA5A5" else "#DBEAFE")
@@ -1498,7 +1825,7 @@ class OverlayService : Service() {
         tut.setOnClickListener(null)
         renderTutorialActionLink(continueRow, "装好了 →") {
             guideExtInstalled = true
-            guideStageMax = 3
+            guideStageMax = 4
             tutorialFailHint = null
             render()
         }
@@ -1757,7 +2084,7 @@ class OverlayService : Service() {
         }
     }
 
-    /** 放大悬浮窗（最大约分屏尺寸）并显示报错分析结果，字多可上下滑动，点 ✕ 恢复原形。 */
+    /** 放大悬浮窗（最大约分屏尺寸）并显示报错分析结果，字多可上下滑动；点 — 收起，点 ✕ 关闭悬浮窗。 */
     private fun showReport(text: String) {
         val params = panelParams ?: return
         if (!reportMode) {
@@ -1765,12 +2092,11 @@ class OverlayService : Service() {
             savedY = params.y
         }
         reportMode = true
-        expanded = true
+        detailsExpanded = true
         detailsBox?.visibility = View.VISIBLE
-        aiText?.text = "AI 报错分析（可上下滑动，点右上角 ✕ 恢复）：\n\n$text"
+        aiText?.text = "AI 报错分析（可上下滑动，点右上角 — 收起、✕ 关闭）：\n\n$text"
         aiText?.visibility = View.VISIBLE
         elapsedText?.visibility = View.VISIBLE
-        closeButton?.visibility = View.VISIBLE
 
         detailsScroll?.let { sv ->
             sv.visibility = View.VISIBLE
@@ -1792,10 +2118,10 @@ class OverlayService : Service() {
         }
     }
 
-    /** 点 ✕ 收起报错面板，悬浮窗恢复原来的小尺寸与位置。 */
+    /** 点 — 收起报错面板，悬浮窗恢复原来的小尺寸与位置。 */
     private fun exitReportMode() {
         reportMode = false
-        expanded = false
+        detailsExpanded = false
         detailsBox?.visibility = View.GONE
         detailsScroll?.let { sv ->
             sv.visibility = View.GONE
@@ -1804,15 +2130,12 @@ class OverlayService : Service() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
-        closeButton?.visibility = View.GONE
         val params = panelParams ?: return
-        params.width = dp(280)
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
         params.x = savedX
         params.y = savedY
-        root?.let { view ->
-            runCatching { windowManager?.updateViewLayout(view, params) }
-        }
+        chromeApplied = null
+        applyOverlaySize(force = true)
     }
 
     private fun startForegroundSafely() {
