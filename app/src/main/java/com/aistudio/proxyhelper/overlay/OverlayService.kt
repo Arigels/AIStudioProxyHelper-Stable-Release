@@ -107,6 +107,12 @@ class OverlayService : Service() {
     /** 上一阶段用的浏览器名（Edge / 火狐），用于只显示对应那套点击路径 */
     private var tutorialBrowser: String? = null
 
+    /** 酒馆向导是否已完成（持久化在第 7 步接入，先用内存值） */
+    private var tavernDone = false
+
+    /** 一次性拉模型提示是否已关闭（持久化在第 7 步接入，先用内存值） */
+    private var modelTipDismissed = false
+
     private val clipWatcher = ClipboardManager.OnPrimaryClipChangedListener {
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
         cookieClipLength = if (looksLikeCookieJson(text)) text.length else 0
@@ -218,6 +224,7 @@ class OverlayService : Service() {
         }
         // 悬浮窗内嵌的 Cookie 教程：只在「已启动但还没导入账号」时出现，每次只显示当前一步
         val tutorial = TextView(this).apply {
+            text = "教程加载中"
             setTextColor(Color.parseColor("#DBEAFE"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setLineSpacing(dp(2).toFloat(), 1.1f)
@@ -225,7 +232,7 @@ class OverlayService : Service() {
             visibility = View.GONE
         }
         val tutorialBtn = TextView(this).apply {
-            text = "🌐 打开 AI Studio"
+            text = "教程加载中"
             setTextColor(Color.parseColor("#86EFAC"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setTypeface(typeface, Typeface.BOLD)
@@ -414,6 +421,10 @@ class OverlayService : Service() {
 
         // 部署完成但还没导入账号：进入「高亮提醒去获取 Cookie」模式
         val needCookie = snapshot.online && !snapshot.accountsReady
+        // 账号已就绪但酒馆向导还没走完：进入酒馆引导模式
+        val tavernMode = snapshot.online && snapshot.accountsReady && !tavernDone
+        // 向导模式期间精简悬浮窗，隐藏 AI 行与已用时行（不影响报错放大视图）
+        val guideMode = needCookie || tavernMode
 
         val color = when {
             snapshot.error != null -> "#EF4444"
@@ -479,6 +490,13 @@ class OverlayService : Service() {
             OverlayState.deployStartedAt > 0L ->
                 "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
             else -> "拖动可移动 · 点「🩺 报错」自动分析后台错误"
+        }
+
+        // 向导模式精简悬浮窗：隐藏 AI 行与已用时行；报错放大（reportMode）照常显示
+        if (!reportMode) {
+            val guideVisibility = if (guideMode) View.GONE else View.VISIBLE
+            aiText?.visibility = guideVisibility
+            elapsedText?.visibility = guideVisibility
         }
 
         if (!expanded && !reportMode) {
