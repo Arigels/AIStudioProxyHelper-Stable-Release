@@ -81,7 +81,8 @@ fun AgentScreen(
     onSaveConfig: (String, String, String, Boolean, String) -> Unit,
     onFetchModels: (String, String, String, Boolean, String) -> Unit,
     onRun: (String) -> Unit,
-    onAskTavern: (String) -> Unit
+    onAskTavern: (String) -> Unit,
+    embedded: Boolean = false
 ) {
     var problem by remember { mutableStateOf("") }
     var mode by remember { mutableIntStateOf(0) }
@@ -92,12 +93,14 @@ fun AgentScreen(
     var baseUrl by remember(uiState.agentBaseUrl) { mutableStateOf(uiState.agentBaseUrl) }
     var apiKey by remember(uiState.agentApiKey) { mutableStateOf(uiState.agentApiKey) }
     var model by remember(uiState.agentModel) { mutableStateOf(uiState.agentModel) }
-    var useLocal by remember(uiState.agentUseLocal) { mutableStateOf(uiState.agentUseLocal) }
+    var useLocalTab by remember(uiState.agentUseLocal) { mutableStateOf(uiState.agentUseLocal) }
     var localModel by remember(uiState.agentLocalModel) { mutableStateOf(uiState.agentLocalModel) }
 
     var providerMenu by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
     var keyVisible by remember { mutableStateOf(false) }
+
+    val useLocal = useLocalTab
 
     val currentProvider = providers.firstOrNull { p ->
         if (p.isLocal) {
@@ -111,10 +114,16 @@ fun AgentScreen(
     val currentModel = if (useLocal) localModel else model
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = if (embedded) {
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        } else {
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        },
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         ElevatedCard(
@@ -146,10 +155,52 @@ fun AgentScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = !useLocal,
+                        onClick = {
+                            useLocalTab = false
+                            showConfig = true
+                            // 切换即保存，保证实际调用只用当前选中的来源
+                            onSaveConfig(
+                                baseUrl.trim(), apiKey.trim(), model.trim(),
+                                false, localModel.trim()
+                            )
+                        },
+                        label = { Text("外接模型") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = useLocal,
+                        onClick = {
+                            useLocalTab = true
+                            showConfig = true
+                            onSaveConfig(
+                                baseUrl.trim(), apiKey.trim(), model.trim(),
+                                true, localModel.trim()
+                            )
+                        },
+                        label = { Text("本地反代") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Text(
+                    text = if (useLocal) {
+                        "当前只用「本地反代」这一个来源：直接调用你自己搭的反代，不用填地址和 Key。"
+                    } else {
+                        "当前只用「外接模型」这一个来源：填你自己的服务商地址和 Key。两个来源不会同时调用。"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()) {
+                        text = if (uiState.agentApiKey.isNotBlank() || uiState.agentUseLocal) {
                             "接口配置（已保存，点此修改）"
                         } else {
                             "① 配置接口（必填）"
@@ -172,44 +223,47 @@ fun AgentScreen(
 
                 AnimatedVisibility(visible = showConfig) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // 服务商下拉
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "服务商",
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedButton(onClick = { providerMenu = true }) {
-                                Text(currentProvider.label)
-                            }
-                            DropdownMenu(
-                                expanded = providerMenu,
-                                onDismissRequest = { providerMenu = false }
+                        // 服务商下拉（仅外接模型模式显示）
+                        if (!useLocal) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                providers.forEach { p ->
-                                    DropdownMenuItem(
-                                        text = { Text(p.label) },
-                                        onClick = {
-                                            providerMenu = false
-                                            if (p.isLocal) {
-                                                useLocal = true
-                                            } else {
-                                                useLocal = false
-                                                if (p.baseUrl.isNotBlank()) baseUrl = p.baseUrl
-                                                if (p.defaultModel.isNotBlank()) model = p.defaultModel
+                                Text(
+                                    text = "服务商",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedButton(onClick = { providerMenu = true }) {
+                                    Text(currentProvider.label)
+                                }
+                                DropdownMenu(
+                                    expanded = providerMenu,
+                                    onDismissRequest = { providerMenu = false }
+                                ) {
+                                    providers.forEach { p ->
+                                        DropdownMenuItem(
+                                            text = { Text(p.label) },
+                                            onClick = {
+                                                providerMenu = false
+                                                if (p.isLocal) {
+                                                    useLocalTab = true
+                                                } else {
+                                                    useLocalTab = false
+                                                    if (p.baseUrl.isNotBlank()) baseUrl = p.baseUrl
+                                                    if (p.defaultModel.isNotBlank()) model = p.defaultModel
+                                                }
                                             }
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
                             }
                         }
 
                         if (useLocal) {
                             Text(
-                                text = "使用本机反代模型：不需要 Key，但反代服务必须已启动。",
+                                text = "本机反代地址：${uiState.settings.localBaseUrl}（自动读取，不需要填）\n" +
+                                    "反代服务必须先启动，否则拉不到模型。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

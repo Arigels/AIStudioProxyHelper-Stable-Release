@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import com.aistudio.proxyhelper.data.BrandGuide
 
 /**
@@ -43,32 +44,39 @@ fun PermissionWizardDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val brand = BrandGuide.current()
                 Text(
-                    text = "已识别你的机型：${brand.brandName}。下面是这台机器上的具体路径，按顺序做完三步即可。",
+                    text = "已识别你的机型：${brand.brandName}。下面两步做完就能自动搭建。",
                     style = MaterialTheme.typography.bodySmall
                 )
+                Surface(
+                    color = Color(0xFFFFF4D6),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "⚠️ 本 App 可能被安卓手机限制权限。如果开关打不开、是灰的，或提示「已限制设置」，" +
+                            "请按系统提示先解除限制，再回来开启。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF8A6D00),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
                 WizardStep(
                     number = "①",
-                    title = "先解除系统的「授权限制」",
-                    desc = brand.restrictionPath + "\n（不解除的话，下面两步都会被挡住）",
-                    actionLabel = "打开权限管理去解除",
-                    onAction = onOpenAppDetails
-                )
-                WizardStep(
-                    number = "②",
                     title = "允许显示悬浮窗",
                     desc = brand.overlayPath + "\n授权后 Termux 上方会显示搭建进度。",
                     actionLabel = "去授权",
                     onAction = onOpenOverlay
                 )
                 WizardStep(
-                    number = "③",
+                    number = "②",
                     title = "开启无障碍（自动操控）",
                     desc = brand.a11yPath + "\n开不了也不影响，App 会提示你手动粘贴一次。",
                     actionLabel = "去开启",
                     onAction = onOpenA11y
                 )
                 TextButton(onClick = onShowRestrictionGuide) {
-                    Text("看完整的分品牌步骤")
+                    Text("开关打不开？看分品牌解除方法")
                 }
             }
         },

@@ -94,7 +94,9 @@ fun SetupScreen(
     onGoToAccounts: () -> Unit,
     onGoToClients: () -> Unit,
     onOpenGuide: () -> Unit,
-    onAiAssist: () -> Unit
+    onAiAssist: () -> Unit,
+    onRestartService: () -> Unit,
+    onTestModels: () -> Unit
 ) {
     val context = LocalContext.current
     val env = uiState.environment
@@ -146,7 +148,23 @@ fun SetupScreen(
         )
 
         // 2.5 悬浮窗开关（显眼位置）
-        OverlayToggleCard()
+        OverlayToggleCard(canDrawOverlays = uiState.canDrawOverlays)
+
+        // 2.6 启动反代（部署成功后出现）
+        if (uiState.hasDeployed) {
+            RestartProxyCard(
+                online = uiState.service.online,
+                onRestart = onRestartService
+            )
+        }
+
+        // 2.7 拉取反代模型（从使用页挪过来）
+        if (uiState.hasDeployed) {
+            ModelPullCard(
+                uiState = uiState,
+                onTestModels = onTestModels
+            )
+        }
 
         // 3. 唯一主操作
         PrimaryActionCard(
@@ -252,11 +270,13 @@ fun SetupScreen(
 }
 
 @Composable
-private fun OverlayToggleCard() {
+private fun OverlayToggleCard(canDrawOverlays: Boolean) {
     val context = LocalContext.current
     val prefs = remember { SettingsRepository(context) }
-    val canDraw = Settings.canDrawOverlays(context)
-    var overlayOn by remember(canDraw) { mutableStateOf(OverlayService.isRunning && canDraw) }
+    val canDraw = canDrawOverlays
+    var overlayOn by remember(canDraw, OverlayService.isRunning) {
+        mutableStateOf(OverlayService.isRunning && canDraw)
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -612,28 +632,28 @@ private fun PrerequisitesCard(
                 )
             }
 
-            // 2. 权限三步引导：解除限制 → 悬浮窗 → 无障碍
-            ChecklistRow(
-                ok = false,
-                title = "2. 先解除系统的权限限制",
-                subtitle = "小米/红米、OPPO、vivo、荣耀 等系统会限制第三方应用授权，" +
-                    "弹窗里有一行小字「解除限制 / 允许受限制的设置」，必须先点它，后面的悬浮窗和无障碍才能开。"
-            )
-            FilledTonalButton(
-                onClick = onShowAccessibilityGuide,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+            // 2. 权限引导：悬浮窗 → 无障碍
+            Surface(
+                color = Color(0xFFFFF4D6),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("查看解除限制的详细步骤")
+                Text(
+                    text = "⚠️ 本 App 可能被安卓手机限制权限。如果下面的开关打不开、是灰的，或提示「已限制设置」，" +
+                        "请按系统提示先解除限制，再回来开启。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF8A6D00),
+                    modifier = Modifier.padding(10.dp)
+                )
             }
 
             ChecklistRow(
                 ok = canDrawOverlay,
-                title = "3. 悬浮窗授权",
+                title = "2. 悬浮窗授权",
                 subtitle = if (canDrawOverlay) {
                     "已允许「显示在其他应用上层」"
                 } else {
-                    "允许后才能在 Termux 上方看到进度小窗（同样可能被「已限制设置」拦住，先解除限制）"
+                    "允许后才能在 Termux 上方看到进度小窗"
                 }
             )
             if (!canDrawOverlay) {
@@ -648,11 +668,11 @@ private fun PrerequisitesCard(
 
             ChecklistRow(
                 ok = env.accessibilityEnabled,
-                title = "4. 无障碍（自动操控）",
+                title = "3. 无障碍（自动操控）",
                 subtitle = if (env.accessibilityEnabled) {
-                    "已开启，可以直接点上方「一键全自动搭建」"
+                    "已开启，可以直接点上方按钮搭建"
                 } else {
-                    "开启后才能自动粘贴命令并回车；开不了也不影响使用，只是要手动粘贴一次"
+                    "开启后才能自动粘贴命令；开不了也不影响，App 会提示你手动粘贴一次"
                 }
             )
             if (!env.accessibilityEnabled) {
@@ -888,6 +908,112 @@ private fun AdvancedSettingsCard(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("打开 Termux")
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RestartProxyCard(
+    online: Boolean,
+    onRestart: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "启动反代",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "下次打开 Termux 或酒馆之前，先点一下这里把反代服务跑起来；" +
+                    "如果状态已经是「运行中」，就不用管它。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Surface(
+                color = Color(0xFFFFF4D6),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "⚠️ 反代服务运行时必须开着 VPN，没开 VPN 会一直失败。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF8A6D00),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+            Button(
+                onClick = onRestart,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(if (online) "重启反代服务" else "启动反代")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelPullCard(
+    uiState: MainUiState,
+    onTestModels: () -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "拉取反代模型",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "拉取一次，看看反代有没有成功拿到可用模型列表。这一步只是读列表，不消耗任何额度。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = onTestModels,
+                enabled = !uiState.testingModels && uiState.service.online,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                if (uiState.testingModels) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("正在拉取…")
+                } else {
+                    Text(if (uiState.service.online) "拉取模型列表" else "服务未运行，先启动反代")
+                }
+            }
+            uiState.lastTestResult?.let { (ok, msg) ->
+                Surface(
+                    color = if (ok) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(10.dp)
+                    )
                 }
             }
         }

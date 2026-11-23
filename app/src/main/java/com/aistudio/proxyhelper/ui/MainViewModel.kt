@@ -65,7 +65,8 @@ data class MainUiState(
     val showPasteDialog: Boolean = false,
     val pasteDialogCommand: String = "",
     val showVpnReminder: Boolean = false,
-    val pendingDeployAction: TermuxAction? = null
+    val pendingDeployAction: TermuxAction? = null,
+    val canDrawOverlays: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -84,7 +85,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             agentModel = settingsRepo.agentModel,
             agentUseLocal = settingsRepo.agentUseLocal,
             agentLocalModel = settingsRepo.agentLocalModel,
-            agentLocalKey = settingsRepo.agentLocalKey
+            agentLocalKey = settingsRepo.agentLocalKey,
+            canDrawOverlays = android.provider.Settings.canDrawOverlays(application)
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -102,6 +104,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             while (isActive) {
                 refreshServiceStatus(silent = true)
+                // 顺带刷新悬浮窗授权状态：用户从系统设置返回后，界面能立刻变成「开启/关闭」
+                val canDraw = android.provider.Settings.canDrawOverlays(getApplication())
+                if (_uiState.value.canDrawOverlays != canDraw) {
+                    _uiState.update { it.copy(canDrawOverlays = canDraw) }
+                }
                 delay(6000L)
             }
         }
@@ -109,7 +116,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshEnvironment() {
         val env = EnvironmentChecker.inspect(getApplication())
-        _uiState.update { it.copy(environment = env) }
+        val canDraw = android.provider.Settings.canDrawOverlays(getApplication())
+        _uiState.update { it.copy(environment = env, canDrawOverlays = canDraw) }
     }
 
     fun refreshServiceStatus(silent: Boolean = false) {
@@ -502,7 +510,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun askTavern(question: String) {
         val state = _uiState.value
-        val config = buildAgentConfig(preferLocalWhenOnline = true)
+        // 严格按用户保存的单一来源执行：外接模型 或 本地反代，绝不两个都调
+        val config = buildAgentConfig(preferLocalWhenOnline = false)
         val canRun = (config.useLocalProxy && state.service.online) ||
             (!config.useLocalProxy && state.agentApiKey.isNotBlank())
         if (!canRun) {

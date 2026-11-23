@@ -58,12 +58,10 @@ import com.aistudio.proxyhelper.data.ErrorExplainer
 fun UsageScreen(
     uiState: MainUiState,
     onCopyText: (String, String) -> Unit,
-    onTestModels: () -> Unit,
-    onRestartService: () -> Unit
+    agentContent: @Composable () -> Unit = {}
 ) {
     val settings = uiState.settings
     val localUrl = settings.localBaseUrl
-    val models = uiState.service.models
 
     Column(
         modifier = Modifier
@@ -100,165 +98,15 @@ fun UsageScreen(
                     color = MaterialTheme.colorScheme.error
                 )
 
-                CopyableField("代理地址（手机上的客户端用）", localUrl, onCopyText)
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilledTonalButton(
-                        onClick = { onCopyText("代理地址", localUrl) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(
-                            Icons.Filled.ContentCopy,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("复制地址")
-                    }
-                    OutlinedButton(
-                        onClick = { onCopyText("Gemini 地址", "$localUrl/v1beta") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("复制 /v1beta")
-                    }
-                }
+                Text(
+                    text = "代理地址和模型列表都在「反代」页，那里点一下就能复制地址。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 Text(
                     text = "酒馆参数：API 类型选 Chat Completion，来源选 Google AI Studio，代理密码随意填。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Button(
-                    onClick = onTestModels,
-                    enabled = !uiState.testingModels,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    if (uiState.testingModels) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("正在测试...")
-                    } else {
-                        Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("测试拉取模型列表")
-                    }
-                }
-
-                uiState.lastTestResult?.let { (ok, msg) ->
-                    Surface(
-                        color = if (ok) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.errorContainer,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-                                contentDescription = null,
-                                tint = if (ok) Color(0xFF15803D) else MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = msg,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (ok) Color(0xFF14532D) else MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
-                    }
-                }
-
-                if (models.isNotEmpty()) {
-                    Text(
-                        text = "可用模型（${models.size}）",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        models.take(12).forEach { model ->
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Text(
-                                    text = model,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── 重启恢复 ──
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "手机重启后怎么办",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Text(
-                    text = "点下面按钮即可恢复，不需要重新安装。若 Termux 被系统清理了，先打开一次 Termux 再点。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Surface(
-                    color = Color(0xFFFFF4D6),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "⚠️ 反代服务运行时必须开着 VPN，没开 VPN 会一直失败。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF8A6D00),
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
-                OutlinedButton(
-                    onClick = onRestartService,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("一键恢复服务")
-                }
-                Text(
-                    text = "想更稳定地常驻：在「搭建 → 高级设置」里开一次唤醒锁，并把 Termux 的电池限制设为「无限制」。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -320,6 +168,9 @@ fun UsageScreen(
                 )
             }
         }
+
+        // ── AI 助手（放在解疑页最下面）──
+        agentContent()
 
         Spacer(modifier = Modifier.height(8.dp))
     }

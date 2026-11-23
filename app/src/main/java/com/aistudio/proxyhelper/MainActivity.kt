@@ -99,10 +99,9 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
 
     val tabs = remember {
         listOf(
-            NavTab("搭建", Icons.Filled.RocketLaunch),
+            NavTab("反代", Icons.Filled.RocketLaunch),
             NavTab("账号", Icons.Filled.VpnKey),
-            NavTab("使用", Icons.Filled.MenuBook),
-            NavTab("AI", Icons.Filled.SmartToy)
+            NavTab("解疑", Icons.Filled.MenuBook)
         )
     }
 
@@ -278,11 +277,15 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onGoToClients = { selectedTab = 2 },
                     onOpenGuide = { selectedTab = 2 },
                     onAiAssist = {
-                        selectedTab = 3
+                        selectedTab = 2
                         viewModel.runAgent(
                             "我还没开始搭建，请帮我从零把反代服务搭起来，并确认能否正常访问。"
                         )
-                    }
+                    },
+                    onRestartService = {
+                        viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
+                    },
+                    onTestModels = viewModel::testModelsConnectivity
                 )
 
                 1 -> AccountsScreen(
@@ -294,18 +297,16 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 2 -> UsageScreen(
                     uiState = uiState,
                     onCopyText = viewModel::copyText,
-                    onTestModels = viewModel::testModelsConnectivity,
-                    onRestartService = {
-                        viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
+                    agentContent = {
+                        AgentScreen(
+                            uiState = uiState,
+                            onSaveConfig = viewModel::saveAgentConfig,
+                            onFetchModels = viewModel::fetchAgentModels,
+                            onRun = viewModel::runAgent,
+                            onAskTavern = viewModel::askTavern,
+                            embedded = true
+                        )
                     }
-                )
-
-                3 -> AgentScreen(
-                    uiState = uiState,
-                    onSaveConfig = viewModel::saveAgentConfig,
-                    onFetchModels = viewModel::fetchAgentModels,
-                    onRun = viewModel::runAgent,
-                    onAskTavern = viewModel::askTavern
                 )
             }
         }
