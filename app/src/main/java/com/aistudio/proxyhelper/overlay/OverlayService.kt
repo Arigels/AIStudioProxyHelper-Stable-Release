@@ -127,6 +127,9 @@ class OverlayService : Service() {
     private val clipWatcher = ClipboardManager.OnPrimaryClipChangedListener {
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
         cookieClipLength = if (looksLikeCookieJson(text)) text.length else 0
+        if (cookieClipLength > 0 && OverlayState.snapshot.online && !OverlayState.snapshot.accountsReady) {
+            tutorialStage = 4
+        }
         handler.post { render() }
     }
 
@@ -584,7 +587,7 @@ class OverlayService : Service() {
         val browserPkg = chosen?.second
         val bothInstalled = edge != null && firefox != null
         if (tutorialStage == 0 && chosen != null) tutorialStage = 1
-        if (cookieClipLength > 0) tutorialStage = 2
+        if (cookieClipLength > 0) tutorialStage = 4
 
         tut.setTypeface(null, Typeface.NORMAL)
         tut.background = tutorialPanelBackground()
@@ -600,6 +603,7 @@ class OverlayService : Service() {
         }
 
         when (tutorialStage) {
+            4 -> renderTutorialStage4(tut, btn, altBtn, continueRow)
             2 -> {
                 switchRow?.visibility = View.GONE
                 tut.text = if (cookieClipLength > 0) {
@@ -730,6 +734,29 @@ class OverlayService : Service() {
         }
     }
 
+    /** S4：剪贴板命中 Cookie JSON 后绿色完成态；读不到剪贴板时也可从「打开 App」推进到本步。 */
+    private fun renderTutorialStage4(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?,
+        continueRow: LinearLayout?
+    ) {
+        continueRow?.visibility = View.GONE
+        val head = if (cookieClipLength > 0) "✅ Cookie 已复制（${cookieClipLength} 字符）\n" else ""
+        tut.text = "${head}⑤ 回 App →「账号」页 → 点「粘贴剪贴板」"
+        tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
+        tut.setTypeface(null, Typeface.BOLD)
+        tut.background = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
+            setStroke(dp(1), Color.parseColor("#66FDE047"))
+        }
+        btn?.visibility = View.VISIBLE
+        btn?.text = "📲 打开 App 去粘贴"
+        btn?.setOnClickListener { openApp() }
+        altBtn?.visibility = View.GONE
+    }
+
     /** S3：导出 Cookie-Editor JSON；按浏览器给对应菜单路径，按钮直接重开 AI Studio（不再弹 VPN 卡）。 */
     private fun renderTutorialStage3(
         tut: TextView,
@@ -814,7 +841,7 @@ class OverlayService : Service() {
     private fun openApp() {
         // 已经从浏览器那一步过来、但剪贴板内容读不到时，也把教程推进到「回 App 粘贴」这一步
         val snapshot = OverlayState.snapshot
-        if (snapshot.online && !snapshot.accountsReady && tutorialStage >= 1) tutorialStage = 2
+        if (snapshot.online && !snapshot.accountsReady && tutorialStage in 1..3) tutorialStage = 4
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
