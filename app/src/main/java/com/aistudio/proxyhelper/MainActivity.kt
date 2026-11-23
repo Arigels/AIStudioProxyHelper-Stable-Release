@@ -190,10 +190,10 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     if (uiState.showPasteDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissPasteDialog() },
-            title = { Text("命令已复制，去 Termux 粘贴执行") },
+            title = { Text("命令已复制，准备去 Termux 粘贴") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Termux 已经自动打开，按下面三步操作：")
+                    Text("命令已经在剪贴板里了，进 Termux 后按三步操作：")
                     Text("1. 长按 Termux 屏幕空白处")
                     Text("2. 在弹出的菜单里点「粘贴」")
                     Text("3. 按键盘上的回车键执行")
@@ -209,15 +209,15 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                         )
                     }
                     Text(
-                        "装完之后回来点「检查状态」，服务在跑就说明成功了。",
+                        "装完之后回到本 App 点「刷新状态」，服务在跑就说明成功了。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
             confirmButton = {
-                Button(onClick = { viewModel.dismissPasteDialog() }) {
-                    Text("我知道怎么粘贴了")
+                Button(onClick = { viewModel.openTermuxForPaste() }) {
+                    Text("打开 Termux 去粘贴")
                 }
             },
             dismissButton = {

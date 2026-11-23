@@ -364,7 +364,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun runManualFallback(action: TermuxAction) {
         val ctx = getApplication<Application>()
-        val result = TermuxBridge.copyAndOpenTermux(ctx, action, _uiState.value.settings)
+        // 只复制命令，不自动跳 Termux：先把步骤给用户看清楚，再由用户点按钮跳转
+        val cmd = TermuxBridge.buildCommand(action, _uiState.value.settings)
+        TermuxBridge.copyToClipboard(ctx, action.title, cmd)
         val markDeployed = action == TermuxAction.INSTALL_AND_START ||
             action == TermuxAction.INSTALL_ONLY
         val markExternal = action == TermuxAction.INSTALL_AND_START ||
@@ -373,12 +375,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (markExternal) settingsRepo.externalAppsSetupDone = true
         _uiState.update {
             it.copy(
-                lastDispatchedCommand = result.command,
+                lastDispatchedCommand = cmd,
                 hasDeployed = it.hasDeployed || markDeployed,
                 externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
-                snackbarMessage = result.reason,
+                snackbarMessage = "命令已复制",
                 showPasteDialog = true,
-                pasteDialogCommand = result.command
+                pasteDialogCommand = cmd
+            )
+        }
+    }
+
+    /** 用户看完步骤后，主动点按钮才跳转到 Termux。 */
+    fun openTermuxForPaste() {
+        TermuxBridge.openTermux(getApplication())
+        _uiState.update {
+            it.copy(
+                showPasteDialog = false,
+                snackbarMessage = "Termux 已打开：长按屏幕 → 点「粘贴」→ 按回车"
             )
         }
     }
@@ -391,8 +404,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val cmd = _uiState.value.pasteDialogCommand
         if (cmd.isBlank()) return
         TermuxBridge.copyToClipboard(getApplication(), "部署命令", cmd)
-        TermuxBridge.openTermux(getApplication())
-        _uiState.update { it.copy(snackbarMessage = "命令已重新复制，去 Termux 长按粘贴") }
+        _uiState.update { it.copy(snackbarMessage = "命令已重新复制") }
     }
 
     fun copyActionCommand(action: TermuxAction) {
