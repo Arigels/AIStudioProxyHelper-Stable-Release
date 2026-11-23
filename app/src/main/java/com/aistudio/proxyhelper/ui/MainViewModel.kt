@@ -74,7 +74,9 @@ data class MainUiState(
     val deploySucceeded: Boolean = false,
     val publicNetworkAlert: PublicNetworkRisk? = null,
     val showSecurityKeyDialog: Boolean = false,
-    val savingSecurityKeys: Boolean = false
+    val savingSecurityKeys: Boolean = false,
+    val quotaChecking: Boolean = false,
+    val busyAccountId: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -630,6 +632,95 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val (ok, msg) = apiClient.clearAllCooldowns(_uiState.value.settings)
             _uiState.update { it.copy(snackbarMessage = msg) }
+            if (ok) refreshServiceStatus(silent = true)
+        }
+    }
+
+    fun refreshQuotaDetection(showToast: Boolean = true) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(quotaChecking = true) }
+            val currentSettings = _uiState.value.settings
+            val status = apiClient.fetchServiceStatus(currentSettings)
+            if (status.online) {
+                settingsRepo.hasDeployed = true
+                settingsRepo.deploySucceeded = true
+                OverlayState.deployStartedAt = 0L
+            }
+            val msg = if (!showToast) {
+                null
+            } else if (!status.online) {
+                status.lastError ?: "反代服务未运行，请先到「反代」页启动服务"
+            } else if (status.lastError != null) {
+                status.lastError
+            } else {
+                val todayCalls = status.accounts.sumOf { it.todayTotalRequests }
+                "已同步管理台数据：${status.accounts.size} 个账号，今日调用 $todayCalls 次，可用模型 ${status.models.size} 个"
+            }
+            _uiState.update {
+                it.copy(
+                    service = status,
+                    quotaChecking = false,
+                    hasDeployed = it.hasDeployed || status.online,
+                    deploySucceeded = it.deploySucceeded || status.online,
+                    deploying = if (status.online) false else it.deploying,
+                    deployStartedAt = if (status.online) 0L else it.deployStartedAt,
+                    snackbarMessage = msg ?: it.snackbarMessage
+                )
+            }
+            updateOverlaySnapshot(status)
+        }
+    }
+
+    fun activateAccount(accountId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyAccountId = accountId) }
+            val (ok, msg) = apiClient.activateAccount(_uiState.value.settings, accountId)
+            _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
+            if (ok) refreshServiceStatus(silent = true)
+        }
+    }
+
+    fun toggleAccountEnabled(accountId: String, enabled: Boolean? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyAccountId = accountId) }
+            val (ok, msg) = apiClient.toggleAccount(_uiState.value.settings, accountId, enabled)
+            _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
+            if (ok) refreshServiceStatus(silent = true)
+        }
+    }
+
+    fun detectAccountEmailAndTier(accountId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyAccountId = accountId) }
+            val (ok, msg) = apiClient.detectAccountEmailAndTier(_uiState.value.settings, accountId)
+            _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
+            if (ok) refreshServiceStatus(silent = true)
+        }
+    }
+
+    fun clearAccountCooldown(accountId: String, model: String? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyAccountId = accountId) }
+            val (ok, msg) = apiClient.clearAccountCooldown(_uiState.value.settings, accountId, model)
+            _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
+            if (ok) refreshServiceStatus(silent = true)
+        }
+    }
+
+    fun forceNextAccount() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(quotaChecking = true) }
+            val (ok, msg) = apiClient.forceNextAccount(_uiState.value.settings)
+            _uiState.update { it.copy(quotaChecking = false, snackbarMessage = msg) }
+            if (ok) refreshServiceStatus(silent = true)
+        }
+    }
+
+    fun deleteAccount(accountId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(busyAccountId = accountId) }
+            val (ok, msg) = apiClient.deleteAccount(_uiState.value.settings, accountId)
+            _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
             if (ok) refreshServiceStatus(silent = true)
         }
     }

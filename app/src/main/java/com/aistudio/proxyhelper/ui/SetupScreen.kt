@@ -354,6 +354,18 @@ private fun PrimaryActionCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Surface(
+                    color = Color(0xFFE8F5E9),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "💡 本 App 不用一直挂在后台：反代服务实际运行在 Termux 里。部署和导入账号完成后，你可以直接关闭或划掉本 App（若开启了悬浮窗也可随时关闭），只要保持 Termux 和 VPN 在后台运行即可；之后需要看额度、改设置或遇到问题再打开本 App 就好。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF1B5E20),
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
                 OutlinedButton(
                     onClick = onStop,
                     modifier = Modifier
@@ -1180,7 +1192,7 @@ private fun NextStepsCard(
         }
         else -> {
             title = "全部就绪 ✅"
-            desc = "服务、账号、模型均正常。下次打开 Termux 和酒馆前，点上方「启动反代」即可。"
+            desc = "服务、账号、模型均正常。你可以直接关闭本 App，仅保留 Termux 和 VPN 在后台即可；以后需要查额度或遇到问题时再打开本 App。"
             actionLabel = "查看解疑说明"
             action = onOpenGuide
         }

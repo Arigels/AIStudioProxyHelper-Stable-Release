@@ -97,14 +97,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.5.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.6.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.5.apk
+          path: dist/AIStudioProxyHelper-v2.6.6.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -112,11 +112,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.5"
+          TAG="v2.6.6"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.5.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.6.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.5.apk \
-              --title "v2.6.5 — 正式 Release 签名、精简无障碍权限范围、双密钥安全保护" \
-              --notes "1. 改用正式 Release Keystore 签名（告别 Android Debug 证书；注意从旧版覆盖安装需先卸载一次旧版）；2. 将无障碍权限范围限定为 Termux 与系统权限弹窗，降低 Play Protect / 安全管家误报；3. 新增「API 访问密钥 + 管理后台密码」一键保护设置，公共/企业网络弹窗可直接开启密钥保护，并在高级设置支持查看/复制/删除 API 密钥。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.6.apk \
+              --title "v2.6.6 — 账号页实时额度检测、可用模型与每日额度对照表、常驻后台提醒" \
+              --notes "1. 账号页新增「实时额度检测」：同步 AI Studio Proxy 管理平台实时今日调用次数、Token 消耗、429 冷却状态与美西 00:00 PST 重置倒计时；2. 展示每个账号可用模型列表、单模型配额进度条，并支持在 App 内直接激活/启停/重置 429/探测等级；3. 同步管理平台 config.yaml 的各订阅等级（Free/Plus/Pro/Ultra/Ultra_20X）每日额度对照表与付费准入规则；4. 在反代页与解疑页明确提示部署完成后可直接关闭本 App，仅需保持 Termux 与 VPN 运行。"
           fi

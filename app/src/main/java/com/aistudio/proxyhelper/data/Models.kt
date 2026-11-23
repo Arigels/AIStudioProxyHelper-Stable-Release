@@ -32,6 +32,24 @@ data class EnvironmentStatus(
     val lanIpAddress: String? = null
 )
 
+data class ModelDailyQuotaDetail(
+    val modelId: String,
+    val requests: Int = 0,
+    val success: Int = 0,
+    val rateLimited: Int = 0,
+    val errors: Int = 0,
+    val totalTokens: Long = 0L,
+    val reasoningTokens: Long = 0L,
+    val cachedTokens: Long = 0L,
+    val configuredQuota: Int = 20,
+    val configuredTokenQuota: Long? = null,
+    val quotaUsedPercent: Double = 0.0,
+    val tokenQuotaUsedPercent: Double = 0.0,
+    val cooldownRemainingSec: Int = 0,
+    val dripMode: Boolean = false,
+    val isAvailable: Boolean = true
+)
+
 data class AccountSummary(
     val id: String,
     val name: String,
@@ -39,7 +57,68 @@ data class AccountSummary(
     val authUser: String,
     val tier: String,
     val enabled: Boolean,
-    val group: String
+    val group: String,
+    val totalRequests: Int = 0,
+    val totalSuccess: Int = 0,
+    val totalRateLimited: Int = 0,
+    val totalErrors: Int = 0,
+    val todayTotalRequests: Int = 0,
+    val todayTotalTokens: Long = 0L,
+    val lastUsed: String? = null,
+    val isAvailable: Boolean = true,
+    val sessionExpired: Boolean = false,
+    val cooldownRemainingSec: Int = 0,
+    val modelCooldowns: Map<String, Int> = emptyMap(),
+    val todayModels: Map<String, ModelDailyQuotaDetail> = emptyMap()
+)
+
+data class ModelMatchRule(
+    val exact: List<String> = emptyList(),
+    val prefixes: List<String> = emptyList(),
+    val contains: List<String> = emptyList()
+) {
+    fun matches(normalizedModel: String): Boolean {
+        val clean = normalizedModel.trim().removePrefix("models/").lowercase()
+        if (clean.isEmpty()) return false
+        if (exact.any { it.trim().removePrefix("models/").lowercase() == clean }) return true
+        if (prefixes.any { clean.startsWith(it.trim().lowercase()) }) return true
+        if (contains.any { clean.contains(it.trim().lowercase()) }) return true
+        return false
+    }
+}
+
+data class TierQuotaRuleEntry(
+    val ruleKey: String,
+    val match: ModelMatchRule,
+    val dailyLimit: Int,
+    val dailyTokenLimit: Long? = null
+)
+
+data class TierQuotaConfig(
+    val tierName: String,
+    val rules: List<TierQuotaRuleEntry> = emptyList(),
+    val defaultLimit: Int = 20,
+    val defaultTokenLimit: Long? = null
+)
+
+data class QuotaOverrideEntry(
+    val modelId: String,
+    val dailyLimit: Int? = null,
+    val dailyTokenLimit: Long? = null
+)
+
+data class PaidModelRuleEntry(
+    val ruleKey: String,
+    val match: ModelMatchRule,
+    val requiredTiers: List<String>
+)
+
+data class QuotaPolicySnapshot(
+    val tierOrder: List<String> = emptyList(),
+    val tiers: Map<String, TierQuotaConfig> = emptyMap(),
+    val overrides: Map<String, QuotaOverrideEntry> = emptyMap(),
+    val paidRules: List<PaidModelRuleEntry> = emptyList(),
+    val syncedFromServer: Boolean = false
 )
 
 data class ApiKeySummary(
@@ -55,6 +134,9 @@ data class ServiceStatus(
     val signerRunning: Boolean? = null,
     val authEnabled: Boolean = false,
     val accounts: List<AccountSummary> = emptyList(),
+    val activeAccountId: String? = null,
+    val rotationEnabled: Boolean = false,
+    val quotaPolicy: QuotaPolicySnapshot? = null,
     val apiKeys: List<ApiKeySummary> = emptyList(),
     val models: List<String> = emptyList(),
     val lastError: String? = null,

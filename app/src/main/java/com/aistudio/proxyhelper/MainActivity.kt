@@ -426,6 +426,17 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     1 -> AccountsScreen(
                         uiState = uiState,
                         onImportCookies = viewModel::importCookies,
+                        onRefreshQuota = { viewModel.refreshQuotaDetection(showToast = true) },
+                        onOpenConsole = {
+                            TermuxBridge.openUrl(context, uiState.settings.localBaseUrl)
+                        },
+                        onActivateAccount = viewModel::activateAccount,
+                        onToggleAccount = viewModel::toggleAccountEnabled,
+                        onDetectAccount = viewModel::detectAccountEmailAndTier,
+                        onClearAccountCooldown = viewModel::clearAccountCooldown,
+                        onClearAllCooldowns = viewModel::clearAllCooldowns,
+                        onForceNextAccount = viewModel::forceNextAccount,
+                        onDeleteAccount = viewModel::deleteAccount,
                         onShowMessage = viewModel::showMessage
                     )
 
