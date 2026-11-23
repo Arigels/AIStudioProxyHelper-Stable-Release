@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.data.BrandGuide
 
 /**
- * 无障碍（自动操控）开启教程内容，供弹窗与「使用」页共用。
+ * 无障碍开启教程内容，供弹窗与「解疑」页共用。
  */
 @Composable
 fun AccessibilityGuideBody() {

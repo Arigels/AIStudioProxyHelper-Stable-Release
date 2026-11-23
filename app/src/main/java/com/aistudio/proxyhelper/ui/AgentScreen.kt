@@ -57,27 +57,25 @@ import com.aistudio.proxyhelper.agent.AgentLine
 
 private data class Provider(
     val label: String,
-    val baseUrl: String,
-    val defaultModel: String,
-    val isLocal: Boolean = false
+    val baseUrl: String
 )
 
 private val providers = listOf(
-    Provider("本机反代（免费，不用 Key）", "", "", isLocal = true),
-    Provider("DeepSeek", "https://api.deepseek.com", ""),
-    Provider("硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1", ""),
-    Provider("Kimi 月之暗面", "https://api.moonshot.cn/v1", ""),
-    Provider("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", ""),
-    Provider("OpenAI", "https://api.openai.com/v1", ""),
-    Provider("Claude（Anthropic 兼容）", "https://api.anthropic.com/v1", ""),
-    Provider("Gemini（官方 Key）", "https://generativelanguage.googleapis.com/v1beta/openai", ""),
-    Provider("自定义地址", "", "")
+    Provider("DeepSeek", "https://api.deepseek.com"),
+    Provider("硅基流动 SiliconFlow", "https://api.siliconflow.cn/v1"),
+    Provider("Kimi 月之暗面", "https://api.moonshot.cn/v1"),
+    Provider("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4"),
+    Provider("OpenAI", "https://api.openai.com/v1"),
+    Provider("Claude（Anthropic 兼容）", "https://api.anthropic.com/v1"),
+    Provider("Gemini（官方 Key）", "https://generativelanguage.googleapis.com/v1beta/openai"),
+    Provider("自定义地址", "")
 )
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AgentScreen(
     uiState: MainUiState,
+    onSwitchSource: (Boolean) -> Unit,
     onSaveConfig: (String, String, String, Boolean, String) -> Unit,
     onFetchModels: (String, String, String, Boolean, String) -> Unit,
     onRun: (String) -> Unit,
@@ -87,7 +85,10 @@ fun AgentScreen(
     var problem by remember { mutableStateOf("") }
     var mode by remember { mutableIntStateOf(0) }
     var showConfig by remember {
-        mutableStateOf(uiState.agentApiKey.isBlank() && !uiState.agentUseLocal)
+        mutableStateOf(
+            if (uiState.agentUseLocal) uiState.agentLocalModel.isBlank()
+            else uiState.agentApiKey.isBlank() || uiState.agentModel.isBlank()
+        )
     }
 
     var baseUrl by remember(uiState.agentBaseUrl) { mutableStateOf(uiState.agentBaseUrl) }
@@ -101,23 +102,18 @@ fun AgentScreen(
     var keyVisible by remember { mutableStateOf(false) }
 
     val useLocal = useLocalTab
+    val availableModels = if (useLocal) uiState.agentLocalModels else uiState.agentCustomModels
 
     val currentProvider = providers.firstOrNull { p ->
-        if (p.isLocal) {
-            useLocal
-        } else {
-            !useLocal && p.baseUrl.isNotBlank() &&
-                baseUrl.trim().trimEnd('/').equals(p.baseUrl.trim().trimEnd('/'), ignoreCase = true)
-        }
+        p.baseUrl.isNotBlank() &&
+            baseUrl.trim().trimEnd('/').equals(p.baseUrl.trim().trimEnd('/'), ignoreCase = true)
     } ?: providers.last()
 
     val currentModel = if (useLocal) localModel else model
 
     Column(
         modifier = if (embedded) {
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+            Modifier.fillMaxWidth()
         } else {
             Modifier
                 .fillMaxSize()
@@ -160,13 +156,11 @@ fun AgentScreen(
                     FilterChip(
                         selected = !useLocal,
                         onClick = {
-                            useLocalTab = false
-                            showConfig = true
-                            // 切换即保存，保证实际调用只用当前选中的来源
-                            onSaveConfig(
-                                baseUrl.trim(), apiKey.trim(), model.trim(),
-                                false, localModel.trim()
-                            )
+                            if (useLocalTab) {
+                                useLocalTab = false
+                                showConfig = true
+                                onSwitchSource(false)
+                            }
                         },
                         label = { Text("自定义") },
                         modifier = Modifier.weight(1f)
@@ -174,12 +168,11 @@ fun AgentScreen(
                     FilterChip(
                         selected = useLocal,
                         onClick = {
-                            useLocalTab = true
-                            showConfig = true
-                            onSaveConfig(
-                                baseUrl.trim(), apiKey.trim(), model.trim(),
-                                true, localModel.trim()
-                            )
+                            if (!useLocalTab) {
+                                useLocalTab = true
+                                showConfig = true
+                                onSwitchSource(true)
+                            }
                         },
                         label = { Text("本地反代") },
                         modifier = Modifier.weight(1f)
@@ -200,10 +193,12 @@ fun AgentScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (uiState.agentApiKey.isNotBlank() || uiState.agentUseLocal) {
-                            "接口配置（已保存，点此修改）"
+                        text = if ((useLocal && uiState.agentLocalModel.isNotBlank()) ||
+                            (!useLocal && uiState.agentApiKey.isNotBlank() && uiState.agentModel.isNotBlank())
+                        ) {
+                            "接口配置（当前：$currentModel）"
                         } else {
-                            "① 配置接口（必填）"
+                            "① 配置接口（先拉取模型并保存）"
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -246,13 +241,7 @@ fun AgentScreen(
                                             text = { Text(p.label) },
                                             onClick = {
                                                 providerMenu = false
-                                                if (p.isLocal) {
-                                                    useLocalTab = true
-                                                } else {
-                                                    useLocalTab = false
-                                                    if (p.baseUrl.isNotBlank()) baseUrl = p.baseUrl
-                                                    if (p.defaultModel.isNotBlank()) model = p.defaultModel
-                                                }
+                                                if (p.baseUrl.isNotBlank()) baseUrl = p.baseUrl
                                             }
                                         )
                                     }
@@ -319,13 +308,13 @@ fun AgentScreen(
                                 expanded = modelMenu,
                                 onDismissRequest = { modelMenu = false }
                             ) {
-                                if (uiState.agentModels.isEmpty()) {
+                                if (availableModels.isEmpty()) {
                                     DropdownMenuItem(
-                                        text = { Text("还没有模型列表，先点「拉取模型」") },
+                                        text = { Text("还没有模型列表，先点「连接并拉取模型」") },
                                         onClick = { modelMenu = false }
                                     )
                                 } else {
-                                    uiState.agentModels.forEach { name ->
+                                    availableModels.forEach { name ->
                                         DropdownMenuItem(
                                             text = { Text(name) },
                                             onClick = {
@@ -367,25 +356,9 @@ fun AgentScreen(
                             }
                         }
 
-                        OutlinedButton(
-                            onClick = {
-                                onSaveConfig(
-                                    baseUrl.trim(),
-                                    apiKey.trim(),
-                                    model.trim(),
-                                    useLocal,
-                                    localModel.trim()
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("保存设置")
-                        }
-
-                        if (uiState.agentModels.isNotEmpty()) {
+                        if (availableModels.isNotEmpty()) {
                             Text(
-                                text = "可用模型（${uiState.agentModels.size} 个，点一个选中）",
+                                text = "可用模型（${availableModels.size} 个，点一个选中）",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -395,7 +368,7 @@ fun AgentScreen(
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                                 maxItemsInEachRow = 2
                             ) {
-                                uiState.agentModels.take(60).forEach { name ->
+                                availableModels.take(60).forEach { name ->
                                     val chosen = if (useLocal) localModel else model
                                     FilterChip(
                                         selected = chosen == name,
@@ -417,6 +390,23 @@ fun AgentScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                onSaveConfig(
+                                    baseUrl.trim(),
+                                    apiKey.trim(),
+                                    model.trim(),
+                                    useLocal,
+                                    localModel.trim()
+                                )
+                                showConfig = false
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("保存设置并收起")
                         }
                     }
                 }
@@ -454,7 +444,7 @@ fun AgentScreen(
                     text = if (mode == 0) {
                         "② 描述你遇到的问题（或直接让它从零搭建）"
                     } else {
-                        "② 问酒馆相关的问题（服务在跑时用反代模型免费回答）"
+                        "② 问酒馆相关的问题（只使用上方选中的「${if (useLocal) "本地反代" else "自定义"}」模型回答）"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
@@ -474,8 +464,7 @@ fun AgentScreen(
                 )
                 Button(
                     onClick = { if (mode == 0) onRun(problem) else onAskTavern(problem) },
-                    enabled = !uiState.agentRunning &&
-                        (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()),
+                    enabled = !uiState.agentRunning,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
@@ -508,8 +497,7 @@ fun AgentScreen(
                         onClick = {
                             onRun("我还没开始搭建，请帮我从零把反代服务搭起来，并确认能否正常访问。")
                         },
-                        enabled = !uiState.agentRunning &&
-                            (uiState.agentUseLocal || uiState.agentApiKey.isNotBlank()),
+                        enabled = !uiState.agentRunning,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     ) {

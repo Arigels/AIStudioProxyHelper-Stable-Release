@@ -125,7 +125,7 @@ fun AccountsScreen(
 
                 if (!uiState.service.online) {
                     Text(
-                        text = "注意：服务还没启动。请先到「搭建」页点一下启动，再来导入。",
+                        text = "注意：服务还没启动。请先到「反代」页启动服务，再来导入。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )

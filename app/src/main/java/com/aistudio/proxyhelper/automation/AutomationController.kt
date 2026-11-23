@@ -59,16 +59,14 @@ object AutomationController {
 
     fun openAccessibilitySettings(context: Context) {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
         runCatching { context.startActivity(intent) }
     }
 
     /**
-     * Copy command to clipboard, launch Termux, and trigger the Accessibility auto-controller
-     * to automatically paste & press Enter in Termux.
-     *
-     * @return true if the auto-controller service is running and took over the task.
+     * 复制命令到剪贴板，打开 Termux，并由无障碍服务尝试自动粘贴执行。
+     * 返回 true 表示无障碍服务已接管本次任务。
      */
     fun enqueueAndRun(context: Context, command: String, label: String): Boolean {
         // 末尾补一个换行：部分 Termux 版本粘贴即执行，能直接省掉回车这一步

@@ -1,7 +1,5 @@
 package com.aistudio.proxyhelper
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -18,11 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.RocketLaunch
-import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.VpnKey
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -54,16 +51,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.aistudio.proxyhelper.data.BrandGuide
+import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.net.LogCollector
 import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.overlay.OverlayService
 import com.aistudio.proxyhelper.termux.TermuxBridge
-import com.aistudio.proxyhelper.ui.AccessibilityGuideDialog
 import com.aistudio.proxyhelper.ui.AccountsScreen
 import com.aistudio.proxyhelper.ui.AgentScreen
+import com.aistudio.proxyhelper.ui.DisclaimerDialog
 import com.aistudio.proxyhelper.ui.MainViewModel
 import com.aistudio.proxyhelper.ui.PermissionWizardDialog
 import com.aistudio.proxyhelper.ui.SetupScreen
@@ -121,28 +118,25 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    // 从 Termux / 系统设置返回时刷新状态
     val lifecycleOwner = LocalLifecycleOwner.current
     val prefs = remember { SettingsRepository(context) }
-    var showWizard by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        if (!prefs.permissionWizardShown) {
-            showWizard = true
-        }
+    var showDisclaimer by remember { mutableStateOf(!prefs.disclaimerAccepted) }
+    var showWizard by remember {
+        mutableStateOf(prefs.disclaimerAccepted && !prefs.permissionWizardShown)
     }
 
+    // 从 Termux / 系统设置返回时先同步悬浮窗，再刷新 UI 状态，确保按钮立刻变成「开启/关闭」
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshEnvironment()
-                viewModel.refreshServiceStatus(silent = true)
                 if (Settings.canDrawOverlays(context)) {
                     prefs.overlayPromptShown = true
                     if (prefs.overlayDesired && !OverlayService.isRunning) {
                         OverlayService.start(context)
                     }
                 }
+                viewModel.refreshEnvironment()
+                viewModel.refreshServiceStatus(silent = true)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -277,7 +271,6 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onRefreshStatus = { viewModel.refreshServiceStatus(silent = false) },
                     onSaveSettings = viewModel::saveSettings,
                     onExecuteAction = viewModel::executeTermuxAction,
-                    onRunManualFallback = viewModel::runManualFallback,
                     onCopyActionCommand = viewModel::copyActionCommand,
                     onCopyText = viewModel::copyText,
                     onClearCooldowns = viewModel::clearAllCooldowns,
@@ -289,14 +282,13 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                     onOpenGuide = { selectedTab = 2 },
                     onAiAssist = {
                         selectedTab = 2
-                        viewModel.runAgent(
-                            "我还没开始搭建，请帮我从零把反代服务搭起来，并确认能否正常访问。"
-                        )
+                        viewModel.showMessage("已切到「解疑」页，向下滑到底部即可使用 AI 助手")
                     },
                     onRestartService = {
                         viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
                     },
-                    onTestModels = viewModel::testModelsConnectivity
+                    onTestModels = viewModel::testModelsConnectivity,
+                    onToggleOverlay = viewModel::toggleOverlay
                 )
 
                 1 -> AccountsScreen(
@@ -307,10 +299,10 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
 
                 2 -> UsageScreen(
                     uiState = uiState,
-                    onCopyText = viewModel::copyText,
                     agentContent = {
                         AgentScreen(
                             uiState = uiState,
+                            onSwitchSource = viewModel::switchAgentSource,
                             onSaveConfig = viewModel::saveAgentConfig,
                             onFetchModels = viewModel::fetchAgentModels,
                             onRun = viewModel::runAgent,
@@ -323,7 +315,18 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    if (showWizard) {
+    // 首次打开顺序：① 风险与开源免费免责声明 -> ② 权限引导
+    if (showDisclaimer) {
+        DisclaimerDialog(
+            onAccept = {
+                prefs.disclaimerAccepted = true
+                showDisclaimer = false
+                if (!prefs.permissionWizardShown) {
+                    showWizard = true
+                }
+            }
+        )
+    } else if (showWizard) {
         PermissionWizardDialog(
             onDismiss = {
                 showWizard = false
@@ -336,23 +339,7 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 }
             },
             onOpenA11y = {
-                runCatching {
-                    context.startActivity(
-                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            },
-            onOpenAppDetails = {
-                BrandGuide.openPermissionEditor(context)
-            },
-            onOpenRestrictionSettings = {
-                runCatching {
-                    context.startActivity(
-                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
+                AutomationController.openAccessibilitySettings(context)
             }
         )
     }

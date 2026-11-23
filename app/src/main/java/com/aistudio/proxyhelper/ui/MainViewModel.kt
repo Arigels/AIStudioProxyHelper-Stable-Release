@@ -17,6 +17,7 @@ import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.net.LogCollector
 import com.aistudio.proxyhelper.data.ProgressTracker
+import com.aistudio.proxyhelper.overlay.OverlayService
 import com.aistudio.proxyhelper.overlay.OverlaySnapshot
 import com.aistudio.proxyhelper.overlay.OverlayState
 import com.aistudio.proxyhelper.network.ProxyApiClient
@@ -53,7 +54,8 @@ data class MainUiState(
     val agentTesting: Boolean = false,
     val agentTestResult: String? = null,
     val agentFetchingModels: Boolean = false,
-    val agentModels: List<String> = emptyList(),
+    val agentCustomModels: List<String> = emptyList(),
+    val agentLocalModels: List<String> = emptyList(),
     val agentLines: List<AgentLine> = emptyList(),
     val agentAnswer: String? = null,
     val importingCookie: Boolean = false,
@@ -67,6 +69,7 @@ data class MainUiState(
     val showVpnReminder: Boolean = false,
     val pendingDeployAction: TermuxAction? = null,
     val canDrawOverlays: Boolean = false,
+    val overlayRunning: Boolean = false,
     val deploySucceeded: Boolean = false
 )
 
@@ -88,16 +91,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             agentLocalModel = settingsRepo.agentLocalModel,
             agentLocalKey = settingsRepo.agentLocalKey,
             canDrawOverlays = android.provider.Settings.canDrawOverlays(application),
+            overlayRunning = OverlayService.isRunning,
             deploySucceeded = settingsRepo.deploySucceeded
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     init {
-        // 老用户升级：之前部署过但没有 deploySucceeded 标记，直接补上，保证「启动反代」不会消失
-        if (settingsRepo.hasDeployed) {
-            settingsRepo.deploySucceeded = true
-        }
         startStatusPolling()
         viewModelScope.launch {
             AutomationController.statusMessage.collect { msg ->
@@ -110,10 +110,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             while (isActive) {
                 refreshServiceStatus(silent = true)
-                // 顺带刷新悬浮窗授权状态：用户从系统设置返回后，界面能立刻变成「开启/关闭」
+                // 同步刷新悬浮窗授权与运行状态：用户从系统设置返回后界面立即切换为「开启/关闭」
                 val canDraw = android.provider.Settings.canDrawOverlays(getApplication())
-                if (_uiState.value.canDrawOverlays != canDraw) {
-                    _uiState.update { it.copy(canDrawOverlays = canDraw) }
+                val running = OverlayService.isRunning && canDraw
+                if (_uiState.value.canDrawOverlays != canDraw || _uiState.value.overlayRunning != running) {
+                    _uiState.update { it.copy(canDrawOverlays = canDraw, overlayRunning = running) }
                 }
                 delay(6000L)
             }
@@ -121,9 +122,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshEnvironment() {
-        val env = EnvironmentChecker.inspect(getApplication())
-        val canDraw = android.provider.Settings.canDrawOverlays(getApplication())
-        _uiState.update { it.copy(environment = env, canDrawOverlays = canDraw) }
+        val ctx = getApplication<Application>()
+        val env = EnvironmentChecker.inspect(ctx)
+        val canDraw = android.provider.Settings.canDrawOverlays(ctx)
+        val running = OverlayService.isRunning && canDraw
+        _uiState.update {
+            it.copy(
+                environment = env,
+                canDrawOverlays = canDraw,
+                overlayRunning = running
+            )
+        }
+    }
+
+    fun toggleOverlay() {
+        val ctx = getApplication<Application>()
+        val canDraw = android.provider.Settings.canDrawOverlays(ctx)
+        if (!canDraw) {
+            val ok = EnvironmentChecker.openOverlayPermissionSettings(ctx)
+            if (!ok) {
+                showMessage("打不开悬浮窗授权页，请在系统设置里手动找到「显示在其他应用上层」")
+            }
+            return
+        }
+        if (OverlayService.isRunning) {
+            OverlayService.stop(ctx)
+            settingsRepo.overlayDesired = false
+            _uiState.update { it.copy(canDrawOverlays = true, overlayRunning = false) }
+        } else {
+            OverlayService.start(ctx)
+            settingsRepo.overlayDesired = true
+            _uiState.update { it.copy(canDrawOverlays = true, overlayRunning = true) }
+        }
     }
 
     fun refreshServiceStatus(silent: Boolean = false) {
@@ -159,7 +189,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             status.online && status.accounts.isEmpty() ->
                 "服务已启动，下一步：去「账号」页导入 Cookie"
             status.online && state.lastTestResult?.first != true ->
-                "下一步：去「解疑」页测试模型，把地址填进酒馆"
+                "下一步：在「反代」页拉取模型列表，并复制地址填进酒馆"
             status.online -> "一切就绪，可以连酒馆开玩了"
             phase.error != null && phase.error.contains("梯子") ->
                 "梯子可能没开或已断，检查代理后再试"
@@ -355,7 +385,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             it.deployStartedAt
                         },
-                        snackbarMessage = result.reason + a11yHint
+                        snackbarMessage = result.reason + a11yHint,
+                        showPasteDialog = true,
+                        pasteDialogCommand = result.command
                     )
                 }
             }
@@ -378,6 +410,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastDispatchedCommand = cmd,
                 hasDeployed = it.hasDeployed || markDeployed,
                 externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
+                deploying = it.deploying || markDeployed,
+                deployStartedAt = if (markDeployed && !it.deploying) {
+                    System.currentTimeMillis()
+                } else {
+                    it.deployStartedAt
+                },
                 snackbarMessage = "命令已复制",
                 showPasteDialog = true,
                 pasteDialogCommand = cmd
@@ -481,6 +519,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // ─── AI 排障助手 ───
 
+    fun switchAgentSource(useLocal: Boolean) {
+        settingsRepo.agentUseLocal = useLocal
+        _uiState.update {
+            it.copy(
+                agentUseLocal = useLocal,
+                snackbarMessage = if (useLocal) {
+                    "已切换为「本地反代」（仅使用反代模型，不会调用外接 API）"
+                } else {
+                    "已切换为「自定义」（仅使用外接模型，不会调用本地反代）"
+                }
+            )
+        }
+    }
+
     fun saveAgentConfig(
         baseUrl: String,
         key: String,
@@ -493,6 +545,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         settingsRepo.agentModel = model
         settingsRepo.agentUseLocal = useLocal
         settingsRepo.agentLocalModel = localModel
+        val label = if (useLocal) {
+            "本地反代${if (localModel.isNotBlank()) "（$localModel）" else "（未选模型）"}"
+        } else {
+            "自定义${if (model.isNotBlank()) "（$model）" else "（未选模型）"}"
+        }
         _uiState.update {
             it.copy(
                 agentBaseUrl = baseUrl.trim(),
@@ -500,19 +557,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 agentModel = model.trim(),
                 agentUseLocal = useLocal,
                 agentLocalModel = localModel.trim(),
-                snackbarMessage = "AI 助手配置已保存"
+                snackbarMessage = "已保存 AI 设置：$label"
             )
         }
     }
 
-    private fun buildAgentConfig(preferLocalWhenOnline: Boolean = false): AgentConfig {
+    private fun buildAgentConfig(): AgentConfig {
         val s = _uiState.value
-        val useLocal = s.agentUseLocal || (preferLocalWhenOnline && s.service.online)
         return AgentConfig(
             baseUrl = s.agentBaseUrl,
             apiKey = s.agentApiKey,
             model = s.agentModel,
-            useLocalProxy = useLocal,
+            useLocalProxy = s.agentUseLocal,
             localBaseUrl = s.settings.localBaseUrl,
             localModel = s.agentLocalModel,
             localApiKey = s.agentLocalKey.ifBlank { "aistudio-api" }
@@ -522,7 +578,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun requireModelMessage(config: AgentConfig): String? {
         val chosen = if (config.useLocalProxy) config.localModel else config.model
         return if (chosen.isBlank()) {
-            "还没有选择模型：请先点「连接并拉取模型」，再从模型下拉里选一个。"
+            "还没有选择模型：请先点「连接并拉取模型」，选中一个模型后再点「保存设置」。"
         } else {
             null
         }
@@ -530,13 +586,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun askTavern(question: String) {
         val state = _uiState.value
-        // 严格按用户保存的单一来源执行：外接模型 或 本地反代，绝不两个都调
-        val config = buildAgentConfig(preferLocalWhenOnline = false)
-        val canRun = (config.useLocalProxy && state.service.online) ||
-            (!config.useLocalProxy && state.agentApiKey.isNotBlank())
-        if (!canRun) {
+        // 严格按用户保存的单一书签执行：自定义 或 本地反代，绝不串用两个途径
+        val config = buildAgentConfig()
+        if (config.useLocalProxy && !state.service.online) {
             _uiState.update {
-                it.copy(agentAnswer = "酒馆问答需要本机反代正在运行，或者先配置一个外部 API Key。")
+                it.copy(agentAnswer = "当前书签为「本地反代」，但反代服务未运行。请先去「反代」页启动反代，或切到「自定义」书签。")
+            }
+            return
+        }
+        if (!config.useLocalProxy && state.agentApiKey.isBlank()) {
+            _uiState.update {
+                it.copy(agentAnswer = "当前书签为「自定义」，请先填写 API Key 并保存，或切到「本地反代」书签。")
             }
             return
         }
@@ -565,16 +625,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun runAgent(problem: String) {
         val state = _uiState.value
         if (!state.agentUseLocal && state.agentApiKey.isBlank()) {
-            _uiState.update { it.copy(agentAnswer = "请先填写 AI 接口地址和 API Key，或改用本机反代模型") }
+            _uiState.update { it.copy(agentAnswer = "当前书签为「自定义」，请先填写 AI 接口地址和 API Key，或切到「本地反代」书签。") }
             return
         }
         if (state.agentUseLocal && !state.service.online) {
             _uiState.update {
-                it.copy(agentAnswer = "本机反代服务还没运行，无法使用本机模型。请先在「搭建」页启动服务，或改用外部 API。")
+                it.copy(agentAnswer = "当前书签为「本地反代」，但本机反代服务还没运行。请先在「反代」页启动服务，或切到「自定义」书签。")
             }
             return
         }
-        requireModelMessage(buildAgentConfig())?.let { msg ->
+        val config = buildAgentConfig()
+        requireModelMessage(config)?.let { msg ->
             _uiState.update { it.copy(agentAnswer = msg) }
             return
         }
@@ -583,7 +644,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(agentRunning = true, agentLines = emptyList(), agentAnswer = null)
             }
             val engine = AgentEngine()
-            val config = buildAgentConfig()
             try {
                 val answer = engine.run(
                     config = config,
@@ -608,34 +668,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun testAgentConnection() {
-        val state = _uiState.value
-        viewModelScope.launch {
-            _uiState.update { it.copy(agentTesting = true, agentTestResult = null) }
-            val engine = AgentEngine()
-            val config = AgentConfig(
-                baseUrl = state.agentBaseUrl,
-                apiKey = state.agentApiKey,
-                model = state.agentModel,
-                useLocalProxy = state.agentUseLocal,
-                localBaseUrl = state.settings.localBaseUrl,
-                localModel = state.agentLocalModel.ifBlank { "gemini-3.7-flash" },
-                localApiKey = state.agentLocalKey.ifBlank { "aistudio-api" }
-            )
-            val result = withContext(Dispatchers.IO) {
-                runCatching { engine.ping(config) }
-            }
-            _uiState.update {
-                it.copy(
-                    agentTesting = false,
-                    agentTestResult = result.getOrElse { e ->
-                        "连接失败：${e.message?.take(120) ?: "未知错误"}"
-                    }
-                )
-            }
-        }
-    }
-
     fun fetchAgentModels(
         baseUrl: String,
         key: String,
@@ -652,21 +684,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 model = model,
                 useLocalProxy = useLocal,
                 localBaseUrl = _uiState.value.settings.localBaseUrl,
-                localModel = localModel.ifBlank { "gemini-3.7-flash" },
+                localModel = localModel,
                 localApiKey = _uiState.value.agentLocalKey.ifBlank { "aistudio-api" }
             )
             val result = withContext(Dispatchers.IO) {
                 runCatching { engine.listModels(config) }
             }
-            _uiState.update {
-                it.copy(
+            val fetched = result.getOrDefault(emptyList())
+            _uiState.update { state ->
+                state.copy(
                     agentFetchingModels = false,
-                    agentModels = result.getOrDefault(emptyList()),
+                    agentCustomModels = if (useLocal) state.agentCustomModels else fetched,
+                    agentLocalModels = if (useLocal) fetched else state.agentLocalModels,
                     snackbarMessage = result.fold(
                         onSuccess = { list ->
-                            if (list.isEmpty()) "没有拉取到模型" else "已获取 ${list.size} 个模型"
+                            if (list.isEmpty()) "没有拉取到模型" else "已获取 ${list.size} 个模型，请点选一个后点「保存设置」"
                         },
-                        onFailure = { e -> "拉取失败：${e.message?.take(80) ?: "未知错误"}" }
+                        onFailure = { e -> "拉取失败：${e.message?.take(100) ?: "未知错误"}" }
                     )
                 )
             }

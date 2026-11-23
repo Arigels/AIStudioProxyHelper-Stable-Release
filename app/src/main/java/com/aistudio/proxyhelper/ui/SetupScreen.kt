@@ -1,14 +1,13 @@
 package com.aistudio.proxyhelper.ui
 
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -72,13 +71,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.ProxySettings
-import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
-import com.aistudio.proxyhelper.overlay.OverlayService
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SetupScreen(
     uiState: MainUiState,
@@ -86,7 +84,6 @@ fun SetupScreen(
     onRefreshStatus: () -> Unit,
     onSaveSettings: (ProxySettings) -> Unit,
     onExecuteAction: (TermuxAction) -> Unit,
-    onRunManualFallback: (TermuxAction) -> Unit,
     onCopyActionCommand: (TermuxAction) -> Unit,
     onCopyText: (String, String) -> Unit,
     onClearCooldowns: () -> Unit,
@@ -96,32 +93,24 @@ fun SetupScreen(
     onOpenGuide: () -> Unit,
     onAiAssist: () -> Unit,
     onRestartService: () -> Unit,
-    onTestModels: () -> Unit
+    onTestModels: () -> Unit,
+    onToggleOverlay: () -> Unit
 ) {
     val context = LocalContext.current
     val env = uiState.environment
     var showTermuxDialog by remember { mutableStateOf(false) }
     var showA11yHelpDialog by remember { mutableStateOf(false) }
-    var pendingAutoAction by remember { mutableStateOf<TermuxAction?>(null) }
 
     fun openA11yWithHint() {
         showA11yHelpDialog = true
     }
 
-    fun triggerSmartAction(action: TermuxAction) {
+    fun triggerAction(action: TermuxAction) {
         if (!env.termuxInstalled) {
             showTermuxDialog = true
             return
         }
-        val canDirectIpc = env.termuxRunCommandGranted &&
-            uiState.externalAppsSetupDone &&
-            action != TermuxAction.INSTALL_AND_START
-        if (env.accessibilityEnabled || canDirectIpc) {
-            onExecuteAction(action)
-        } else {
-            // 引导用户开启无障碍自动操控（或跳过，改用手动粘贴）
-            pendingAutoAction = action
-        }
+        onExecuteAction(action)
     }
 
     Column(
@@ -131,7 +120,7 @@ fun SetupScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. 状态（反代服务运行中/未运行）
+        // 1. 状态（反代服务运行中/未运行 + 唯一本机地址复制区）
         ServiceStatusCard(
             uiState = uiState,
             onRefresh = onRefreshStatus,
@@ -139,16 +128,16 @@ fun SetupScreen(
             onOpenConsole = onOpenConsole
         )
 
-        // 1.5 启动反代：紧贴在状态卡下面，部署完成、服务跑起来过之后才出现
-        if (uiState.deploySucceeded || uiState.hasDeployed) {
+        // 1.5 启动反代：紧贴状态卡下面，仅在第一次部署成功（服务上线过）后才出现
+        if (uiState.deploySucceeded) {
             RestartProxyCard(
                 online = uiState.service.online,
                 onRestart = onRestartService
             )
         }
 
-        // 1.6 拉取反代模型
-        if (uiState.deploySucceeded || uiState.hasDeployed) {
+        // 1.6 拉取反代模型：仅在第一次部署成功后才出现，只读列表不耗额度
+        if (uiState.deploySucceeded) {
             ModelPullCard(
                 uiState = uiState,
                 onTestModels = onTestModels
@@ -163,24 +152,27 @@ fun SetupScreen(
             onOpenGuide = onOpenGuide
         )
 
-        // 2.5 悬浮窗开关（显眼位置）
-        OverlayToggleCard(canDrawOverlays = uiState.canDrawOverlays)
+        // 2.5 悬浮窗开关（显眼位置，实时同步授权与运行状态）
+        OverlayToggleCard(
+            canDrawOverlays = uiState.canDrawOverlays,
+            overlayRunning = uiState.overlayRunning,
+            onToggle = onToggleOverlay
+        )
 
-        // 3. 唯一主操作
+        // 3. 主操作（首次部署 / 部署中 / 停止 / 更新修复）
         PrimaryActionCard(
             uiState = uiState,
-            onDeploy = { triggerSmartAction(TermuxAction.INSTALL_AND_START) },
-            onStart = { triggerSmartAction(TermuxAction.START_SERVICE) },
-            onStop = { triggerSmartAction(TermuxAction.STOP_SERVICE) },
-            onUpdate = { triggerSmartAction(TermuxAction.UPDATE_AND_REBUILD) },
+            onDeploy = { triggerAction(TermuxAction.INSTALL_AND_START) },
+            onStop = { triggerAction(TermuxAction.STOP_SERVICE) },
+            onUpdate = { triggerAction(TermuxAction.UPDATE_AND_REBUILD) },
             onAiAssist = onAiAssist
         )
 
-        // 4. 首次准备（只保留 2 步，做完自动消失）
+        // 4. 首次准备（Termux 与悬浮窗完成后自动消失）
         PrerequisitesCard(
             uiState = uiState,
+            onOpenOverlaySettings = onToggleOverlay,
             onOpenAccessibilitySettings = { openA11yWithHint() },
-            onShowAccessibilityGuide = { showA11yHelpDialog = true },
             onOpenFDroid = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_FDROID) },
             onOpenGitHub = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_GITHUB) }
         )
@@ -209,7 +201,7 @@ fun SetupScreen(
             text = {
                 Text(
                     "反代服务需要在手机的 Termux 里运行。\n\n" +
-                        "请从 F-Droid 或 GitHub 下载 64 位安装包（文件名带 arm64-v8a），切勿使用 Google Play 商店旧版。装好后回到这里点一键搭建即可。"
+                        "请从 F-Droid 或 GitHub 下载 64 位安装包（文件名带 arm64-v8a），切勿使用 Google Play 商店旧版。装好后回到这里点一键部署即可。"
                 )
             },
             confirmButton = {
@@ -227,37 +219,6 @@ fun SetupScreen(
         )
     }
 
-    pendingAutoAction?.let { action ->
-        AlertDialog(
-            onDismissRequest = { pendingAutoAction = null },
-            title = { Text("开启自动操控权限（推荐）") },
-            text = {
-                Text(
-                    "在系统「无障碍」里开启「AI Studio 反代自动搭建助手」后，本 App 会自动打开 Termux、自动粘贴命令并按回车开始搭建，全程不用你手动操作。\n\n" +
-                        "（仅在你点击按钮时临时运行，不会收集任何隐私）\n\n" +
-                        "⚠️ 这个服务在无障碍列表的「已下载的应用 / 已下载的服务」里，不在「已安装的应用」里。\n" +
-                        "⚠️ 小米/红米、OPPO、vivo、荣耀等手机会弹一行很小的「已限制设置」，要再点它旁边的「解除限制」才能打开开关。"
-                )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    pendingAutoAction = null
-                    openA11yWithHint()
-                }) {
-                    Text("去开启（推荐）")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    pendingAutoAction = null
-                    onRunManualFallback(action)
-                }) {
-                    Text("不开，自己粘贴")
-                }
-            }
-        )
-    }
-
     if (showA11yHelpDialog) {
         AccessibilityGuideDialog(
             onDismiss = { showA11yHelpDialog = false },
@@ -270,14 +231,11 @@ fun SetupScreen(
 }
 
 @Composable
-private fun OverlayToggleCard(canDrawOverlays: Boolean) {
-    val context = LocalContext.current
-    val prefs = remember { SettingsRepository(context) }
-    val canDraw = canDrawOverlays
-    var overlayOn by remember(canDraw, OverlayService.isRunning) {
-        mutableStateOf(OverlayService.isRunning && canDraw)
-    }
-
+private fun OverlayToggleCard(
+    canDrawOverlays: Boolean,
+    overlayRunning: Boolean,
+    onToggle: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -299,34 +257,23 @@ private fun OverlayToggleCard(canDrawOverlays: Boolean) {
                 )
                 Text(
                     text = when {
-                        !canDraw -> "需要在系统设置里允许「显示在其他应用上层」"
-                        overlayOn -> "已开启：Termux 上方显示进度 + 下一步提示"
-                        else -> "在 Termux 上方实时显示搭建进度、AI 结论与下一步该做什么"
+                        !canDrawOverlays -> "需在系统设置里允许「显示在其他应用上层」，开启后可拖拽查看状态并一键 AI 识别报错"
+                        overlayRunning -> "已开启：可拖拽移动，遇到报错点悬浮窗上的「🩺 报错」即可让 AI 自动分析"
+                        else -> "已授权：点右侧「开启」在 Termux / 酒馆上方显示悬浮窗与 AI 报错按钮"
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            Spacer(modifier = Modifier.width(8.dp))
             Button(
-                onClick = {
-                    if (!canDraw) {
-                        EnvironmentChecker.openOverlayPermissionSettings(context)
-                    } else if (overlayOn) {
-                        OverlayService.stop(context)
-                        prefs.overlayDesired = false
-                        overlayOn = false
-                    } else {
-                        OverlayService.start(context)
-                        prefs.overlayDesired = true
-                        overlayOn = true
-                    }
-                },
+                onClick = onToggle,
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Text(
                     when {
-                        !canDraw -> "去授权"
-                        overlayOn -> "关闭"
+                        !canDrawOverlays -> "去授权"
+                        overlayRunning -> "关闭"
                         else -> "开启"
                     }
                 )
@@ -339,14 +286,12 @@ private fun OverlayToggleCard(canDrawOverlays: Boolean) {
 private fun PrimaryActionCard(
     uiState: MainUiState,
     onDeploy: () -> Unit,
-    onStart: () -> Unit,
     onStop: () -> Unit,
     onUpdate: () -> Unit,
     onAiAssist: () -> Unit
 ) {
     val service = uiState.service
-    val deployed = uiState.hasDeployed
-    val autoReady = uiState.environment.accessibilityEnabled
+    val deployed = uiState.deploySucceeded
     val context = LocalContext.current
 
     ElevatedCard(
@@ -397,7 +342,7 @@ private fun PrimaryActionCard(
                     )
                 }
                 Text(
-                    text = "搭建已完成。下一步：去「账号」页导入 Cookie，或去「使用」页复制地址填进酒馆。",
+                    text = "搭建已完成。下一步：去「账号」页导入 Cookie，然后复制上方本机地址填进酒馆（详细配置见「解疑」页）。不用时可点下方按钮停止服务以省电。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -410,7 +355,7 @@ private fun PrimaryActionCard(
                 ) {
                     Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("停止服务")
+                    Text("停止反代服务")
                 }
             } else if (uiState.deploying) {
                 var now by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -469,70 +414,54 @@ private fun PrimaryActionCard(
                         Text("重新安装")
                     }
                 }
+            } else if (deployed) {
+                Text(
+                    text = "维护与修复",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "日常使用请点上方「启动反代」。只有遇到反代版本过旧或运行报错修不好时，才需要点下面更新重装。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onUpdate,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("更新并重新编译修复")
+                }
             } else {
                 Button(
-                    onClick = {
-                        if (!deployed) onDeploy() else onStart()
-                    },
+                    onClick = onDeploy,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(
-                        imageVector = if (deployed) Icons.Filled.PlayArrow else Icons.Filled.RocketLaunch,
+                        imageVector = Icons.Filled.RocketLaunch,
                         contentDescription = null
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = when {
-                            deployed -> "一键启动服务"
-                            autoReady -> "一键全自动搭建"
-                            else -> "一键搭建并启动"
-                        },
+                        text = "一键部署反代",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
                 Text(
-                    text = when {
-                        deployed -> "上次已经装好了，点一下自动拉起服务。"
-                        autoReady -> "自动操控已就绪：点击后将自动打开 Termux、输入并执行搭建（首次约 3~5 分钟）。"
-                        else -> "首次约 3~5 分钟：自动安装依赖、编译本地签名引擎并启动服务。"
-                    },
+                    text = "首次部署用（约 5~15 分钟）：会先提醒开 VPN，再复制命令并弹窗教你进 Termux 粘贴回车，自动装好依赖并启动服务。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                uiState.automationStatus?.let { status ->
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = status,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                        )
-                    }
-                }
-
-                if (deployed) {
-                    TextButton(
-                        onClick = onUpdate,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("运行异常？重新安装 / 修复")
-                    }
-                } else {
-                    TextButton(
-                        onClick = onAiAssist,
-                        modifier = Modifier.align(Alignment.End)
-                    ) {
-                        Text("不会弄？让 AI 从零帮我搭建")
-                    }
+                TextButton(
+                    onClick = onAiAssist,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("不会弄？去「解疑」页让 AI 帮我排查")
                 }
             }
         }
@@ -541,7 +470,7 @@ private fun PrimaryActionCard(
 
 private fun hintForError(err: String): String = when {
     err.contains("梯子") ->
-        "请确认梯子/VPN 已开启；若用本地代理，去「高级设置 → 网络代理」填写（如 http://127.0.0.1:7890），再点「重新安装」或「启动」。"
+        "请确认梯子/VPN 已开启；若用本地代理，去「高级设置 → 网络代理」填写（如 http://127.0.0.1:7890），再点「重新安装」或「启动反代」。"
     err.contains("403") ->
         "先确认能正常打开 Google，再重新用 Cookie-Editor 导出并导入 Cookie。"
     err.contains("端口") ->
@@ -551,28 +480,21 @@ private fun hintForError(err: String): String = when {
     err.contains("内存") ->
         "关掉后台应用，并给 Termux 开电池无限制后重试。"
     else ->
-        "打开 Termux 查看最后几行报错，或到「AI」页让 AI 帮你排查。"
+        "打开 Termux 查看最后几行报错，或到「解疑」页底部让 AI 帮你排查。"
 }
 
 @Composable
 private fun PrerequisitesCard(
     uiState: MainUiState,
+    onOpenOverlaySettings: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
-    onShowAccessibilityGuide: () -> Unit,
     onOpenFDroid: () -> Unit,
     onOpenGitHub: () -> Unit
 ) {
-    val context = LocalContext.current
     val env = uiState.environment
-    val canDrawOverlay = Settings.canDrawOverlays(context)
-    val allDone = env.termuxInstalled &&
-        canDrawOverlay &&
-        (env.accessibilityEnabled || uiState.hasDeployed)
+    val canDrawOverlay = uiState.canDrawOverlays
+    val allDone = env.termuxInstalled && canDrawOverlay
     if (allDone) return
-
-    fun openOverlaySettings() {
-        EnvironmentChecker.openOverlayPermissionSettings(context)
-    }
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -632,7 +554,7 @@ private fun PrerequisitesCard(
                 )
             }
 
-            // 2. 权限引导：悬浮窗 → 无障碍
+            // 2. 权限提醒 + 悬浮窗 + 无障碍（可选）
             Surface(
                 color = Color(0xFFFFF4D6),
                 shape = RoundedCornerShape(8.dp),
@@ -653,12 +575,12 @@ private fun PrerequisitesCard(
                 subtitle = if (canDrawOverlay) {
                     "已允许「显示在其他应用上层」"
                 } else {
-                    "允许后才能在 Termux 上方看到进度小窗"
+                    "允许后可在 Termux 上方看到状态小窗，并用「🩺 报错」让 AI 分析错误"
                 }
             )
             if (!canDrawOverlay) {
                 FilledTonalButton(
-                    onClick = { openOverlaySettings() },
+                    onClick = onOpenOverlaySettings,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
@@ -668,11 +590,11 @@ private fun PrerequisitesCard(
 
             ChecklistRow(
                 ok = env.accessibilityEnabled,
-                title = "3. 无障碍（自动操控）",
+                title = "3. 无障碍（可选，用于悬浮窗读屏）",
                 subtitle = if (env.accessibilityEnabled) {
-                    "已开启，可以直接点上方按钮搭建"
+                    "已开启：悬浮窗「🩺 报错」可直接读取屏幕上的报错文字"
                 } else {
-                    "开启后才能自动粘贴命令；开不了也不影响，App 会提示你手动粘贴一次"
+                    "不开也能正常部署和使用；开启后悬浮窗报错识别可顺带读取 Termux 屏幕文字"
                 }
             )
             if (!env.accessibilityEnabled) {
@@ -681,7 +603,7 @@ private fun PrerequisitesCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("去开启无障碍")
+                    Text("去开启无障碍（可选）")
                 }
             }
         }
@@ -854,42 +776,14 @@ private fun AdvancedSettingsCard(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("开启唤醒锁（防锁屏断线）")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            if (!Settings.canDrawOverlays(context)) {
-                                runCatching {
-                                    context.startActivity(
-                                        Intent(
-                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                            Uri.parse("package:${context.packageName}")
-                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    )
-                                }
-                            } else if (OverlayService.isRunning) {
-                                OverlayService.stop(context)
-                            } else {
-                                OverlayService.start(context)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            if (OverlayService.isRunning) {
-                                "关闭悬浮窗"
-                            } else {
-                                "开启悬浮窗（在 Termux 上看搭建进度）"
-                            }
-                        )
+                        Text("开启唤醒锁（防锁屏休眠，不防杀后台）")
                     }
                     OutlinedButton(
                         onClick = onClearCooldowns,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("重置 429 冷却（遇到报错时用）")
+                        Text("重置 429 冷却（限流报错时清除计时）")
                     }
                     OutlinedButton(
                         onClick = { onCopyActionCommand(TermuxAction.INSTALL_AND_START) },
@@ -962,11 +856,13 @@ private fun RestartProxyCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ModelPullCard(
     uiState: MainUiState,
     onTestModels: () -> Unit
 ) {
+    val models = uiState.service.models
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -981,7 +877,7 @@ private fun ModelPullCard(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "拉取一次，看看反代有没有成功拿到可用模型列表。这一步只是读列表，不消耗任何额度。",
+                text = "检测反代是否能正常拿到可用模型列表。这一步只是读列表，不消耗任何额度。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1014,6 +910,31 @@ private fun ModelPullCard(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(10.dp)
                     )
+                }
+            }
+            if (models.isNotEmpty()) {
+                Text(
+                    text = "可用模型（${models.size}）",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    models.take(16).forEach { model ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = model,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1103,10 +1024,32 @@ private fun ServiceStatusCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
 
             AddressCopyRow(
-                label = "本机地址",
+                label = "本机代理地址（填进酒馆 / Cherry Studio 用）",
                 url = settings.localBaseUrl,
                 onCopy = { onCopyText("本机地址", settings.localBaseUrl) }
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = { onCopyText("代理地址", settings.localBaseUrl) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("复制地址")
+                }
+                OutlinedButton(
+                    onClick = { onCopyText("Gemini 地址", "${settings.localBaseUrl}/v1beta") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("复制 /v1beta")
+                }
+            }
 
             if (service.online) {
                 FilledTonalButton(
@@ -1146,15 +1089,15 @@ private fun NextStepsCard(
             action = onGoToAccounts
         }
         !connectionTested -> {
-            title = "下一步 ②：测试并配置客户端"
-            desc = "账号已就绪（${service.accounts.size} 个）。去「使用」页测试模型列表，并复制地址填入酒馆 / Cherry Studio。"
-            actionLabel = "去配置客户端"
+            title = "下一步 ②：拉取模型并配置客户端"
+            desc = "账号已就绪（${service.accounts.size} 个）。点上方「拉取模型列表」确认正常，然后复制本机地址填入酒馆（配置参数见「解疑」页）。"
+            actionLabel = "查看酒馆配置说明"
             action = onGoToClients
         }
         else -> {
             title = "全部就绪 ✅"
-            desc = "服务、账号、模型均正常。手机重启后只需回到本页点「一键启动服务」即可恢复。"
-            actionLabel = "查看使用说明"
+            desc = "服务、账号、模型均正常。下次打开 Termux 和酒馆前，点上方「启动反代」即可。"
+            actionLabel = "查看解疑说明"
             action = onOpenGuide
         }
     }

@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 /** 一行 Agent 轨迹，供界面展示。role: think / action / observation / answer / error */
 data class AgentLine(val role: String, val text: String)
 
-enum class AgentMode { TROUBLESHOOT, TAVERN }
+enum class AgentMode { TROUBLESHOOT, TAVERN, DIAGNOSE }
 
 data class AgentConfig(
     val baseUrl: String,
@@ -21,7 +21,7 @@ data class AgentConfig(
     val model: String,
     val useLocalProxy: Boolean = false,
     val localBaseUrl: String = "http://127.0.0.1:8080",
-    val localModel: String = "gemini-3.7-flash",
+    val localModel: String = "",
     val localApiKey: String = "aistudio-api"
 )
 
@@ -47,6 +47,21 @@ class AgentEngine {
         if (mode == AgentMode.TAVERN) {
             val history = listOf(
                 "system" to tavernPrompt(config.localBaseUrl),
+                "user" to problem
+            )
+            val reply = try {
+                chat(config, history)
+            } catch (e: Exception) {
+                onLine(AgentLine("error", "调用模型失败：${e.message}"))
+                return@withContext "调用模型失败：${e.message}"
+            }
+            onLine(AgentLine("answer", reply.trim()))
+            return@withContext reply.trim()
+        }
+
+        if (mode == AgentMode.DIAGNOSE) {
+            val history = listOf(
+                "system" to diagnosePrompt(config.localBaseUrl),
                 "user" to problem
             )
             val reply = try {
@@ -321,6 +336,27 @@ class AgentEngine {
 
         private fun tavernPrompt(baseUrl: String): String =
             TAVERN_PROMPT.replace("{BASE}", baseUrl)
+
+        private val DIAGNOSE_PROMPT = """
+你是「AI Studio 反代助手」悬浮窗里的报错分析助手。用户遇到问题点了悬浮窗上的「报错」按钮，下面会提供最近的后台命令日志、当前屏幕文字和当前反代状态。
+
+【本机反代地址】{BASE}
+
+请你直接用中文大白话输出分析结果，不要输出 THOUGHT/ACTION/ARGS 格式，严格按以下两段回答：
+1. 【报错原因】：一两句话说清到底哪里出了问题（如果没有明显报错，如实说「未发现明确报错」并说明当前处于哪个阶段）。
+2. 【怎么解决】：给出 1~3 步具体可操作的步骤。
+
+常见手机端 Termux 反代报错速查：
+- bind permission denied / 端口小于 1024：端口必须在 1024~65535，去「反代」页高级设置改成 8080 后重启。
+- Address already in use：端口被占用，先停止服务或换一个端口再启动。
+- Could not resolve host / Failed to fetch / Connection refused / 超时：VPN（梯子）没开或断了；先开 VPN，再重试。
+- 403 / 401：Google Cookie 失效或被风控，或 VPN 节点被拦截，换节点并重新在「账号」页导入 Cookie。
+- 429：额度限流，可去「反代」页高级设置点「重置 429 冷却」，或导入更多备用小号。
+- 编译阶段无输出：Go/Zig 编译签名引擎需 5~15 分钟且少输出，属正常，请耐心等待。
+"""
+
+        private fun diagnosePrompt(baseUrl: String): String =
+            DIAGNOSE_PROMPT.replace("{BASE}", baseUrl)
 
         private val SYSTEM_PROMPT = """
 你是「AI Studio 反代助手」App 内置的手机排障助手，只处理在安卓 Termux 上部署 aistudio-api 反向代理服务相关的问题。

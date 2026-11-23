@@ -214,10 +214,9 @@ object TermuxBridge {
                 TermuxDispatchResult.AutomatedByAccessibility(command)
             } else {
                 copyToClipboard(context, action.title, command)
-                openTermux(context)
                 TermuxDispatchResult.FallbackCopied(
                     command = command,
-                    reason = "已复制「${action.title}」命令并打开 Termux，请长按屏幕点「粘贴」并回车。"
+                    reason = "已复制「${action.title}」命令，请在弹窗里点「打开 Termux 去粘贴」后长按粘贴并回车。"
                 )
             }
         }

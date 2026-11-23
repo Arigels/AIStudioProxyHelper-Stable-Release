@@ -110,7 +110,14 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_OVERLAY_PROMPTED, value).apply()
         }
 
-    /** 是否已经展示过「首次使用：3 步权限设置」引导。 */
+    /** 是否已阅读并同意首次打开的风险与开源免费免责声明。 */
+    var disclaimerAccepted: Boolean
+        get() = prefs.getBoolean(KEY_DISCLAIMER_ACCEPTED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_DISCLAIMER_ACCEPTED, value).apply()
+        }
+
+    /** 是否已经展示过「首次使用权限设置」引导。 */
     var permissionWizardShown: Boolean
         get() = prefs.getBoolean(KEY_PERMISSION_WIZARD, false)
         set(value) {
@@ -142,6 +149,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_AGENT_LOCAL_KEY = "agent_local_key"
         private const val KEY_OVERLAY_DESIRED = "overlay_desired"
         private const val KEY_OVERLAY_PROMPTED = "overlay_prompted"
+        private const val KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted"
         private const val KEY_PERMISSION_WIZARD = "permission_wizard"
         private const val KEY_DEPLOY_SUCCEEDED = "deploy_succeeded"
     }

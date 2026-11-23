@@ -66,37 +66,33 @@ object EnvironmentChecker {
         val intent = Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.parse("package:${TermuxBridge.TERMUX_PACKAGE}")
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         runCatching { context.startActivity(intent) }
     }
 
-    /** 打开本 App 的「应用详情」页（ColorOS 等系统的「解除所有授权限制」入口在这里）。 */
+    /** 打开本 App 的「应用详情」页。 */
     fun openAppDetails(context: Context) {
         val intent = Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.parse("package:${context.packageName}")
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         runCatching { context.startActivity(intent) }
     }
 
     /**
-     * 打开「显示在其他应用上层」授权页。
-     * 部分系统（如 ColorOS）不认带 package 的跳转，因此逐级回退，保证能到达。
+     * 打开「显示在其他应用上层」（悬浮窗）授权页。
+     * 加 FLAG_ACTIVITY_CLEAR_TASK 避免系统复用之前停留在「无障碍」等旧页面的设置任务栈。
      */
     fun openOverlayPermissionSettings(context: Context): Boolean {
+        val pkg = context.packageName
+        val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         val candidates = listOf(
-            Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:${context.packageName}")
-            ),
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$pkg")),
             Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION),
-            Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:${context.packageName}")
-            )
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
         )
         for (intent in candidates) {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(flags)
             val ok = runCatching { context.startActivity(intent) }.isSuccess
             if (ok) return true
         }

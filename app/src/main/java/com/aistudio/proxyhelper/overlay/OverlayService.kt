@@ -26,8 +26,16 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aistudio.proxyhelper.MainActivity
+import com.aistudio.proxyhelper.agent.AgentConfig
+import com.aistudio.proxyhelper.agent.AgentEngine
+import com.aistudio.proxyhelper.agent.AgentMode
+import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.net.LogCollector
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /** 悬浮窗展示的快照，由 App 主界面轮询时写入。 */
@@ -53,19 +61,20 @@ object OverlayState {
 }
 
 /**
- * 悬浮窗：在 Termux 等其它应用上方显示「当前阶段 + AI 提示 + 下一步该做什么」。
- * 点一下可展开/收起，展开后能看到 AI 的最近结论与已用时长。
+ * 悬浮窗：在 Termux / 酒馆上方显示当前状态与下一步提示。
+ * 支持拖拽；点击「🩺 报错」自动调用 AI 分析后台日志与屏幕内容，放大显示并可上下滚动，点 ✕ 恢复原形。
  */
 class OverlayService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val diagnosisScope =
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+    private val diagnosisScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var windowManager: WindowManager? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var detailsScroll: ScrollView? = null
     private var closeButton: TextView? = null
     private var reportMode = false
+    private var savedX = 0
+    private var savedY = 0
 
     private var root: LinearLayout? = null
     private var dot: View? = null
@@ -91,6 +100,7 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         startForegroundSafely()
         windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
         buildViews()
@@ -101,7 +111,9 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         running = false
+        isRunning = false
         handler.removeCallbacksAndMessages(null)
+        diagnosisScope.cancel()
         root?.let { view -> runCatching { windowManager?.removeView(view) } }
         root = null
         super.onDestroy()
@@ -116,12 +128,12 @@ class OverlayService : Service() {
             setPadding(dp(14), dp(10), dp(14), dp(10))
             background = GradientDrawable().apply {
                 cornerRadius = dp(16).toFloat()
-                setColor(Color.parseColor("#E6111827"))
+                setColor(Color.parseColor("#EB111827"))
                 setStroke(dp(1), Color.parseColor("#40FFFFFF"))
             }
         }
 
-        // 标题行：状态点 + 标题
+        // 标题行：状态点 + 标题 + ✕ 关闭报错放大视图按钮
         val titleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -140,18 +152,19 @@ class OverlayService : Service() {
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(8), 0, 0, 0)
         }
-        val closeButton = TextView(this).apply {
+        val closeBtn = TextView(this).apply {
             text = "✕"
             setTextColor(Color.parseColor("#FCA5A5"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-            setPadding(dp(12), 0, dp(2), 0)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(14), dp(2), dp(4), dp(2))
             visibility = View.GONE
             setOnClickListener { exitReportMode() }
         }
-        this.closeButton = closeButton
+        this.closeButton = closeBtn
         titleRow.addView(dotView)
         titleRow.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        titleRow.addView(closeButton)
+        titleRow.addView(closeBtn)
 
         val stage = TextView(this).apply {
             setTextColor(Color.parseColor("#CBD5E1"))
@@ -170,8 +183,9 @@ class OverlayService : Service() {
         }
         val ai = TextView(this).apply {
             setTextColor(Color.parseColor("#FDE68A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(0, dp(6), 0, 0)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setLineSpacing(dp(2).toFloat(), 1.15f)
+            setPadding(0, dp(6), 0, dp(4))
         }
         val elapsed = TextView(this).apply {
             setTextColor(Color.parseColor("#94A3B8"))
@@ -188,8 +202,9 @@ class OverlayService : Service() {
         val diagnoseText = TextView(this).apply {
             text = "🩺 报错"
             setTextColor(Color.parseColor("#FDE68A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(dp(10), dp(4), dp(10), dp(4))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(dp(12), dp(5), dp(12), dp(5))
             background = GradientDrawable().apply {
                 cornerRadius = dp(8).toFloat()
                 setColor(Color.parseColor("#33FFFFFF"))
@@ -199,8 +214,8 @@ class OverlayService : Service() {
         val openAppText = TextView(this).apply {
             text = "打开 App"
             setTextColor(Color.parseColor("#93C5FD"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(dp(12), dp(4), 0, 0)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(14), dp(5), dp(6), dp(5))
             setOnClickListener { openApp() }
         }
         actionRow.addView(diagnoseText)
@@ -209,11 +224,20 @@ class OverlayService : Service() {
         details.addView(ai)
         details.addView(elapsed)
 
-        // 报错结果放在可滚动区域里，文字多了可以上下滑
+        // 报错结果放在可滚动区域里，文字多了显示上下滑块
         val scroll = ScrollView(this).apply {
             visibility = View.GONE
-            isFillViewport = true
-            addView(details)
+            isVerticalScrollBarEnabled = true
+            isScrollbarFadingEnabled = false
+            isFillViewport = false
+            setPadding(0, dp(6), dp(4), 0)
+            addView(
+                details,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
         }
         detailsScroll = scroll
 
@@ -221,7 +245,13 @@ class OverlayService : Service() {
         panel.addView(stage)
         panel.addView(guide)
         panel.addView(actionRow)
-        panel.addView(scroll)
+        panel.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -243,8 +273,10 @@ class OverlayService : Service() {
             y = dp(72)
         }
         panelParams = params
+        savedX = params.x
+        savedY = params.y
 
-        // 支持拖拽：按下记录起点，移动时更新窗口位置，抬手时若几乎没移动则视为点击（展开/收起）
+        // 支持拖拽：按下记录起点，移动更新窗口位置；非报错放大模式下轻点可展开/收起
         var downRawX = 0f
         var downRawY = 0f
         var startX = 0
@@ -269,12 +301,16 @@ class OverlayService : Service() {
                     if (dragging) {
                         params.x = startX + dx
                         params.y = startY + dy
+                        if (!reportMode) {
+                            savedX = params.x
+                            savedY = params.y
+                        }
                         runCatching { windowManager?.updateViewLayout(panel, params) }
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!dragging) {
+                    if (!dragging && !reportMode) {
                         expanded = !expanded
                         details.visibility = if (expanded) View.VISIBLE else View.GONE
                         scroll.visibility = if (expanded) View.VISIBLE else View.GONE
@@ -332,13 +368,13 @@ class OverlayService : Service() {
 
         if (!reportMode) {
             aiText?.text = snapshot.aiHint?.let { "AI：$it" }
-                ?: "AI：还没有结论，点「🩺 报错」让我看看"
+                ?: "AI：还没有结论，点「🩺 报错」让我自动分析"
         }
 
         elapsedText?.text = if (OverlayState.deployStartedAt > 0L) {
-            "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动 · 点一下展开/收起"
+            "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
         } else {
-            "拖动可移动 · 点一下展开/收起"
+            "拖动可移动 · 点「🩺 报错」自动分析后台错误"
         }
 
         if (!expanded && !reportMode) {
@@ -354,19 +390,39 @@ class OverlayService : Service() {
         runCatching { startActivity(intent) }
     }
 
-    /** 抓日志 + 当前屏幕文本，交给 AI 解析错误原因。 */
+    /** 抓日志 + 当前屏幕文本，严格按当前选中的 AI 书签（自定义 / 本地反代）单路径分析错误。 */
     private fun runDiagnose() {
         val prefs = SettingsRepository(applicationContext)
         val settings = prefs.load()
         val serviceOnline = OverlayState.snapshot.online
-        val useLocal = prefs.agentUseLocal || serviceOnline
-        if (!useLocal && prefs.agentApiKey.isBlank()) {
-            showReport("还没有可用的 AI：请打开 App 的「解疑」页底部，选择「外接模型」填 Key，或先启动本机反代。")
-            return
+        // 严格隔离：只使用用户在「解疑」页选中的那一个书签，不串用另一个途径
+        val useLocal = prefs.agentUseLocal
+
+        if (useLocal) {
+            if (!serviceOnline) {
+                showReport("当前 AI 书签为「本地反代」，但反代服务未运行。\n\n请先到「反代」页启动服务，或到「解疑」页底部把 AI 书签切回「自定义」。")
+                return
+            }
+            if (prefs.agentLocalModel.isBlank()) {
+                showReport("当前「本地反代」还没有选择模型。\n\n请打开 App →「解疑」页底部 → 选中「本地反代」→ 点「连接并拉取模型」选一个模型并保存。")
+                return
+            }
+        } else {
+            if (prefs.agentApiKey.isBlank()) {
+                showReport("当前 AI 书签为「自定义」，但还没有填写 API Key。\n\n请打开 App →「解疑」页底部配置 API Key，或切到「本地反代」书签。")
+                return
+            }
+            if (prefs.agentModel.isBlank()) {
+                showReport("当前「自定义」还没有选择模型。\n\n请打开 App →「解疑」页底部 → 点「连接并拉取模型」选一个模型并保存。")
+                return
+            }
         }
-        showReport("正在读取后台日志和屏幕内容，请稍等…")
+
+        val sourceLabel = if (useLocal) "本地反代 (${prefs.agentLocalModel})" else "自定义 (${prefs.agentModel})"
+        showReport("正在读取后台日志和屏幕内容，调用 $sourceLabel 分析中，请稍等…")
+
         diagnosisScope.launch {
-            val config = com.aistudio.proxyhelper.agent.AgentConfig(
+            val config = AgentConfig(
                 baseUrl = prefs.agentBaseUrl,
                 apiKey = prefs.agentApiKey,
                 model = prefs.agentModel,
@@ -376,24 +432,21 @@ class OverlayService : Service() {
                 localApiKey = prefs.agentLocalKey.ifBlank { "aistudio-api" }
             )
             val log = LogCollector.getLog(120)
-            val screen = com.aistudio.proxyhelper.automation.AutomationController
-                .captureActiveWindowText()
-            if (useLocal && prefs.agentLocalModel.isBlank()) {
-                showReport("本机反代还没选择模型：打开 App 的「解疑」页底部，切到「本地反代」，拉取模型并选一个。")
-                return@launch
-            }
+            val screen = AutomationController.captureActiveWindowText()
+            val snap = OverlayState.snapshot
             val payload = buildString {
+                appendLine("【当前反代状态】在线=${snap.online}，端口=${settings.port}，阶段=${snap.stage}，已知报错=${snap.error ?: "无"}")
                 appendLine("【最近命令日志】")
                 appendLine(log.ifBlank { "（空）" })
                 appendLine("【当前屏幕文本】")
-                appendLine(screen.take(2000).ifBlank { "（读不到屏幕文本）" })
+                appendLine(screen.take(2000).ifBlank { "（未开启无障碍或读不到屏幕文本）" })
             }
             val answer = runCatching {
-                com.aistudio.proxyhelper.agent.AgentEngine().run(
+                AgentEngine().run(
                     config = config,
-                    problem = "请根据下面内容判断错误原因，并给出 1-3 步可操作的解决办法：\n$payload",
-                    mode = com.aistudio.proxyhelper.agent.AgentMode.TROUBLESHOOT,
-                    execute = { _, _ -> "悬浮窗模式下不执行工具，请到 App 内操作" },
+                    problem = payload,
+                    mode = AgentMode.DIAGNOSE,
+                    execute = { _, _ -> "" },
                     onLine = { }
                 )
             }.getOrElse { "识别失败：${it.message}" }
@@ -406,43 +459,62 @@ class OverlayService : Service() {
         }
     }
 
-    /** 放大悬浮窗并显示报错分析结果（可上下滚动）。 */
+    /** 放大悬浮窗（最大约分屏尺寸）并显示报错分析结果，字多可上下滑动，点 ✕ 恢复原形。 */
     private fun showReport(text: String) {
+        val params = panelParams ?: return
+        if (!reportMode) {
+            savedX = params.x
+            savedY = params.y
+        }
         reportMode = true
         expanded = true
-        aiText?.text = "AI 分析：\n$text"
+        detailsBox?.visibility = View.VISIBLE
+        aiText?.text = "AI 报错分析（可上下滑动，点右上角 ✕ 恢复）：\n\n$text"
         aiText?.visibility = View.VISIBLE
         elapsedText?.visibility = View.VISIBLE
-        detailsScroll?.visibility = View.VISIBLE
         closeButton?.visibility = View.VISIBLE
 
-        val params = panelParams ?: return
+        detailsScroll?.let { sv ->
+            sv.visibility = View.VISIBLE
+            sv.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+            sv.scrollTo(0, 0)
+        }
+
         val dm = resources.displayMetrics
         params.width = (dm.widthPixels * 0.92f).toInt()
-        params.height = (dm.heightPixels * 0.55f).toInt()
+        params.height = (dm.heightPixels * 0.50f).toInt()
+        params.x = (dm.widthPixels * 0.04f).toInt()
+        params.y = dp(48)
         root?.let { view ->
             runCatching { windowManager?.updateViewLayout(view, params) }
         }
     }
 
-    /** 点 ✕ 收起报错面板，悬浮窗恢复原来的小尺寸。 */
+    /** 点 ✕ 收起报错面板，悬浮窗恢复原来的小尺寸与位置。 */
     private fun exitReportMode() {
         reportMode = false
         expanded = false
-        detailsScroll?.visibility = View.GONE
+        detailsBox?.visibility = View.GONE
+        detailsScroll?.let { sv ->
+            sv.visibility = View.GONE
+            sv.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
         closeButton?.visibility = View.GONE
         val params = panelParams ?: return
         params.width = dp(280)
         params.height = WindowManager.LayoutParams.WRAP_CONTENT
+        params.x = savedX
+        params.y = savedY
         root?.let { view ->
             runCatching { windowManager?.updateViewLayout(view, params) }
         }
-    }
-
-    private fun expandDetails() {
-        expanded = true
-        detailsBox?.visibility = View.VISIBLE
-        render()
     }
 
     private fun startForegroundSafely() {
@@ -461,7 +533,7 @@ class OverlayService : Service() {
         }
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("反代助手悬浮窗")
-            .setContentText("正在显示搭建进度与下一步提示")
+            .setContentText("正在显示状态，点「🩺 报错」可调用 AI 分析错误")
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setOngoing(true)
             .build()
