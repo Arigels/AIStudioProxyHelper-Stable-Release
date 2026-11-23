@@ -129,6 +129,12 @@ class OverlayService : Service() {
     /** S2 是否已弹出 VPN 确认卡 */
     private var vpnConfirmShown = false
 
+    /** 部署步是否已弹出 VPN 确认卡 */
+    private var deployVpnConfirmShown = false
+
+    /** 刚点过「开始部署」的时刻：Activity 启动前 20 秒内按部署中显示，避免卡片闪回 */
+    private var deployTapAt = 0L
+
     /** 酒馆向导是否已弹出完成确认卡 */
     private var tavernConfirmShown = false
 
@@ -162,13 +168,6 @@ class OverlayService : Service() {
         get() = guidePrefs.getBoolean("model_tip_dismissed", false)
         set(value) = guidePrefs.edit().putBoolean("model_tip_dismissed", value).apply()
 
-    /** Cookie 向导已到达的最远步骤（0–4）：只增不减，setter 里取 max 防止倒退 */
-    private var cookieMaxStage: Int
-        get() = guidePrefs.getInt("cookie_max_stage", 0)
-        set(value) = guidePrefs.edit()
-            .putInt("cookie_max_stage", maxOf(guidePrefs.getInt("cookie_max_stage", 0), value))
-            .apply()
-
     /**
      * 五步引导到达的最远步骤：0 部署、1 浏览器、2 扩展、3 Cookie、4 粘贴、5 完成。
      * 与原 cookie_max_stage 并存，迁移一次后新逻辑只读写这个键。
@@ -190,7 +189,7 @@ class OverlayService : Service() {
         val hasOld = guidePrefs.contains("cookie_max_stage")
         val old = guidePrefs.getInt("cookie_max_stage", 0)
         val mapped = when (old) {
-            0 -> 1
+            0 -> 0
             1 -> 2
             2 -> 3
             3 -> 3
@@ -219,16 +218,23 @@ class OverlayService : Service() {
     private val clipWatcher = ClipboardManager.OnPrimaryClipChangedListener {
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
         cookieClipLength = if (looksLikeCookieJson(text)) text.length else 0
-        if (cookieClipLength > 0 && OverlayState.snapshot.online && !OverlayState.snapshot.accountsReady) {
-            cookieMaxStage = 4
+        if (cookieClipLength > 0 && !cookieDone) {
+            // 能导出 JSON 说明扩展已经装好；直接推进到粘贴步，不等用户手点
+            guideExtInstalled = true
+            guideStageMax = 4
         }
         handler.post { render() }
     }
 
+    private var tickCount = 0
+
     private val ticker = object : Runnable {
         override fun run() {
             if (!running) return
+            tickCount++
             highlightPulse = !highlightPulse
+            // 每 4 拍（约 6 秒）重探一次浏览器，装完回来不用点「重新检测」
+            if (tickCount % 4 == 0) refreshBrowserCache()
             render()
             handler.postDelayed(this, 1500L)
         }
@@ -664,24 +670,27 @@ class OverlayService : Service() {
         // 老用户迁移：cookie_done 未写过时，等拿到真实服务状态再判定，避免升级被教程糊脸
         if (!guidePrefs.contains("cookie_done") && snapshot.online) {
             if (snapshot.accountsReady) {
-                cookieMaxStage = 4
+                guideStageMax = 5
                 cookieDone = true
             } else {
                 cookieDone = false
             }
         }
         if (snapshot.accountsReady && !cookieDone) {
-            cookieMaxStage = 4
+            guideStageMax = 5
             cookieDone = true
         }
+        if (cookieDone) guideStageMax = 5
 
         val cookieMode = !cookieDone
         val tavernMode = cookieDone && !tavernDone
-        val guideMode = (cookieMode || tavernMode) && !takeover
+        val showTakeover = takeover && !reportMode
+        val guideMode = (cookieMode || tavernMode || showTakeover) && !reportMode
         val needCookie = snapshot.online && !snapshot.accountsReady
 
         val color = when {
             snapshot.error != null -> "#EF4444"
+            showTakeover -> "#EF4444"
             needCookie -> "#22C55E"
             snapshot.online -> "#22C55E"
             OverlayState.deployStartedAt > 0L -> "#F59E0B"
@@ -691,59 +700,41 @@ class OverlayService : Service() {
 
         titleText?.text = when {
             snapshot.error != null -> "反代助手 · 出错了"
+            showTakeover -> "反代助手 · 反代断线"
             needCookie -> "反代助手 · 部署完成 🎉"
             snapshot.online -> "反代助手 · 运行中 :${snapshot.port}"
             OverlayState.deployStartedAt > 0L -> "反代助手 · 搭建中"
             else -> "反代助手"
         }
 
+        val offlineSec = if (offlineSince > 0L) ((now - offlineSince) / 1000L).coerceAtLeast(0L) else 0L
         stageText?.text = when {
+            showTakeover -> "已掉线 ${offlineSec} 秒 · 教程进度不会清零"
             snapshot.error != null -> "阶段：失败（${snapshot.error}）"
             needCookie -> "阶段：服务已启动，还差导入 Cookie"
             snapshot.online -> "阶段：服务已启动"
             else -> "阶段：${snapshot.stage}"
         }
+        // 教程期不显示阶段行，避免和卡片抢位置
+        stageText?.visibility = if (guideMode) View.GONE else View.VISIBLE
 
         if (!reportMode) {
-            if (needCookie) {
-                // 闪动高亮：文字颜色与底色在两种状态间切换，确保一眼看到
-                guideText?.text = "👉 还差 1 步：拿 Cookie，照下面提示点就行"
-                guideText?.setTextColor(
-                    Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC")
-                )
-                guideText?.setTextSize(
-                    TypedValue.COMPLEX_UNIT_SP,
-                    if (highlightPulse) 13f else 12.5f
-                )
-                guideText?.setTypeface(guideText?.typeface, Typeface.BOLD)
-                guideText?.setPadding(dp(8), dp(6), dp(8), dp(6))
-                guideText?.background = GradientDrawable().apply {
-                    cornerRadius = dp(8).toFloat()
-                    setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
-                    setStroke(dp(1), Color.parseColor("#66FDE047"))
-                }
-            } else {
-                guideText?.text = "👉 ${snapshot.guidance}"
-                guideText?.setTextColor(Color.parseColor("#93C5FD"))
-                guideText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                guideText?.setTypeface(null, Typeface.NORMAL)
-                guideText?.setPadding(0, dp(4), 0, 0)
-                guideText?.background = null
-            }
+            // 教程/断线卡期间只留一张卡；正常态才显示这一行引导
+            guideText?.text = "👉 ${snapshot.guidance}"
+            guideText?.setTextColor(Color.parseColor("#93C5FD"))
+            guideText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            guideText?.setTypeface(null, Typeface.NORMAL)
+            guideText?.setPadding(0, dp(4), 0, 0)
+            guideText?.background = null
 
             aiText?.text = snapshot.aiHint?.let { "AI：$it" }
-                ?: if (needCookie) {
-                    "AI：部署已成功。建议现在去「账号」页导入 Cookie，模型列表才能刷出来。"
-                } else {
-                    "AI：还没有结论，点「🩺 报错」让我自动分析"
-                }
+                ?: "AI：还没有结论，点「🩺 报错」让我自动分析"
         }
 
-        elapsedText?.text = when {
-            needCookie -> "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
-            OverlayState.deployStartedAt > 0L ->
-                "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
-            else -> "拖动可移动 · 点「🩺 报错」自动分析后台错误"
+        elapsedText?.text = if (OverlayState.deployStartedAt > 0L) {
+            "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动"
+        } else {
+            "拖动可移动 · 点「🩺 报错」自动分析后台错误"
         }
 
         // 向导模式精简悬浮窗：隐藏 AI 行与已用时行；报错放大（reportMode）照常显示
@@ -751,9 +742,7 @@ class OverlayService : Service() {
             val guideVisibility = if (guideMode) View.GONE else View.VISIBLE
             aiText?.visibility = guideVisibility
             elapsedText?.visibility = guideVisibility
-            // 教程期只保留「还差 1 步」这句，正常态引导（点半自动部署…）必须隐藏，避免两张卡同屏
-            guideText?.visibility =
-                if (guideMode && !needCookie) View.GONE else View.VISIBLE
+            guideText?.visibility = guideVisibility
         }
 
         if (!expanded && !reportMode) {
@@ -765,18 +754,28 @@ class OverlayService : Service() {
             cookieClipLength = 0
             tutorialBrowser = null
             vpnConfirmShown = false
+            deployVpnConfirmShown = false
             tutorialFailHint = null
         }
         when {
-            takeover -> {
+            showTakeover -> {
                 renderTutorial(false)
                 renderTavernGuide(false)
+                renderTakeoverCard(true)
             }
-            cookieMode -> renderTutorial(!reportMode)
-            tavernMode -> renderTavernGuide(!reportMode)
+            cookieMode -> {
+                renderTakeoverCard(false)
+                renderTutorial(!reportMode)
+            }
+            tavernMode -> {
+                renderTakeoverCard(false)
+                renderTutorial(false)
+                renderTavernGuide(!reportMode)
+            }
             else -> {
                 renderTutorial(false)
                 renderTavernGuide(false)
+                renderTakeoverCard(false)
             }
         }
         renderModelTip(snapshot.online && snapshot.accountsReady && tavernDone && !modelTipDismissed && !reportMode)
@@ -808,6 +807,7 @@ class OverlayService : Service() {
         }
         tut.visibility = View.VISIBLE
 
+        val snapshot = OverlayState.snapshot
         val (edge, firefox) = browsersFromCache()
         val detected = edge ?: firefox
         // 已手动切换到某一类、但该类未安装时，回退到检测到的那一类
@@ -819,26 +819,42 @@ class OverlayService : Service() {
             guidePrefs.getString("browser_choice", "") == "火狐" && firefox != null -> firefox
             else -> detected
         }
-        // S1 之前若被切到未安装的那一类，纠正回检测结果
         if (tutorialBrowser != null && chosen?.first != tutorialBrowser) tutorialBrowser = chosen?.first
         val browserLabel = chosen?.first
         val browserPkg = chosen?.second
         val bothInstalled = edge != null && firefox != null
-        // S0 护栏：只要已到达过 S1，就永远不再问「装浏览器」
-        if (cookieMaxStage == 0 && chosen != null) cookieMaxStage = 1
-        if (cookieClipLength > 0) cookieMaxStage = 4
-        val stage = cookieMaxStage
+        val deployedEver = snapshot.hasDeployed ||
+            SettingsRepository(applicationContext).hasDeployed ||
+            guideStageMax > 0
+        val deployed = snapshot.online || deployedEver
+
+        // 五步：0 部署、1 浏览器、2 扩展、3 Cookie、4 粘贴；没部署过就永远停在第 1 步
+        val computed = when {
+            cookieDone || snapshot.accountsReady -> 5
+            cookieClipLength > 0 -> 4
+            !deployed -> 0
+            chosen != null && guideExtInstalled -> 3
+            chosen != null -> 2
+            else -> 1
+        }
+        // 浏览器被卸载：回到重新安装那一步，不能卡在扩展/ Cookie 卡
+        if (chosen == null && guideStageMax >= 2) guideStageMax = 1
+        if (computed > guideStageMax) guideStageMax = computed
+        val stage = guideStageMax
         // 回看定位：只允许停在 0..stage-1，超出即跟随最新
         val view = if (cookieViewStage in 0 until stage) cookieViewStage else stage
         val readonly = view < stage
         cookieViewStage = if (readonly) view else -1
         if (view != 1) tutorialFailHint = null
-        if (view != 2) vpnConfirmShown = false
+        if (view != 3) vpnConfirmShown = false
+        if (view != 0) deployVpnConfirmShown = false
 
         tut.setTypeface(null, Typeface.NORMAL)
         tut.background = tutorialPanelBackground()
+        tut.setOnClickListener(null)
         continueRow?.visibility = View.GONE
-        switchRow?.visibility = if (bothInstalled && !readonly) View.VISIBLE else View.GONE
+        switchRow?.visibility =
+            if (view == 2 && bothInstalled && !readonly) View.VISIBLE else View.GONE
         tutorialEdgeSwitch?.let {
             it.setTextColor(Color.parseColor(if (browserLabel == "Edge") "#FDE047" else "#93C5FD"))
             it.setTypeface(it.typeface, if (browserLabel == "Edge") Typeface.BOLD else Typeface.NORMAL)
@@ -848,8 +864,12 @@ class OverlayService : Service() {
             it.setTypeface(it.typeface, if (browserLabel == "火狐") Typeface.BOLD else Typeface.NORMAL)
         }
 
-        tutorialBadge?.visibility = if (readonly) View.VISIBLE else View.GONE
-        tutorialBadge?.text = "已完成的第 ${view.coerceAtLeast(1)} 步"
+        tutorialBadge?.visibility = View.VISIBLE
+        tutorialBadge?.text = if (readonly) {
+            "已完成 · 第 ${view + 1} 步"
+        } else {
+            "第 ${view + 1}/5 步 · ${stageName(view)}"
+        }
         tutorialPrev?.visibility = if (view > 0) View.VISIBLE else View.GONE
         tutorialNext?.visibility = if (view < stage) View.VISIBLE else View.GONE
         tutorialNavRow?.visibility = if (view > 0 || view < stage) View.VISIBLE else View.GONE
@@ -866,18 +886,12 @@ class OverlayService : Service() {
         tutorialFirefoxSwitch?.isEnabled = !readonly
 
         when (view) {
-            4 -> renderTutorialStage4(tut, btn, altBtn, continueRow)
-            1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            2 -> renderTutorialStage2(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            3 -> renderTutorialStage3(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            0 -> renderTutorialStage0(tut, btn, altBtn, continueRow)
-            else -> {
-                tut.text = "① 用 ${browserLabel ?: "浏览器"} 打开 aistudio.google.com 并登录"
-                tut.setTextColor(Color.parseColor("#DBEAFE"))
-                btn?.visibility = View.VISIBLE
-                btn?.text = "🌐 在 $browserLabel 打开 AI Studio"
-                altBtn?.visibility = View.GONE
-            }
+            0 -> renderDeployStage(tut, btn, altBtn, continueRow)
+            1 -> renderBrowserStage(tut, btn, altBtn)
+            2 -> renderExtensionStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            3 -> renderCookieStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            4 -> renderPasteStage(tut, btn, altBtn, continueRow, browserPkg)
+            else -> renderTutorial(false)
         }
         if (readonly) {
             continueRow?.visibility = View.GONE
@@ -885,96 +899,151 @@ class OverlayService : Service() {
         }
     }
 
-    /** S0：没检测到 Edge / 火狐，引导下载官网；不显示「打开 AI Studio」与「装好点这里」。 */
-    private fun renderTutorialStage0(
+    private fun stageName(stage: Int): String = when (stage) {
+        0 -> "部署"
+        1 -> "浏览器"
+        2 -> "扩展"
+        3 -> "Cookie"
+        else -> "导入"
+    }
+
+    /** 断线卡：优先级高于教程卡，但只显示一块，不清空教程进度 */
+    private fun renderTakeoverCard(show: Boolean) {
+        val tut = tutorialText ?: return
+        val btn = tutorialButton
+        val altBtn = tutorialAltButton
+        if (!show) {
+            tut.visibility = View.GONE
+            btn?.visibility = View.GONE
+            altBtn?.visibility = View.GONE
+            tutorialBadge?.visibility = View.GONE
+            tutorialNavRow?.visibility = View.GONE
+            tutorialContinueRow?.visibility = View.GONE
+            tutorialSwitchRow?.visibility = View.GONE
+            return
+        }
+        val sec = if (offlineSince > 0L) {
+            ((System.currentTimeMillis() - offlineSince) / 1000L).coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        tut.visibility = View.VISIBLE
+        tut.text = "反代断线了（已掉线 $sec 秒）\n服务没在跑，教程进度不会清零"
+        tut.setTextColor(Color.parseColor("#FCA5A5"))
+        tut.background = tutorialPanelBackground()
+        btn?.visibility = View.VISIBLE
+        btn?.text = "启动反代"
+        btn?.setOnClickListener { startServiceFromOverlay() }
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = "诊断"
+        altBtn?.setOnClickListener { runDiagnose() }
+        tutorialBadge?.visibility = View.GONE
+        tutorialNavRow?.visibility = View.GONE
+        tutorialContinueRow?.visibility = View.GONE
+        tutorialSwitchRow?.visibility = View.GONE
+    }
+
+    /** 第 1 步：半自动部署。Termux 没装先装；VPN 在卡内确认；部署中显示实时阶段。 */
+    private fun renderDeployStage(
         tut: TextView,
         btn: TextView?,
         altBtn: TextView?,
         continueRow: LinearLayout?
     ) {
-        tut.text = "请安装一个支持扩展的浏览器（手机默认浏览器、Chrome 等不支持扩展）\n装好后点这段字重新检测"
-        tut.setOnClickListener { refreshBrowserCache(); render() }
+        continueRow?.visibility = View.GONE
+        tut.setOnClickListener(null)
         tut.setTextColor(Color.parseColor("#DBEAFE"))
+        val termuxNow = isPackageInstalled(TermuxBridge.TERMUX_PACKAGE)
+        val snapshot = OverlayState.snapshot
+        val deployedEver = snapshot.hasDeployed || SettingsRepository(applicationContext).hasDeployed
+        val justTapped = deployTapAt > 0L && System.currentTimeMillis() - deployTapAt < 20_000L
+        val deploying = snapshot.deploying || justTapped
+        when {
+            !termuxNow -> {
+                tut.text = "还没装 Termux（必须 F-Droid / GitHub 的 arm64 版，商店旧版不行）"
+                btn?.visibility = View.VISIBLE
+                btn?.text = "去装 Termux"
+                btn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_TERMUX_FDROID) }
+                altBtn?.visibility = View.VISIBLE
+                altBtn?.text = "我已装好，重新检测"
+                altBtn?.setOnClickListener { render() }
+            }
+            deployVpnConfirmShown -> {
+                tut.text = "⚠️ 先确认 VPN 已开（要能打开 Google），否则部署中途会失败"
+                tut.setTextColor(Color.parseColor("#FDE68A"))
+                btn?.visibility = View.VISIBLE
+                btn?.text = "已开，开始部署"
+                btn?.setOnClickListener {
+                    deployVpnConfirmShown = false
+                    deployTapAt = System.currentTimeMillis()
+                    startDeployFromOverlay()
+                    render()
+                }
+                altBtn?.visibility = View.VISIBLE
+                altBtn?.text = "取消"
+                altBtn?.setOnClickListener { deployVpnConfirmShown = false; render() }
+            }
+            deploying -> {
+                tut.text = "正在部署：${snapshot.stage.ifBlank { "准备中" }}\n" +
+                    "约 5~15 分钟；编译阶段长时间没输出是正常的，别杀 Termux"
+                btn?.visibility = View.VISIBLE
+                btn?.text = "打开 Termux 查看"
+                btn?.setOnClickListener { TermuxBridge.openTermux(this) }
+                altBtn?.visibility = View.VISIBLE
+                altBtn?.text = "出错了？诊断"
+                altBtn?.setOnClickListener { runDiagnose() }
+            }
+            snapshot.error != null && !snapshot.online -> {
+                tut.text = "部署出错了：${snapshot.error.take(60)}"
+                tut.setTextColor(Color.parseColor("#FCA5A5"))
+                btn?.visibility = View.VISIBLE
+                btn?.text = "重新部署"
+                btn?.setOnClickListener { deployVpnConfirmShown = true; render() }
+                altBtn?.visibility = View.VISIBLE
+                altBtn?.text = "查看诊断"
+                altBtn?.setOnClickListener { runDiagnose() }
+            }
+            deployedEver -> {
+                tut.text = "部署跑完了，但反代没在跑"
+                btn?.visibility = View.VISIBLE
+                btn?.text = "启动反代"
+                btn?.setOnClickListener { startServiceFromOverlay() }
+                altBtn?.visibility = View.VISIBLE
+                altBtn?.text = "诊断"
+                altBtn?.setOnClickListener { runDiagnose() }
+            }
+            else -> {
+                tut.text = "点下面按钮：自动复制部署命令 → 打开 Termux → 自动粘贴并回车\n" +
+                    "没开无障碍也能部署，只是要你在 Termux 长按粘贴"
+                btn?.visibility = View.VISIBLE
+                btn?.text = "开始半自动部署"
+                btn?.setOnClickListener { deployVpnConfirmShown = true; render() }
+                altBtn?.visibility = View.VISIBLE
+                altBtn?.text = "打开 Termux"
+                altBtn?.setOnClickListener { TermuxBridge.openTermux(this) }
+            }
+        }
+    }
+
+    /** 第 2 步：装支持扩展的浏览器；检测到包名会自动跳到下一步。 */
+    private fun renderBrowserStage(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?
+    ) {
+        tut.text = "手机自带浏览器、Chrome 不支持扩展，先装 Edge 或火狐"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        tut.setOnClickListener { refreshBrowserCache(); render() }
         btn?.visibility = View.VISIBLE
         btn?.text = "下载 Edge（官网）"
         btn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_EDGE_ANDROID) }
         altBtn?.visibility = View.VISIBLE
         altBtn?.text = "下载火狐（官网）"
         altBtn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_FIREFOX_ANDROID) }
-        // 手动出口：检测不到也不锁死，用户确认装好即可进 S1
-        renderTutorialStage0Exit(continueRow)
     }
 
-    /** S0 的「我已经装好了 →」：不依赖包名检测，直接推进到装扩展这一步。 */
-    private fun renderTutorialStage0Exit(host: LinearLayout?) {
-        host ?: return
-        host.removeAllViews()
-        val link = TextView(this).apply {
-            text = "我已经装好了 →"
-            setTextColor(Color.parseColor("#93C5FD"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(dp(8), dp(2), dp(8), dp(2))
-            setOnClickListener { cookieMaxStage = 1; render() }
-        }
-        host.addView(link)
-        host.visibility = View.VISIBLE
-    }
-
-    /** S1：检测到浏览器、扩展还没装；主按钮用指定浏览器打开扩展页，次按钮复制链接。 */
-    private fun renderTutorialStage1(
-        tut: TextView,
-        btn: TextView?,
-        altBtn: TextView?,
-        continueRow: LinearLayout?,
-        browserLabel: String?,
-        browserPkg: String?
-    ) {
-        val label = browserLabel ?: "Edge"
-        tut.text = if (label == "火狐") {
-            "① 打开 火狐浏览器，安装 Cookie-Editor 扩展"
-        } else {
-            "① 打开 Edge，安装 Cookie-Editor 扩展"
-        }
-        tut.setTextColor(if (tutorialFailHint != null) Color.parseColor("#FCA5A5") else Color.parseColor("#DBEAFE"))
-        val addonUrl = browserAddonUrl(label)
-        btn?.visibility = View.VISIBLE
-        btn?.text = if (label == "火狐") "在 火狐 打开扩展安装页" else "在 Edge 打开扩展安装页"
-        btn?.setOnClickListener {
-            if (browserPkg.isNullOrBlank()) {
-                // 没有检测到包名时退化为系统浏览器，别让按钮变成死键
-                TermuxBridge.openUrl(this, addonUrl)
-            } else {
-                val ok = TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
-                if (!ok) {
-                    tutorialFailHint = label
-                    render()
-                }
-            }
-        }
-        altBtn?.visibility = View.VISIBLE
-        altBtn?.text = if (label == "火狐") "复制 火狐 CE 扩展链接" else "复制 Edge CE 扩展链接"
-        altBtn?.setOnClickListener {
-            TermuxBridge.copyToClipboard(this, "Cookie-Editor ${label}扩展链接", addonUrl)
-        }
-        val fail = tutorialFailHint
-        if (fail != null) {
-            tut.text = "${tut.text}\n未能用 $fail 打开，请点「复制链接」手动粘贴"
-        }
-        // 安卓版火狐 120 以下不支持扩展，AMO 只会给 .xpi 下载；版本号能读到就直接点明
-        if (label == "火狐") {
-            val ffMajor = firefoxMajorVersion(browserPkg)
-            tut.text = if (ffMajor in 1..119) {
-                "${tut.text}\n⚠️ 火狐 $ffMajor 低于 120，安卓版不支持扩展，只会给下载文件。请升级火狐，或改用 Edge。"
-            } else {
-                "${tut.text}\n页面只给「下载文件」？在火狐里点 ⋮ → 扩展 → 浏览全部扩展，搜 Cookie-Editor 安装。"
-            }
-        }
-        tut.setOnClickListener(null)
-        renderTutorialContinueLink(continueRow)
-    }
-
-    /** S2：打开 AI Studio；先原地弹 VPN 确认卡，确认后才用指定浏览器打开。 */
-    private fun renderTutorialStage2(
+    /** 第 4 步：打开 AI Studio 登录并导出 Cookie；剪贴板命中 JSON 会自动跳到粘贴。 */
+    private fun renderCookieStage(
         tut: TextView,
         btn: TextView?,
         altBtn: TextView?,
@@ -990,13 +1059,8 @@ class OverlayService : Service() {
             btn?.visibility = View.VISIBLE
             btn?.text = "已开，继续"
             btn?.setOnClickListener {
-                if (browserPkg.isNullOrBlank()) {
-                    TermuxBridge.openUrl(this, TermuxBridge.URL_AISTUDIO)
-                } else {
-                    TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
-                }
+                openAiStudio(browserPkg)
                 vpnConfirmShown = false
-                cookieMaxStage = 3
                 render()
             }
             altBtn?.visibility = View.VISIBLE
@@ -1007,7 +1071,12 @@ class OverlayService : Service() {
             }
             return
         }
-        tut.text = "② 打开 AI Studio 并登录（需要能访问 Google）"
+        val menuPath = if (label == "火狐") {
+            "② 点右上「⋮」→ 扩展 → Cookie-Editor"
+        } else {
+            "② 点底部「≡」→ 扩展 → Cookie-Editor"
+        }
+        tut.text = "① 用 $label 打开 AI Studio 并登录\n$menuPath\n③ 点 Export → 选 Export as JSON（会自动复制）"
         tut.setTextColor(Color.parseColor("#DBEAFE"))
         btn?.visibility = View.VISIBLE
         btn?.text = if (label == "火狐") "用 火狐 打开 AI Studio" else "用 Edge 打开 AI Studio"
@@ -1016,6 +1085,10 @@ class OverlayService : Service() {
         altBtn?.text = "复制 AI Studio 链接"
         altBtn?.setOnClickListener {
             TermuxBridge.copyToClipboard(this, "AI Studio 链接", TermuxBridge.URL_AISTUDIO)
+        }
+        renderTutorialActionLink(continueRow, "已导出，去粘贴 →") {
+            guideStageMax = 4
+            render()
         }
     }
 
@@ -1079,16 +1152,21 @@ class OverlayService : Service() {
         altBtn?.setOnClickListener { tavernConfirmShown = true; render() }
     }
 
-    /** S4：剪贴板命中 Cookie JSON 后绿色完成态；读不到剪贴板时也可从「打开 App」推进到本步。 */
-    private fun renderTutorialStage4(
+    /** 第 5 步：剪贴板命中 Cookie 后回账号页粘贴；导入成功由 accountsReady 自动完成。 */
+    private fun renderPasteStage(
         tut: TextView,
         btn: TextView?,
         altBtn: TextView?,
-        continueRow: LinearLayout?
+        continueRow: LinearLayout?,
+        browserPkg: String?
     ) {
         continueRow?.visibility = View.GONE
-        val head = if (cookieClipLength > 0) "✅ Cookie 已复制（${cookieClipLength} 字符）\n" else ""
-        tut.text = "${head}⑤ 回 App →「账号」页 → 点「粘贴剪贴板」"
+        val head = if (cookieClipLength > 0) {
+            "✅ 已检测到 Cookie（${cookieClipLength} 字符）\n"
+        } else {
+            "还没检测到 Cookie，先回上一步导出\n"
+        }
+        tut.text = "${head}回 App →「账号」页 → 点「粘贴剪贴板」→ 导入\n导入成功后这个悬浮窗会自动消失"
         tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
         tut.setTypeface(null, Typeface.BOLD)
         tut.background = GradientDrawable().apply {
@@ -1097,13 +1175,20 @@ class OverlayService : Service() {
             setStroke(dp(1), Color.parseColor("#66FDE047"))
         }
         btn?.visibility = View.VISIBLE
-        btn?.text = "📲 打开 App 去粘贴"
-        btn?.setOnClickListener { openApp() }
-        altBtn?.visibility = View.GONE
+        btn?.text = "📲 打开 App 账号页"
+        btn?.setOnClickListener { openApp(tab = 1) }
+        if (cookieClipLength > 0) {
+            altBtn?.visibility = View.GONE
+        } else {
+            // 手动点了「已导出」但剪贴板读不到时，留一条重新导出的出口，避免卡死
+            altBtn?.visibility = View.VISIBLE
+            altBtn?.text = "重新导出 Cookie"
+            altBtn?.setOnClickListener { openAiStudio(browserPkg) }
+        }
     }
 
-    /** S3：导出 Cookie-Editor JSON；按浏览器给对应菜单路径，按钮直接重开 AI Studio（不再弹 VPN 卡）。 */
-    private fun renderTutorialStage3(
+    /** 第 3 步：装 Cookie-Editor；安卓读不到扩展列表，只能「装好了」或剪贴板反推。 */
+    private fun renderExtensionStage(
         tut: TextView,
         btn: TextView?,
         altBtn: TextView?,
@@ -1111,38 +1196,66 @@ class OverlayService : Service() {
         browserLabel: String?,
         browserPkg: String?
     ) {
-        continueRow?.visibility = View.GONE
-        val path = if (browserLabel == "火狐") {
-            "③ 点右上角竖着的「⋮」（三个点）→「扩展」→ Cookie-Editor"
+        val label = browserLabel ?: "Edge"
+        tut.text = if (label == "火狐") {
+            "① 打开火狐 → 右上「⋮」→ 扩展 → 浏览全部扩展\n② 搜 Cookie-Editor → 添加"
         } else {
-            "③ 点底部「≡」（三横）→「扩展」→ Cookie-Editor"
+            "① 打开 Edge → 底部「≡」→ 扩展\n② 搜 Cookie-Editor → 安装"
         }
-        tut.text = "$path\n④ 点 Export → 选 Export as JSON（会自动复制）"
-        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        tut.setTextColor(
+            Color.parseColor(if (tutorialFailHint != null) "#FCA5A5" else "#DBEAFE")
+        )
+        val addonUrl = browserAddonUrl(label)
         btn?.visibility = View.VISIBLE
-        btn?.text = "🔁 再开一次 AI Studio"
+        btn?.text = if (label == "火狐") "在 火狐 打开扩展安装页" else "在 Edge 打开扩展安装页"
         btn?.setOnClickListener {
             if (browserPkg.isNullOrBlank()) {
-                TermuxBridge.openUrl(this, TermuxBridge.URL_AISTUDIO)
+                TermuxBridge.openUrl(this, addonUrl)
             } else {
-                TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+                val ok = TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
+                if (!ok) {
+                    tutorialFailHint = label
+                    render()
+                }
             }
         }
         altBtn?.visibility = View.VISIBLE
-        altBtn?.text = "已导出，去粘贴 →"
-        altBtn?.setOnClickListener { cookieMaxStage = 4; render() }
+        altBtn?.text = if (label == "火狐") "复制 火狐 CE 扩展链接" else "复制 Edge CE 扩展链接"
+        altBtn?.setOnClickListener {
+            TermuxBridge.copyToClipboard(this, "Cookie-Editor ${label}扩展链接", addonUrl)
+        }
+        val fail = tutorialFailHint
+        if (fail != null) {
+            tut.text = "${tut.text}\n未能用 $fail 打开，请点「复制链接」手动粘贴"
+        }
+        // 安卓版火狐 120 以下不支持扩展，AMO 只会给 .xpi 下载；版本号能读到就直接点明
+        if (label == "火狐") {
+            val ffMajor = firefoxMajorVersion(browserPkg)
+            tut.text = if (ffMajor in 1..119) {
+                "${tut.text}\n⚠️ 火狐 $ffMajor 低于 120，安卓版不支持扩展，只会给下载文件。请升级火狐，或改用 Edge。"
+            } else {
+                "${tut.text}\n页面只给「下载文件」？在火狐里点 ⋮ → 扩展 → 浏览全部扩展，搜 Cookie-Editor 安装。"
+            }
+        }
+        tut.setOnClickListener(null)
+        renderTutorialActionLink(continueRow, "装好了 →") {
+            guideExtInstalled = true
+            guideStageMax = 3
+            tutorialFailHint = null
+            render()
+        }
     }
 
-    /** S1 推进链接：装好扩展后点这里进入下一步（S2 打开 AI Studio）。 */
-    private fun renderTutorialContinueLink(host: LinearLayout?) {
+    /** 教程卡底部的手动推进链接（只给自动检测不到的那一步用）。 */
+    private fun renderTutorialActionLink(host: LinearLayout?, text: String, action: () -> Unit) {
         host ?: return
         host.removeAllViews()
         val link = TextView(this).apply {
-            text = "装好点这里 →"
+            this.text = text
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(dp(8), dp(2), dp(8), dp(2))
-            setOnClickListener { cookieMaxStage = 2; tutorialFailHint = null; render() }
+            setOnClickListener { action() }
         }
         host.addView(link)
         host.visibility = View.VISIBLE
@@ -1151,20 +1264,6 @@ class OverlayService : Service() {
     private fun tutorialPanelBackground(): GradientDrawable = GradientDrawable().apply {
         cornerRadius = dp(8).toFloat()
         setColor(Color.parseColor("#14FFFFFF"))
-    }
-
-    /** 找已安装的可用浏览器：Edge 优先，其次火狐。 */
-    private fun detectBrowser(): Pair<String, String>? {
-        fun installed(pkg: String): Boolean = runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
-        val candidates = listOf(
-            "Edge" to TermuxBridge.PACKAGE_EDGE,
-            "Edge" to TermuxBridge.PACKAGE_EDGE_BETA,
-            "Edge" to TermuxBridge.PACKAGE_EDGE_CANARY,
-            "火狐" to TermuxBridge.PACKAGE_FIREFOX,
-            "火狐" to TermuxBridge.PACKAGE_FIREFOX_BETA,
-            "火狐" to TermuxBridge.PACKAGE_FIREFOX_NIGHTLY
-        )
-        return candidates.firstOrNull { installed(it.second) }
     }
 
     /** 同时返回两类浏览器，用于两个都装时的「使用 Edge / 使用 火狐」切换。 */
@@ -1233,13 +1332,39 @@ class OverlayService : Service() {
         return t.contains("\"name\"") && t.contains("\"value\"")
     }
 
-    private fun openApp() {
-        // 只负责打开 App，不再偷偷把教程推进到「回 App 粘贴」——用户在 S1/S2 误点会跳步且无法回退
+    private fun openApp(tab: Int? = null) {
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (tab != null) putExtra(MainActivity.EXTRA_TAB, tab)
         }
         runCatching { startActivity(intent) }
         handler.post { render() }
+    }
+
+    /** 悬浮窗直接拉起半自动部署：VPN 已在本卡确认，App 内不再重复弹确认框 */
+    private fun startDeployFromOverlay() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(MainActivity.EXTRA_DEPLOY_NOW, true)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    /** 悬浮窗直接拉起反代服务（部署完成但服务停了时使用） */
+    private fun startServiceFromOverlay() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(MainActivity.EXTRA_START_SERVICE, true)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun openAiStudio(browserPkg: String?) {
+        if (browserPkg.isNullOrBlank()) {
+            TermuxBridge.openUrl(this, TermuxBridge.URL_AISTUDIO)
+        } else {
+            TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+        }
     }
 
     /** 抓日志 + 当前屏幕文本，严格按当前选中的 AI 书签（自定义 / 本地反代）单路径分析错误。 */
