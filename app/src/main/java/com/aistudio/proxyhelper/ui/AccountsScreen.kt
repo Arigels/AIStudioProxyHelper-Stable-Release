@@ -192,7 +192,15 @@ fun AccountsScreen(
             policy = policy
         )
 
-        // ── 4. 粘贴 Cookie 导入 ──
+        // ── 4. 获取 Cookie 教程（先教怎么拿到 Cookie，再让用户粘贴导入）──
+        CookieGuideCard(
+            env = uiState.environment,
+            expanded = guideExpanded,
+            onToggleExpand = { guideExpanded = !guideExpanded },
+            onShowMessage = onShowMessage
+        )
+
+        // ── 5. 粘贴 Cookie 导入 ──
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
@@ -391,14 +399,6 @@ fun AccountsScreen(
                 }
             }
         }
-
-        // ── 5. 获取 Cookie 教程（已有账号时可折叠，新用户默认展开） ──
-        CookieGuideCard(
-            env = uiState.environment,
-            expanded = guideExpanded,
-            onToggleExpand = { guideExpanded = !guideExpanded },
-            onShowMessage = onShowMessage
-        )
 
         Spacer(modifier = Modifier.height(8.dp))
     }
@@ -1602,6 +1602,12 @@ private fun CookieGuideCard(
     val hasFirefox = firefoxPkg != null
     var preferFirefox by rememberSaveable { mutableStateOf(false) }
     val targetBrowser = resolveTargetBrowser(env, preferFirefox)
+    // 按实际检测到的浏览器给具体点击路径，未检测到时给通用兜底
+    val browserMenuPath = when (targetBrowser?.label) {
+        "Edge" -> "点浏览器底部工具栏右侧的「…」→ 菜单里选「扩展」→ 在扩展列表里点 Cookie-Editor"
+        "火狐" -> "点浏览器右上角的「⋮」（三个点）→ 选「扩展」→ 在扩展列表里点 Cookie-Editor"
+        else -> "在浏览器里打开「扩展」菜单再点 Cookie-Editor（Edge：底部「…」→「扩展」；火狐：右上角「⋮」→「扩展」）"
+    }
 
     Card(
         colors = CardDefaults.cardColors(
@@ -1926,11 +1932,16 @@ private fun CookieGuideCard(
                     }
 
                     // 步骤 4
-                    GuideStep(number = 4, title = "用 Cookie-Editor 导出为 JSON") {
+                    GuideStep(number = 4, title = "打开 Cookie-Editor 并导出 JSON") {
                         Text(
                             text = "1. 保持浏览器停留在已登录的 aistudio.google.com 页面。\n" +
-                                "2. 打开浏览器里的 Cookie-Editor 扩展（Edge 点底部/右上角菜单「≡ / …」→「扩展」→「Cookie-Editor」；火狐点地址栏旁「⋮」→「扩展」→「Cookie-Editor」）。\n" +
-                                "3. 点插件右下角 Export → 务必选择「Export as JSON」（不要选 Header String 或 Netscape）。导出后完整 JSON 会自动复制到剪贴板。",
+                                "2. 打开 Cookie-Editor 扩展：$browserMenuPath。\n" +
+                                "3. 扩展面板出现后，点右下角的 Export → 选「Export as JSON」（不要选 Header String 或 Netscape）。导出成功后完整 JSON 会自动复制到剪贴板。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "打不开或面板空白：先确认当前页确实是 aistudio.google.com（不是别的标签页），下拉刷新后再点一次扩展图标；仍不行就重启浏览器再试。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1939,7 +1950,10 @@ private fun CookieGuideCard(
                     // 步骤 5
                     GuideStep(number = 5, title = "回到本 App 导入（支持剪贴板 / 文件）") {
                         Text(
-                            text = "在上方点「粘贴剪贴板」（推荐，可绕过输入法粘贴字数限制）或「从文件导入 (.json/.txt)」，再点「导入并自动识别所有账号」即可。",
+                            text = "首选：点上面「粘贴剪贴板」按钮。它直接读系统剪贴板，绕过输入法剪贴板条的字数上限（多数手机输入法只允许粘 1000~5000 字），也不用点进输入框。\n" +
+                                "其次：点「从文件导入 (.json/.txt)」，把 Cookie-Editor 导出的 JSON 存成文件再选，完全没有字数限制。\n" +
+                                "最后：如果一定要手动粘，长按输入框空白处用系统原生「粘贴」，不要用输入法键盘上的剪贴板历史。\n" +
+                                "说明：输入法的剪贴板上限 App 无法读取或检测，所以这里直接用上面两个办法绕开。导入后会自动识别所有子账号。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

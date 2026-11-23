@@ -385,7 +385,7 @@ class OverlayService : Service() {
             if (needCookie) {
                 // 闪动高亮：文字颜色与底色在两种状态间切换，确保一眼看到
                 guideText?.text =
-                    "👉 下一步：打开 App →「账号」页 → 用浏览器导出 Cookie 粘贴导入，之后就能在酒馆用 AI Studio 反代"
+                    "👉 下一步：打开 App →「账号」页最上方就是「获取 Cookie」教程 → 按提示用 Edge / 火狐导出 JSON，再粘贴导入"
                 guideText?.setTextColor(
                     Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC")
                 )
