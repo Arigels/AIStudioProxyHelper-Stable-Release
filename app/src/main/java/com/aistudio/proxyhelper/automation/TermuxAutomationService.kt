@@ -55,6 +55,25 @@ class TermuxAutomationService : AccessibilityService() {
         runningJob?.cancel()
     }
 
+    /** 采集当前屏幕上的文字（用于悬浮窗的「识别报错」）。 */
+    fun captureWindowText(): String {
+        val root = rootInActiveWindow ?: return ""
+        val sb = StringBuilder()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < 400) {
+            val node = queue.removeFirst()
+            visited++
+            node.text?.toString()?.takeIf { it.isNotBlank() }?.let { sb.appendLine(it) }
+            node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { sb.appendLine(it) }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return sb.toString()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (AutomationController.activeService === this) {
@@ -63,8 +82,7 @@ class TermuxAutomationService : AccessibilityService() {
         scope.cancel()
     }
 
-    fun kickPendingTask() {
-        val task = AutomationController.pendingTask ?: return
+    fun kickPendingTask() {        val task = AutomationController.pendingTask ?: return
         if (task.isExpired()) {
             AutomationController.clearTask(null)
             return

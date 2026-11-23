@@ -55,6 +55,8 @@ object OverlayState {
 class OverlayService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
+    private val diagnosisScope =
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private var windowManager: WindowManager? = null
     private var panelParams: WindowManager.LayoutParams? = null
 
@@ -167,8 +169,16 @@ class OverlayService : Service() {
             setPadding(0, dp(6), 0, 0)
             setOnClickListener { openApp() }
         }
+        val diagnoseText = TextView(this).apply {
+            text = "🔍 识别报错（AI 分析）"
+            setTextColor(Color.parseColor("#FDE68A"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(6), 0, 0)
+            setOnClickListener { runDiagnose() }
+        }
         details.addView(ai)
         details.addView(elapsed)
+        details.addView(diagnoseText)
         details.addView(openAppText)
 
         panel.addView(titleRow)
@@ -300,6 +310,66 @@ class OverlayService : Service() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         runCatching { startActivity(intent) }
+    }
+
+    /** 抓日志 + 当前屏幕文本，交给 AI 解析错误原因。 */
+    private fun runDiagnose() {
+        val prefs = SettingsRepository(applicationContext)
+        val settings = prefs.load()
+        val serviceOnline = isServiceOnline(settings.port)
+        val useLocal = prefs.agentUseLocal || serviceOnline
+        if (!useLocal && prefs.agentApiKey.isBlank()) {
+            aiText?.text = "AI：请先打开 App →「AI」页配置接口（或启动本机反代后重试）"
+            expandDetails()
+            return
+        }
+        aiText?.text = "AI：正在读取日志并分析…"
+        expandDetails()
+        diagnosisScope.launch {
+            val config = com.aistudio.proxyhelper.agent.AgentConfig(
+                baseUrl = prefs.agentBaseUrl,
+                apiKey = prefs.agentApiKey,
+                model = prefs.agentModel,
+                useLocalProxy = useLocal,
+                localBaseUrl = "http://127.0.0.1:${settings.port}",
+                localModel = prefs.agentLocalModel,
+                localApiKey = prefs.agentLocalKey.ifBlank { "aistudio-api" }
+            )
+            val log = LogCollector.getLog(120)
+            val screen = com.aistudio.proxyhelper.automation.AutomationController
+                .captureActiveWindowText()
+            if (useLocal && prefs.agentLocalModel.isBlank()) {
+                aiText?.text = "AI：本机反代还没选择模型，请到 App 的「AI」页拉取并选一个模型"
+                return@launch
+            }
+            val payload = buildString {
+                appendLine("【最近命令日志】")
+                appendLine(log.ifBlank { "（空）" })
+                appendLine("【当前屏幕文本】")
+                appendLine(screen.take(2000).ifBlank { "（读不到屏幕文本）" })
+            }
+            val answer = runCatching {
+                com.aistudio.proxyhelper.agent.AgentEngine().run(
+                    config = config,
+                    problem = "请根据下面内容判断错误原因，并给出 1-3 步可操作的解决办法：\n$payload",
+                    mode = com.aistudio.proxyhelper.agent.AgentMode.TROUBLESHOOT,
+                    execute = { _, _ -> "悬浮窗模式下不执行工具，请到 App 内操作" },
+                    onLine = { }
+                )
+            }.getOrElse { "识别失败：${it.message}" }
+            aiText?.text = "AI：" + answer.lineSequence().joinToString(" ").take(300)
+            OverlayState.update(
+                OverlayState.snapshot.copy(
+                    aiHint = answer.lineSequence().firstOrNull()?.take(80)
+                )
+            )
+        }
+    }
+
+    private fun expandDetails() {
+        expanded = true
+        detailsBox?.visibility = View.VISIBLE
+        render()
     }
 
     private fun startForegroundSafely() {

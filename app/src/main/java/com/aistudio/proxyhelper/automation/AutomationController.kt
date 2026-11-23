@@ -96,6 +96,11 @@ object AutomationController {
         _statusMessage.value = finalMessage
     }
 
+    /** 读取当前获得焦点的窗口文本（供悬浮窗「识别报错」使用，读不到时返回空串）。 */
+    fun captureActiveWindowText(): String {
+        return runCatching { activeService?.captureWindowText().orEmpty() }.getOrDefault("")
+    }
+
     fun updateStatus(message: String?) {
         _statusMessage.value = message
     }

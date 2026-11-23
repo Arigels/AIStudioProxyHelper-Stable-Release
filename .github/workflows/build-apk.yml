@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.3.5.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.0.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.3.5.apk
+          path: dist/AIStudioProxyHelper-v2.4.0.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.3.5"
+          TAG="v2.4.0"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.3.5.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.0.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.3.5.apk \
-              --title "v2.3.5 — AI Studio 反代助手" \
-              --notes "无障碍诊断增强：区分「开关已开但服务未连接」，自动操控不可用时明确提示原因并降级为手动粘贴，避免点了没反应。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.0.apk \
+              --title "v2.4.0 — AI Studio 反代助手（悬浮窗报错识别）" \
+              --notes "悬浮窗新增「识别报错」按钮：抓取最近命令日志与当前屏幕文本，直接调用 AI 分析错误原因并在悬浮窗显示结论，不用切回 App。"
           fi
