@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.6.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.7.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.5.6.apk
+          path: dist/AIStudioProxyHelper-v2.5.7.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.5.6"
+          TAG="v2.5.7"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.6.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.7.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.6.apk \
-              --title "v2.5.6 — AI Studio 反代助手" \
-              --notes "高级设置命令核对：唤醒锁改为真实检测（找不到命令直接报错）并说明局限；停止服务改为如实反馈是否真的停掉了进程。" 
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.7.apk \
+              --title "v2.5.7 — AI Studio 反代助手" \
+              --notes "账号页教程优化：提示把火狐设为默认浏览器，新增「复制扩展链接 / 复制 AI Studio 链接」按钮方便手动在火狐打开；结尾提示全部完成后可按需卸载火狐。"
           fi

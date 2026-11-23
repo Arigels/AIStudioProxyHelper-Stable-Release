@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.OpenInBrowser
@@ -342,6 +343,27 @@ private fun CookieGuideCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("打开 Cookie-Editor 扩展页")
                 }
+                OutlinedButton(
+                    onClick = {
+                        TermuxBridge.copyToClipboard(
+                            context,
+                            "Cookie-Editor 扩展链接",
+                            TermuxBridge.URL_COOKIE_EDITOR
+                        )
+                        onShowMessage("扩展链接已复制，去火狐地址栏粘贴打开")
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("复制扩展链接")
+                }
+                Text(
+                    text = "⚠️ 建议把火狐设为「默认浏览器」再用上面的跳转；不设也行——" +
+                        "点「复制扩展链接」，然后在火狐地址栏粘贴打开即可。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // 步骤 3
@@ -358,6 +380,21 @@ private fun CookieGuideCard(
                     Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("打开 AI Studio")
+                }
+                OutlinedButton(
+                    onClick = {
+                        TermuxBridge.copyToClipboard(
+                            context,
+                            "AI Studio 链接",
+                            TermuxBridge.URL_AISTUDIO
+                        )
+                        onShowMessage("AI Studio 链接已复制，去火狐地址栏粘贴打开")
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("复制 AI Studio 链接")
                 }
             }
 
@@ -376,6 +413,20 @@ private fun CookieGuideCard(
                     text = "在下方「粘贴 Cookie 导入」里点「粘贴剪贴板」，再点「导入并自动识别所有账号」即可。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Surface(
+                color = Color(0xFFE8F5E9),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "✅ 以上步骤全部完成后，火狐浏览器和 Cookie-Editor 就可以按需卸载了——" +
+                        "Cookie 已经保存在本 App 里，卸载浏览器不影响反代使用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF1B5E20),
+                    modifier = Modifier.padding(10.dp)
                 )
             }
         }
