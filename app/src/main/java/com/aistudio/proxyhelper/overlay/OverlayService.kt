@@ -118,6 +118,9 @@ class OverlayService : Service() {
     /** S2 是否已弹出 VPN 确认卡 */
     private var vpnConfirmShown = false
 
+    /** 酒馆向导是否已弹出完成确认卡 */
+    private var tavernConfirmShown = false
+
     /** 酒馆向导是否已完成（持久化在第 7 步接入，先用内存值） */
     private var tavernDone = false
 
@@ -154,6 +157,9 @@ class OverlayService : Service() {
         }
         isRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
+        val prefs = getSharedPreferences("overlay_guide", MODE_PRIVATE)
+        tavernDone = prefs.getBoolean("tavern_guide_done", false)
+        modelTipDismissed = prefs.getBoolean("model_tip_dismissed", false)
         buildViews()
         runCatching {
             (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
@@ -552,8 +558,16 @@ class OverlayService : Service() {
             tutorialBrowser = null
             vpnConfirmShown = false
             tutorialFailHint = null
+            tavernConfirmShown = false
         }
-        renderTutorial(needCookie && !reportMode)
+        when {
+            needCookie -> renderTutorial(true)
+            tavernMode -> renderTavernGuide(!reportMode)
+            else -> {
+                renderTutorial(false)
+                renderTavernGuide(false)
+            }
+        }
     }
 
     /** 悬浮窗教程：一次只显示当前一步，按检测到的浏览器给对应路径，控制在两三行内。 */
@@ -732,6 +746,63 @@ class OverlayService : Service() {
         altBtn?.setOnClickListener {
             TermuxBridge.copyToClipboard(this, "AI Studio 链接", TermuxBridge.URL_AISTUDIO)
         }
+    }
+
+    /** 酒馆向导：账号就绪后引导在 Termux 新会话启动酒馆；完成后内嵌确认卡，确定才持久化隐藏。 */
+    private fun renderTavernGuide(show: Boolean) {
+        val tut = tutorialText ?: return
+        val btn = tutorialButton
+        val altBtn = tutorialAltButton
+        val continueRow = tutorialContinueRow
+        val switchRow = tutorialSwitchRow
+        if (!show) {
+            tut.visibility = View.GONE
+            btn?.visibility = View.GONE
+            altBtn?.visibility = View.GONE
+            continueRow?.visibility = View.GONE
+            switchRow?.visibility = View.GONE
+            return
+        }
+        tut.visibility = View.VISIBLE
+        switchRow?.visibility = View.GONE
+        continueRow?.visibility = View.GONE
+
+        if (tavernConfirmShown) {
+            tut.text = "点击完成后这段教程不再在悬浮窗显示，可在 App「解疑」页再次查看。"
+            tut.setTextColor(Color.parseColor("#DBEAFE"))
+            tut.background = tutorialPanelBackground()
+            btn?.visibility = View.VISIBLE
+            btn?.text = "确定"
+            btn?.setOnClickListener {
+                tavernDone = true
+                getSharedPreferences("overlay_guide", MODE_PRIVATE)
+                    .edit().putBoolean("tavern_guide_done", true).apply()
+                tavernConfirmShown = false
+                render()
+            }
+            altBtn?.visibility = View.VISIBLE
+            altBtn?.text = "取消"
+            altBtn?.setOnClickListener {
+                tavernConfirmShown = false
+                render()
+            }
+            return
+        }
+
+        tut.text = "① 打开 Termux\n② 从屏幕左边缘向右滑，拉出白色小窗\n③ 点 NEW SESSION\n④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh）"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        tut.background = tutorialPanelBackground()
+        btn?.visibility = View.VISIBLE
+        btn?.text = "打开 Termux"
+        btn?.setOnClickListener {
+            if (!TermuxBridge.openTermux(this)) {
+                tut.text = "未能打开 Termux，请手动从桌面启动\n\n① 打开 Termux\n② 从屏幕左边缘向右滑，拉出白色小窗\n③ 点 NEW SESSION\n④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh）"
+                tut.setTextColor(Color.parseColor("#FCA5A5"))
+            }
+        }
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = "完成"
+        altBtn?.setOnClickListener { tavernConfirmShown = true; render() }
     }
 
     /** S4：剪贴板命中 Cookie JSON 后绿色完成态；读不到剪贴板时也可从「打开 App」推进到本步。 */
