@@ -621,6 +621,7 @@ class OverlayService : Service() {
             }
             1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             2 -> renderTutorialStage2(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            3 -> renderTutorialStage3(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             0 -> renderTutorialStage0(tut, btn, altBtn)
             else -> {
                 tut.text = "① 用 ${browserLabel ?: "浏览器"} 打开 aistudio.google.com 并登录"
@@ -727,6 +728,31 @@ class OverlayService : Service() {
         altBtn?.setOnClickListener {
             TermuxBridge.copyToClipboard(this, "AI Studio 链接", TermuxBridge.URL_AISTUDIO)
         }
+    }
+
+    /** S3：导出 Cookie-Editor JSON；按浏览器给对应菜单路径，按钮直接重开 AI Studio（不再弹 VPN 卡）。 */
+    private fun renderTutorialStage3(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?,
+        continueRow: LinearLayout?,
+        browserLabel: String?,
+        browserPkg: String?
+    ) {
+        continueRow?.visibility = View.GONE
+        val path = if (browserLabel == "火狐") {
+            "③ 点右上角竖着的「⋮」（三个点）→「扩展」→ Cookie-Editor"
+        } else {
+            "③ 点底部「≡」（三横）→「扩展」→ Cookie-Editor"
+        }
+        tut.text = "$path\n④ 点 Export → 选 Export as JSON（会自动复制）"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        btn?.visibility = View.VISIBLE
+        btn?.text = "🔁 再开一次 AI Studio"
+        btn?.setOnClickListener {
+            TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+        }
+        altBtn?.visibility = View.GONE
     }
 
     /** S1 推进链接：装好扩展后点这里进入下一步（S2 打开 AI Studio）。 */
