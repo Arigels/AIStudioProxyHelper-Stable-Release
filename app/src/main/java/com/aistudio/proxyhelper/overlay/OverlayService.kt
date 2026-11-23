@@ -133,11 +133,32 @@ class OverlayService : Service() {
         getSharedPreferences("aistudio_tutorial", MODE_PRIVATE)
     }
 
-    /** 酒馆向导是否已完成（持久化在第 7 步接入，先用内存值） */
-    private var tavernDone = false
+    /** 酒馆向导已完成：持久化，写死不再出现 */
+    private var tavernDone: Boolean
+        get() = guidePrefs.getBoolean("tavern_done", false)
+        set(value) = guidePrefs.edit().putBoolean("tavern_done", value).apply()
 
-    /** 一次性拉模型提示是否已关闭（持久化在第 7 步接入，先用内存值） */
-    private var modelTipDismissed = false
+    /** 拉模型提示已关闭：持久化，永久不再出现 */
+    private var modelTipDismissed: Boolean
+        get() = guidePrefs.getBoolean("model_tip_dismissed", false)
+        set(value) = guidePrefs.edit().putBoolean("model_tip_dismissed", value).apply()
+
+    /** Cookie 向导已到达的最远步骤（0–4）：只增不减，setter 里取 max 防止倒退 */
+    private var cookieMaxStage: Int
+        get() = guidePrefs.getInt("cookie_max_stage", 0)
+        set(value) = guidePrefs.edit()
+            .putInt("cookie_max_stage", maxOf(guidePrefs.getInt("cookie_max_stage", 0), value))
+            .apply()
+
+    /** Cookie 向导整体结束（导入成功即 true），置 true 后 A 阶段永久不再出现 */
+    private var cookieDone: Boolean
+        get() = guidePrefs.getBoolean("cookie_done", false)
+        set(value) = guidePrefs.edit().putBoolean("cookie_done", value).apply()
+
+    /** 反代曾经连上过；一旦 true 永不回退，用于区分「从没启动」和「连上又断」 */
+    private var proxyEverOnline: Boolean
+        get() = guidePrefs.getBoolean("proxy_ever_online", false)
+        set(value) = guidePrefs.edit().putBoolean("proxy_ever_online", value).apply()
 
     private val clipWatcher = ClipboardManager.OnPrimaryClipChangedListener {
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
@@ -169,9 +190,14 @@ class OverlayService : Service() {
         }
         isRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as? WindowManager
-        val prefs = getSharedPreferences("overlay_guide", MODE_PRIVATE)
-        tavernDone = prefs.getBoolean("tavern_guide_done", false)
-        modelTipDismissed = prefs.getBoolean("model_tip_dismissed", false)
+        val legacy = getSharedPreferences("overlay_guide", MODE_PRIVATE)
+        // 老版本把酒馆/提示状态存在 overlay_guide，首次运行搬到 aistudio_tutorial
+        if (!guidePrefs.contains("tavern_done") && legacy.getBoolean("tavern_guide_done", false)) {
+            tavernDone = true
+        }
+        if (!guidePrefs.contains("model_tip_dismissed") && legacy.getBoolean("model_tip_dismissed", false)) {
+            modelTipDismissed = true
+        }
         loadBrowserCache()
         refreshBrowserCache()
         buildViews()
@@ -326,8 +352,6 @@ class OverlayService : Service() {
             setPadding(0, 0, dp(6), 0)
             setOnClickListener {
                 modelTipDismissed = true
-                getSharedPreferences("overlay_guide", MODE_PRIVATE)
-                    .edit().putBoolean("model_tip_dismissed", true).apply()
                 render()
             }
         }
@@ -802,8 +826,6 @@ class OverlayService : Service() {
             btn?.text = "确定"
             btn?.setOnClickListener {
                 tavernDone = true
-                getSharedPreferences("overlay_guide", MODE_PRIVATE)
-                    .edit().putBoolean("tavern_guide_done", true).apply()
                 tavernConfirmShown = false
                 render()
             }
