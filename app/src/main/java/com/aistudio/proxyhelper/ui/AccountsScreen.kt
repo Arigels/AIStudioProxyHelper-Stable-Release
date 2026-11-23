@@ -1604,9 +1604,9 @@ private fun CookieGuideCard(
     val targetBrowser = resolveTargetBrowser(env, preferFirefox)
     // 按实际检测到的浏览器给具体点击路径，未检测到时给通用兜底
     val browserMenuPath = when (targetBrowser?.label) {
-        "Edge" -> "点浏览器底部工具栏右侧的「…」→ 菜单里选「扩展」→ 在扩展列表里点 Cookie-Editor"
+        "Edge" -> "点浏览器底部工具栏右侧的「≡」→ 菜单里选「扩展」→ 在扩展列表里点 Cookie-Editor"
         "火狐" -> "点浏览器右上角的「⋮」（三个点）→ 选「扩展」→ 在扩展列表里点 Cookie-Editor"
-        else -> "在浏览器里打开「扩展」菜单再点 Cookie-Editor（Edge：底部「…」→「扩展」；火狐：右上角「⋮」→「扩展」）"
+        else -> "在浏览器里打开「扩展」菜单再点 Cookie-Editor（Edge：底部「≡」→「扩展」；火狐：右上角「⋮」→「扩展」）"
     }
 
     Card(
