@@ -1,6 +1,7 @@
 package com.aistudio.proxyhelper.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aistudio.proxyhelper.agent.AgentConfig
@@ -8,6 +9,7 @@ import com.aistudio.proxyhelper.agent.AgentEngine
 import com.aistudio.proxyhelper.agent.AgentLine
 import com.aistudio.proxyhelper.agent.AgentMode
 import com.aistudio.proxyhelper.automation.AutomationController
+import com.aistudio.proxyhelper.data.CookiePreflight
 import com.aistudio.proxyhelper.data.EnvironmentStatus
 import com.aistudio.proxyhelper.data.ImportResult
 import com.aistudio.proxyhelper.data.ProxySettings
@@ -456,6 +458,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val preferAccessibility = !settingsRepo.externalAppsSetupDone ||
             !env.termuxRunCommandGranted
 
+        // 用户主动停服：给悬浮窗留标记，免得「频繁掉线」统计把这次主动下线也算进去
+        if (action == TermuxAction.STOP_SERVICE) {
+            ctx.getSharedPreferences("aistudio_tutorial", Context.MODE_PRIVATE)
+                .edit()
+                .putLong("manual_stop_at", System.currentTimeMillis())
+                .apply()
+        }
+
         when (val result = TermuxBridge.runInTermux(ctx, action, settings, preferAccessibility)) {
             is TermuxDispatchResult.AutomatedByAccessibility -> {
                 val markDeployed = action == TermuxAction.INSTALL_AND_START ||
@@ -619,7 +629,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(snackbarMessage = "已复制$label：$text") }
     }
 
+    /**
+     * 导入 Cookie。提交给反代服务之前先做一次纯本地结构预检（不联网）：
+     * 复制成链接、JSON 被截断、只有游客 Cookie 这些问题当场拦下并给出可执行提示；
+     * 服务端返回「未探测到有效已登录 Google 账号」时，翻译成检查清单而不是只显示原文。
+     */
     fun importCookies(rawCookies: String, probeMultiAccount: Boolean, namePrefix: String?) {
+        val preflight = CookiePreflight.inspect(rawCookies)
+        if (!preflight.ok) {
+            val tip = preflight.errorChecklist ?: "这份内容不像 AI Studio 登录 Cookie"
+            LogCollector.append(
+                "[导入] 预检未通过：${tip.lineSequence().firstOrNull().orEmpty()}；" +
+                    preflight.debugSummary()
+            )
+            _uiState.update {
+                it.copy(
+                    importingCookie = false,
+                    lastImportResult = ImportResult(success = false, message = tip),
+                    snackbarMessage = "这份内容不像 AI Studio 登录 Cookie，已拦下（详见下方提示）"
+                )
+            }
+            return
+        }
+        // 只记字段名与域名，绝不记 value
+        LogCollector.append("[导入] 预检通过：${preflight.debugSummary()}")
+
         viewModelScope.launch {
             _uiState.update { it.copy(importingCookie = true, lastImportResult = null) }
             val settings = _uiState.value.settings
@@ -628,15 +662,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 apiClient.importCookiesDirect(settings, rawCookies, namePrefix)
             }
+            val shown = if (res.success) {
+                res
+            } else {
+                res.copy(message = CookiePreflight.translateServerError(res.message))
+            }
             _uiState.update {
                 it.copy(
                     importingCookie = false,
-                    lastImportResult = res,
-                    snackbarMessage = res.message
+                    lastImportResult = shown,
+                    snackbarMessage = shown.message
                 )
             }
             if (res.success) {
                 refreshServiceStatus(silent = true)
+            } else {
+                LogCollector.append("[导入] 服务端拒绝：${res.message}")
             }
         }
     }

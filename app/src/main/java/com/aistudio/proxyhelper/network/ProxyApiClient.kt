@@ -366,7 +366,12 @@ class ProxyApiClient {
             actionClient.newCall(req).execute().use { resp ->
                 val body = resp.body?.string().orEmpty()
                 if (resp.isSuccessful) {
-                    val obj = JSONObject(body)
+                    // 服务端 200 但返回非 JSON 时，不能当成「连不上服务」
+                    val obj = runCatching { JSONObject(body) }.getOrNull()
+                        ?: return@withContext ImportResult(
+                            false,
+                            "反代返回的不是 JSON（HTTP ${resp.code}）：${body.take(120).ifBlank { "空响应" }}"
+                        )
                     val count = obj.optInt("imported_count", 0)
                     ImportResult(
                         success = true,
