@@ -125,6 +125,14 @@ class OverlayService : Service() {
     /** 打开 Termux 失败时保留红色提示，避免下一次重渲染把它冲掉 */
     private var tavernFailHint = false
 
+    /** 浏览器包名缓存：检测成功才覆盖，检测失败不动旧值（只降级不归零） */
+    private var edgePkgCache: String = ""
+    private var firefoxPkgCache: String = ""
+
+    private val guidePrefs by lazy {
+        getSharedPreferences("aistudio_tutorial", MODE_PRIVATE)
+    }
+
     /** 酒馆向导是否已完成（持久化在第 7 步接入，先用内存值） */
     private var tavernDone = false
 
@@ -164,6 +172,8 @@ class OverlayService : Service() {
         val prefs = getSharedPreferences("overlay_guide", MODE_PRIVATE)
         tavernDone = prefs.getBoolean("tavern_guide_done", false)
         modelTipDismissed = prefs.getBoolean("model_tip_dismissed", false)
+        loadBrowserCache()
+        refreshBrowserCache()
         buildViews()
         runCatching {
             (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)
@@ -623,7 +633,7 @@ class OverlayService : Service() {
         }
         tut.visibility = View.VISIBLE
 
-        val (edge, firefox) = detectBrowsers()
+        val (edge, firefox) = browsersFromCache()
         val detected = edge ?: firefox
         // 已手动切换到某一类、但该类未安装时，回退到检测到的那一类
         val chosen = when (tutorialBrowser) {
@@ -919,6 +929,32 @@ class OverlayService : Service() {
 
     private fun browserAddonUrl(label: String?): String =
         if (label == "火狐") TermuxBridge.URL_COOKIE_EDITOR else TermuxBridge.URL_COOKIE_EDITOR_EDGE
+
+    /** 读回上次检测到的浏览器包名，服务重启后继续用，不重新探测。 */
+    private fun loadBrowserCache() {
+        edgePkgCache = guidePrefs.getString("browser_edge_pkg", "").orEmpty()
+        firefoxPkgCache = guidePrefs.getString("browser_firefox_pkg", "").orEmpty()
+    }
+
+    /** 只在 onCreate / 解锁 / S0 点「重新检测」时调用；探测失败保留旧缓存，不清空。 */
+    private fun refreshBrowserCache() {
+        val found = detectBrowsers()
+        found.first?.let {
+            edgePkgCache = it.second
+            guidePrefs.edit().putString("browser_edge_pkg", it.second).apply()
+        }
+        found.second?.let {
+            firefoxPkgCache = it.second
+            guidePrefs.edit().putString("browser_firefox_pkg", it.second).apply()
+        }
+    }
+
+    /** 渲染只看缓存，避免每次重绘都探测导致退回 S0。 */
+    private fun browsersFromCache(): Pair<Pair<String, String>?, Pair<String, String>?> {
+        val edge = edgePkgCache.takeIf { it.isNotEmpty() }?.let { "Edge" to it }
+        val firefox = firefoxPkgCache.takeIf { it.isNotEmpty() }?.let { "火狐" to it }
+        return edge to firefox
+    }
 
     /** Cookie-Editor 导出的 JSON 是 name/value 数组，用这个特征判断剪贴板里是不是它。 */
     private fun looksLikeCookieJson(text: String): Boolean {
