@@ -9,9 +9,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.RocketLaunch
@@ -27,6 +30,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -45,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -147,6 +152,47 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         val msg = uiState.snackbarMessage ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(msg)
         viewModel.consumeMessage()
+    }
+
+    if (uiState.showPasteDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPasteDialog() },
+            title = { Text("命令已复制，去 Termux 粘贴执行") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Termux 已经自动打开，按下面三步操作：")
+                    Text("1. 长按 Termux 屏幕空白处")
+                    Text("2. 在弹出的菜单里点「粘贴」")
+                    Text("3. 按键盘上的回车键执行")
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = uiState.pasteDialogCommand.take(180) +
+                                if (uiState.pasteDialogCommand.length > 180) "…" else "",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                    Text(
+                        "装完之后回来点「检查状态」，服务在跑就说明成功了。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.dismissPasteDialog() }) {
+                    Text("我知道怎么粘贴了")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.recopyPasteCommand() }) {
+                    Text("重新复制")
+                }
+            }
+        )
     }
 
     Scaffold(

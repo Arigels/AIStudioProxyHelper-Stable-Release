@@ -61,7 +61,9 @@ data class MainUiState(
     val testingModels: Boolean = false,
     val lastTestResult: Pair<Boolean, String>? = null,
     val lastDispatchedCommand: String? = null,
-    val snackbarMessage: String? = null
+    val snackbarMessage: String? = null,
+    val showPasteDialog: Boolean = false,
+    val pasteDialogCommand: String = ""
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -208,9 +210,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        // 部署类动作：不依赖无障碍自动操作，改为「复制 + 打开 Termux + 弹窗提示粘贴回车」
+        if (action == TermuxAction.INSTALL_AND_START ||
+            action == TermuxAction.INSTALL_ONLY ||
+            action == TermuxAction.ENABLE_EXTERNAL_APPS
+        ) {
+            OverlayState.deployStartedAt = System.currentTimeMillis()
+            runManualFallback(action)
+            return
+        }
+
         val preferAccessibility = !settingsRepo.externalAppsSetupDone ||
-            !env.termuxRunCommandGranted ||
-            action == TermuxAction.INSTALL_AND_START
+            !env.termuxRunCommandGranted
 
         if (action == TermuxAction.INSTALL_AND_START || action == TermuxAction.INSTALL_ONLY) {
             OverlayState.deployStartedAt = System.currentTimeMillis()
@@ -321,9 +332,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 lastDispatchedCommand = result.command,
                 hasDeployed = it.hasDeployed || markDeployed,
                 externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
-                snackbarMessage = result.reason
+                snackbarMessage = result.reason,
+                showPasteDialog = true,
+                pasteDialogCommand = result.command
             )
         }
+    }
+
+    fun dismissPasteDialog() {
+        _uiState.update { it.copy(showPasteDialog = false) }
+    }
+
+    fun recopyPasteCommand() {
+        val cmd = _uiState.value.pasteDialogCommand
+        if (cmd.isBlank()) return
+        TermuxBridge.copyToClipboard(getApplication(), "部署命令", cmd)
+        TermuxBridge.openTermux(getApplication())
+        _uiState.update { it.copy(snackbarMessage = "命令已重新复制，去 Termux 长按粘贴") }
     }
 
     fun copyActionCommand(action: TermuxAction) {
