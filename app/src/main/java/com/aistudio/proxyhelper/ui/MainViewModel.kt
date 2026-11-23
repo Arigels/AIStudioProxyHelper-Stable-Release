@@ -241,7 +241,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 stage = phase.label,
                 error = visibleError,
                 guidance = guidance,
-                aiHint = state.agentAnswer?.lineSequence()?.firstOrNull()?.take(80)
+                aiHint = state.agentAnswer?.lineSequence()?.firstOrNull()?.take(80),
+                deploying = state.deploying,
+                hasDeployed = state.hasDeployed,
+                termuxInstalled = termuxInstalled,
+                a11yEnabled = accessibilityEnabled
             )
         )
     }

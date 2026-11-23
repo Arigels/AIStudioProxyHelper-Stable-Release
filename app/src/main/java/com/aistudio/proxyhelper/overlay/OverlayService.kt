@@ -52,7 +52,11 @@ data class OverlaySnapshot(
     val stage: String = "准备中",
     val error: String? = null,
     val guidance: String = "打开 App 开始搭建",
-    val aiHint: String? = null
+    val aiHint: String? = null,
+    val deploying: Boolean = false,
+    val hasDeployed: Boolean = false,
+    val termuxInstalled: Boolean = false,
+    val a11yEnabled: Boolean = false
 )
 
 object OverlayState {
@@ -165,6 +169,42 @@ class OverlayService : Service() {
             .putInt("cookie_max_stage", maxOf(guidePrefs.getInt("cookie_max_stage", 0), value))
             .apply()
 
+    /**
+     * 五步引导到达的最远步骤：0 部署、1 浏览器、2 扩展、3 Cookie、4 粘贴、5 完成。
+     * 与原 cookie_max_stage 并存，迁移一次后新逻辑只读写这个键。
+     */
+    private var guideStageMax: Int
+        get() = guidePrefs.getInt("guide_stage_max", 0)
+        set(value) = guidePrefs.edit()
+            .putInt("guide_stage_max", maxOf(guidePrefs.getInt("guide_stage_max", 0), value))
+            .apply()
+
+    /** 扩展已确认安装（安卓读不到浏览器扩展列表，只能手动确认或剪贴板反推） */
+    private var guideExtInstalled: Boolean
+        get() = guidePrefs.getBoolean("guide_ext_installed", false)
+        set(value) = guidePrefs.edit().putBoolean("guide_ext_installed", value).apply()
+
+    /** 老用户从 cookie_max_stage(0–4) 映射到五步状态机；只迁移一次 */
+    private fun migrateGuidePrefs() {
+        if (guidePrefs.getBoolean("guide_migrated", false)) return
+        val hasOld = guidePrefs.contains("cookie_max_stage")
+        val old = guidePrefs.getInt("cookie_max_stage", 0)
+        val mapped = when (old) {
+            0 -> 1
+            1 -> 2
+            2 -> 3
+            3 -> 3
+            4 -> 4
+            else -> 0
+        }
+        val done = guidePrefs.getBoolean("cookie_done", false)
+        guidePrefs.edit()
+            .putInt("guide_stage_max", if (done) 5 else if (hasOld) mapped else 0)
+            .putBoolean("guide_ext_installed", hasOld && old >= 2)
+            .putBoolean("guide_migrated", true)
+            .apply()
+    }
+
     /** Cookie 向导整体结束（导入成功即 true），置 true 后 A 阶段永久不再出现 */
     private var cookieDone: Boolean
         // 默认 false：全新安装要先看教程；老用户由 render() 里的一次性迁移按真实状态纠正
@@ -224,6 +264,7 @@ class OverlayService : Service() {
         if (!guidePrefs.contains("model_tip_dismissed") && legacy.getBoolean("model_tip_dismissed", false)) {
             modelTipDismissed = true
         }
+        migrateGuidePrefs()
         loadBrowserCache()
         refreshBrowserCache()
         buildViews()
