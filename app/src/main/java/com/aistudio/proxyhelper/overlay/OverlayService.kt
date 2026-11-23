@@ -107,9 +107,6 @@ class OverlayService : Service() {
     /** 剪贴板里已确认是 Cookie-Editor 导出的 JSON 时的字符数（读不到剪贴板时为 0） */
     private var cookieClipLength = 0
 
-    /** 悬浮窗教程进度：0=还没在浏览器里打开，1=已在浏览器里取 Cookie，2=已复制好待导入 */
-    private var tutorialStage = 0
-
     /** 上一阶段用的浏览器名（Edge / 火狐），用于只显示对应那套点击路径 */
     private var tutorialBrowser: String? = null
 
@@ -152,7 +149,8 @@ class OverlayService : Service() {
 
     /** Cookie 向导整体结束（导入成功即 true），置 true 后 A 阶段永久不再出现 */
     private var cookieDone: Boolean
-        get() = guidePrefs.getBoolean("cookie_done", false)
+        // key 未写过时先按已完成处理，等首次拿到真实服务状态再迁移，避免升级用户被教程糊脸
+        get() = if (!guidePrefs.contains("cookie_done")) true else guidePrefs.getBoolean("cookie_done", false)
         set(value) = guidePrefs.edit().putBoolean("cookie_done", value).apply()
 
     /** 反代曾经连上过；一旦 true 永不回退，用于区分「从没启动」和「连上又断」 */
@@ -164,7 +162,7 @@ class OverlayService : Service() {
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
         cookieClipLength = if (looksLikeCookieJson(text)) text.length else 0
         if (cookieClipLength > 0 && OverlayState.snapshot.online && !OverlayState.snapshot.accountsReady) {
-            tutorialStage = 4
+            cookieMaxStage = 4
         }
         handler.post { render() }
     }
@@ -616,9 +614,9 @@ class OverlayService : Service() {
             detailsScroll?.visibility = View.GONE
         }
 
-        if (!needCookie) {
+        // 只有整体结束后才清临时 UI 状态；进度本身绝不归零
+        if (cookieDone) {
             cookieClipLength = 0
-            tutorialStage = 0
             tutorialBrowser = null
             vpnConfirmShown = false
             tutorialFailHint = null
@@ -670,8 +668,10 @@ class OverlayService : Service() {
         val browserLabel = chosen?.first
         val browserPkg = chosen?.second
         val bothInstalled = edge != null && firefox != null
-        if (tutorialStage == 0 && chosen != null) tutorialStage = 1
-        if (cookieClipLength > 0) tutorialStage = 4
+        // S0 护栏：只要已到达过 S1，就永远不再问「装浏览器」
+        if (cookieMaxStage == 0 && chosen != null) cookieMaxStage = 1
+        if (cookieClipLength > 0) cookieMaxStage = 4
+        val stage = cookieMaxStage
 
         tut.setTypeface(null, Typeface.NORMAL)
         tut.background = tutorialPanelBackground()
@@ -686,7 +686,7 @@ class OverlayService : Service() {
             it.setTypeface(it.typeface, if (browserLabel == "火狐") Typeface.BOLD else Typeface.NORMAL)
         }
 
-        when (tutorialStage) {
+        when (stage) {
             4 -> renderTutorialStage4(tut, btn, altBtn, continueRow)
             1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             2 -> renderTutorialStage2(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
@@ -776,7 +776,7 @@ class OverlayService : Service() {
             btn?.setOnClickListener {
                 TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
                 vpnConfirmShown = false
-                tutorialStage = 3
+                cookieMaxStage = 3
                 render()
             }
             altBtn?.visibility = View.VISIBLE
@@ -912,7 +912,7 @@ class OverlayService : Service() {
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(dp(8), dp(2), dp(8), dp(2))
-            setOnClickListener { tutorialStage = 2; tutorialFailHint = null; render() }
+            setOnClickListener { cookieMaxStage = 2; tutorialFailHint = null; render() }
         }
         host.addView(link)
         host.visibility = View.VISIBLE
@@ -987,8 +987,7 @@ class OverlayService : Service() {
 
     private fun openApp() {
         // 已经从浏览器那一步过来、但剪贴板内容读不到时，也把教程推进到「回 App 粘贴」这一步
-        val snapshot = OverlayState.snapshot
-        if (snapshot.online && !snapshot.accountsReady && tutorialStage in 1..3) tutorialStage = 4
+        if (cookieMaxStage in 1..3) cookieMaxStage = 4
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
