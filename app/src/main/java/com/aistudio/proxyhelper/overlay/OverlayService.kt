@@ -21,6 +21,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -62,6 +63,9 @@ class OverlayService : Service() {
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private var windowManager: WindowManager? = null
     private var panelParams: WindowManager.LayoutParams? = null
+    private var detailsScroll: ScrollView? = null
+    private var closeButton: TextView? = null
+    private var reportMode = false
 
     private var root: LinearLayout? = null
     private var dot: View? = null
@@ -136,8 +140,18 @@ class OverlayService : Service() {
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(8), 0, 0, 0)
         }
+        val closeButton = TextView(this).apply {
+            text = "✕"
+            setTextColor(Color.parseColor("#FCA5A5"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setPadding(dp(12), 0, dp(2), 0)
+            visibility = View.GONE
+            setOnClickListener { exitReportMode() }
+        }
+        this.closeButton = closeButton
         titleRow.addView(dotView)
-        titleRow.addView(title)
+        titleRow.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        titleRow.addView(closeButton)
 
         val stage = TextView(this).apply {
             setTextColor(Color.parseColor("#CBD5E1"))
@@ -153,7 +167,6 @@ class OverlayService : Service() {
 
         val details = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
         }
         val ai = TextView(this).apply {
             setTextColor(Color.parseColor("#FDE68A"))
@@ -165,29 +178,50 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, dp(4), 0, 0)
         }
+
+        // 操作行：报错 + 打开 App，始终可见
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        val diagnoseText = TextView(this).apply {
+            text = "🩺 报错"
+            setTextColor(Color.parseColor("#FDE68A"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#33FFFFFF"))
+            }
+            setOnClickListener { runDiagnose() }
+        }
         val openAppText = TextView(this).apply {
             text = "打开 App"
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(0, dp(6), 0, 0)
+            setPadding(dp(12), dp(4), 0, 0)
             setOnClickListener { openApp() }
         }
-        val diagnoseText = TextView(this).apply {
-            text = "🔍 识别报错（AI 分析）"
-            setTextColor(Color.parseColor("#FDE68A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(0, dp(6), 0, 0)
-            setOnClickListener { runDiagnose() }
-        }
+        actionRow.addView(diagnoseText)
+        actionRow.addView(openAppText)
+
         details.addView(ai)
         details.addView(elapsed)
-        details.addView(diagnoseText)
-        details.addView(openAppText)
+
+        // 报错结果放在可滚动区域里，文字多了可以上下滑
+        val scroll = ScrollView(this).apply {
+            visibility = View.GONE
+            isFillViewport = true
+            addView(details)
+        }
+        detailsScroll = scroll
 
         panel.addView(titleRow)
         panel.addView(stage)
         panel.addView(guide)
-        panel.addView(details)
+        panel.addView(actionRow)
+        panel.addView(scroll)
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -243,6 +277,7 @@ class OverlayService : Service() {
                     if (!dragging) {
                         expanded = !expanded
                         details.visibility = if (expanded) View.VISIBLE else View.GONE
+                        scroll.visibility = if (expanded) View.VISIBLE else View.GONE
                         render()
                     }
                     true
@@ -295,16 +330,20 @@ class OverlayService : Service() {
 
         guideText?.text = "👉 ${snapshot.guidance}"
 
-        aiText?.text = snapshot.aiHint?.let { "AI：$it" } ?: "AI：还没有结论，点开 App 的「AI」页可以让我排查"
-
-        elapsedText?.text = if (OverlayState.deployStartedAt > 0L) {
-            "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 点击展开/收起 · 长按打开 App"
-        } else {
-            "点击展开/收起 · 长按打开 App"
+        if (!reportMode) {
+            aiText?.text = snapshot.aiHint?.let { "AI：$it" }
+                ?: "AI：还没有结论，点「🩺 报错」让我看看"
         }
 
-        if (!expanded) {
+        elapsedText?.text = if (OverlayState.deployStartedAt > 0L) {
+            "已用时 ${elapsedSec / 60} 分 ${elapsedSec % 60} 秒 · 拖动可移动 · 点一下展开/收起"
+        } else {
+            "拖动可移动 · 点一下展开/收起"
+        }
+
+        if (!expanded && !reportMode) {
             detailsBox?.visibility = View.GONE
+            detailsScroll?.visibility = View.GONE
         }
     }
 
@@ -322,12 +361,10 @@ class OverlayService : Service() {
         val serviceOnline = OverlayState.snapshot.online
         val useLocal = prefs.agentUseLocal || serviceOnline
         if (!useLocal && prefs.agentApiKey.isBlank()) {
-            aiText?.text = "AI：请先打开 App →「AI」页配置接口（或启动本机反代后重试）"
-            expandDetails()
+            showReport("还没有可用的 AI：请打开 App 的「解疑」页底部，选择「外接模型」填 Key，或先启动本机反代。")
             return
         }
-        aiText?.text = "AI：正在读取日志并分析…"
-        expandDetails()
+        showReport("正在读取后台日志和屏幕内容，请稍等…")
         diagnosisScope.launch {
             val config = com.aistudio.proxyhelper.agent.AgentConfig(
                 baseUrl = prefs.agentBaseUrl,
@@ -342,7 +379,7 @@ class OverlayService : Service() {
             val screen = com.aistudio.proxyhelper.automation.AutomationController
                 .captureActiveWindowText()
             if (useLocal && prefs.agentLocalModel.isBlank()) {
-                aiText?.text = "AI：本机反代还没选择模型，请到 App 的「AI」页拉取并选一个模型"
+                showReport("本机反代还没选择模型：打开 App 的「解疑」页底部，切到「本地反代」，拉取模型并选一个。")
                 return@launch
             }
             val payload = buildString {
@@ -360,12 +397,45 @@ class OverlayService : Service() {
                     onLine = { }
                 )
             }.getOrElse { "识别失败：${it.message}" }
-            aiText?.text = "AI：" + answer.lineSequence().joinToString(" ").take(300)
+            showReport(answer.trim())
             OverlayState.update(
                 OverlayState.snapshot.copy(
                     aiHint = answer.lineSequence().firstOrNull()?.take(80)
                 )
             )
+        }
+    }
+
+    /** 放大悬浮窗并显示报错分析结果（可上下滚动）。 */
+    private fun showReport(text: String) {
+        reportMode = true
+        expanded = true
+        aiText?.text = "AI 分析：\n$text"
+        aiText?.visibility = View.VISIBLE
+        elapsedText?.visibility = View.VISIBLE
+        detailsScroll?.visibility = View.VISIBLE
+        closeButton?.visibility = View.VISIBLE
+
+        val params = panelParams ?: return
+        val dm = resources.displayMetrics
+        params.width = (dm.widthPixels * 0.92f).toInt()
+        params.height = (dm.heightPixels * 0.55f).toInt()
+        root?.let { view ->
+            runCatching { windowManager?.updateViewLayout(view, params) }
+        }
+    }
+
+    /** 点 ✕ 收起报错面板，悬浮窗恢复原来的小尺寸。 */
+    private fun exitReportMode() {
+        reportMode = false
+        expanded = false
+        detailsScroll?.visibility = View.GONE
+        closeButton?.visibility = View.GONE
+        val params = panelParams ?: return
+        params.width = dp(280)
+        params.height = WindowManager.LayoutParams.WRAP_CONTENT
+        root?.let { view ->
+            runCatching { windowManager?.updateViewLayout(view, params) }
         }
     }
 
