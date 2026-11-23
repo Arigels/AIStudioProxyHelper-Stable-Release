@@ -176,7 +176,7 @@ fun UsageScreen(
                     )
                 }
                 FaqItem(
-                    q = "点一键部署没反应？",
+                    q = "点半自动部署没反应？",
                     a = "多半是没装 Termux：回「反代」页，按「首次准备」卡片下载并安装 64 位 Termux（勿用 Play 商店旧版）。"
                 )
                 FaqItem(

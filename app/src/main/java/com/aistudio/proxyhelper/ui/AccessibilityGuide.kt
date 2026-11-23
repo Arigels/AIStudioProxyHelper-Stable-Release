@@ -147,7 +147,7 @@ fun AccessibilityGuideBody() {
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "不影响使用：点「一键搭建并启动」时，App 会把命令复制好并自动打开 Termux，你只要长按屏幕点「粘贴」，再按一下回车（或键盘的发送键）即可。整个流程只多这一步。",
+            text = "不影响使用：点「半自动搭建并启动」时，App 会把命令复制好并自动打开 Termux，你只要长按屏幕点「粘贴」，再按一下回车（或键盘的发送键）即可。按向导操作即可，整个流程只多这一步。",
             style = MaterialTheme.typography.bodySmall
         )
     }
