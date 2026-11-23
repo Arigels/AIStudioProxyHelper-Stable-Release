@@ -70,9 +70,13 @@ fun AccessibilityGuideBody() {
             shape = RoundedCornerShape(8.dp)
         ) {
             Text(
-                text = "出现「已限制设置」这行小字（小米、红米、OPPO、vivo、荣耀最常见）\n" +
-                    "→ 点它右边的小字「解除限制」或「允许受限制的设置」，再打开开关。\n" +
-                    "这行字很小、颜色很浅，容易漏看。",
+                text = "最常见的是 ColorOS（OPPO / 一加 / realme）和 HyperOS（小米 / 红米）的「授权限制」，" +
+                    "需要先在「应用详情」里解除，否则无障碍和悬浮窗都打不开。\n\n" +
+                    "ColorOS（OPPO/一加/realme）：\n" +
+                    "设置 → 应用 → 应用管理 → 找到本 App → 权限管理 → 右上角「⋮」→「解除所有授权限制」\n\n" +
+                    "HyperOS / MIUI（小米/红米）：\n" +
+                    "无障碍页打开开关时，弹窗里点小字「解除限制」；或在 应用详情 → 权限 里允许「受限制的设置」\n\n" +
+                    "这两行字都很小、颜色很浅，容易漏看。",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(10.dp),
                 color = MaterialTheme.colorScheme.onErrorContainer
@@ -93,9 +97,11 @@ fun AccessibilityGuideBody() {
         )
         Text(
             text = "小米 / 红米（HyperOS、MIUI）\n" +
-                "设置 → 更多设置 → 无障碍 → 已下载的应用 → 选本 App → 若有「已限制设置」点「解除限制」\n\n" +
+                "设置 → 更多设置 → 无障碍 → 已下载的应用 → 选本 App → 若有「已限制设置」点「解除限制」\n" +
+                "（授权限制解除：应用详情 → 权限 → 「受限制的设置」允许）\n\n" +
                 "OPPO / 一加 / realme（ColorOS）\n" +
-                "设置 → 系统设置 → 无障碍 → 已下载的服务 → 选本 App → 弹窗点「允许受限制的设置」\n\n" +
+                "先解除限制：设置 → 应用 → 应用管理 → 本 App → 权限管理 → 右上角「⋮」→「解除所有授权限制」\n" +
+                "再开无障碍：设置 → 系统设置 → 无障碍 → 已下载的服务 → 选本 App\n\n" +
                 "vivo / iQOO（OriginOS）\n" +
                 "设置 → 快捷与辅助 → 无障碍 → 已下载的应用 → 选本 App\n\n" +
                 "荣耀 / 华为（MagicOS、EMUI）\n" +

@@ -71,6 +71,15 @@ object EnvironmentChecker {
         runCatching { context.startActivity(intent) }
     }
 
+    /** 打开本 App 的「应用详情」页（ColorOS 等系统的「解除所有授权限制」入口在这里）。 */
+    fun openAppDetails(context: Context) {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+    }
+
     private fun isPackageInstalled(context: Context, packageName: String): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

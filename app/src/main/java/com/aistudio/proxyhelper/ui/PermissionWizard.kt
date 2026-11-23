@@ -26,6 +26,7 @@ fun PermissionWizardDialog(
     onDismiss: () -> Unit,
     onOpenOverlay: () -> Unit,
     onOpenA11y: () -> Unit,
+    onOpenAppDetails: () -> Unit,
     onShowRestrictionGuide: () -> Unit,
     onOpenRestrictionSettings: () -> Unit
 ) {
@@ -45,10 +46,12 @@ fun PermissionWizardDialog(
                 )
                 WizardStep(
                     number = "①",
-                    title = "先解除系统的权限限制",
-                    desc = "小米/红米、OPPO、vivo、荣耀 会限制第三方应用授权，弹窗里有一行小字「解除限制 / 允许受限制的设置」，必须先点它，否则后面两步都开不了。",
-                    actionLabel = "看解除方法",
-                    onAction = onShowRestrictionGuide
+                    title = "先解除系统的「授权限制」",
+                    desc = "ColorOS（OPPO/一加/realme）：应用详情 → 权限管理 → 右上角「⋮」→「解除所有授权限制」。\n" +
+                        "HyperOS（小米/红米）：无障碍开关弹窗里点小字「解除限制」。\n" +
+                        "不解除的话，下面两步都会被挡住。",
+                    actionLabel = "打开应用详情去解除",
+                    onAction = onOpenAppDetails
                 )
                 WizardStep(
                     number = "②",
@@ -64,6 +67,9 @@ fun PermissionWizardDialog(
                     actionLabel = "去开启",
                     onAction = onOpenA11y
                 )
+                TextButton(onClick = onShowRestrictionGuide) {
+                    Text("看完整的分品牌步骤")
+                }
             }
         },
         confirmButton = {

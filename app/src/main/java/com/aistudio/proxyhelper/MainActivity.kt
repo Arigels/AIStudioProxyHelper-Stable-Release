@@ -52,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.net.LogCollector
+import com.aistudio.proxyhelper.network.EnvironmentChecker
 import com.aistudio.proxyhelper.overlay.OverlayService
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.ui.AccessibilityGuideDialog
@@ -258,6 +259,9 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
                 }
             },
             onShowRestrictionGuide = { showRestrictionGuide = true },
+            onOpenAppDetails = {
+                EnvironmentChecker.openAppDetails(context)
+            },
             onOpenRestrictionSettings = {
                 runCatching {
                     context.startActivity(
