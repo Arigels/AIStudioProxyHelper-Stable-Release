@@ -25,6 +25,8 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aistudio.proxyhelper.MainActivity
+import com.aistudio.proxyhelper.data.SettingsRepository
+import com.aistudio.proxyhelper.net.LogCollector
 import kotlinx.coroutines.launch
 
 /** 悬浮窗展示的快照，由 App 主界面轮询时写入。 */
