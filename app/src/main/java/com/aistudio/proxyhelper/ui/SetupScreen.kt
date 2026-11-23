@@ -96,7 +96,6 @@ fun SetupScreen(
     onOpenGuide: () -> Unit,
     onAiAssist: () -> Unit,
     onRestartService: () -> Unit,
-    onTestModels: () -> Unit,
     onToggleOverlay: () -> Unit,
     onOpenSecurityKeys: () -> Unit,
     onDeleteApiKey: (String) -> Unit
@@ -136,19 +135,10 @@ fun SetupScreen(
             onOpenConsole = onOpenConsole
         )
 
-        // 1.5 启动反代：紧贴状态卡下面，仅在第一次部署成功（服务上线过）后才出现
-        if (uiState.deploySucceeded) {
+        // 1.5 启动反代：只在「部署成功过、但现在没在运行」时出现，做成显眼的离线提醒
+        if (uiState.deploySucceeded && !uiState.service.online) {
             RestartProxyCard(
-                online = uiState.service.online,
                 onRestart = onRestartService
-            )
-        }
-
-        // 1.6 拉取反代模型：仅在第一次部署成功后才出现，只读列表不耗额度
-        if (uiState.deploySucceeded) {
-            ModelPullCard(
-                uiState = uiState,
-                onTestModels = onTestModels
             )
         }
 
@@ -943,25 +933,26 @@ private fun AdvancedSettingsCard(
 
 @Composable
 private fun RestartProxyCard(
-    online: Boolean,
     onRestart: () -> Unit
 ) {
+    val context = LocalContext.current
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFFFFF1F2))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "启动反代",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
+                text = "⚠️ 反代没有在运行",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFB91C1C)
             )
             Text(
-                text = "下次打开 Termux 或酒馆之前，先点一下这里把反代服务跑起来；" +
-                    "如果状态已经是「运行中」，就不用管它。",
+                text = "点下面按钮重启反代；如果 Termux 被系统杀了，先把 Termux 拉成小窗/分屏再启动。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -983,92 +974,15 @@ private fun RestartProxyCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text(if (online) "重启反代服务" else "启动反代")
+                Text("重启反代")
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ModelPullCard(
-    uiState: MainUiState,
-    onTestModels: () -> Unit
-) {
-    val models = uiState.service.models
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "拉取反代模型",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "检测反代是否能正常拿到可用模型列表。这一步只是读列表，不消耗任何额度。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Button(
-                onClick = onTestModels,
-                enabled = !uiState.testingModels && uiState.service.online,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+            TextButton(
+                onClick = { TermuxBridge.openTermux(context) },
+                modifier = Modifier.align(Alignment.End)
             ) {
-                if (uiState.testingModels) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("正在拉取…")
-                } else {
-                    Text(if (uiState.service.online) "拉取模型列表" else "服务未运行，先启动反代")
-                }
-            }
-            uiState.lastTestResult?.let { (ok, msg) ->
-                Surface(
-                    color = if (ok) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = msg,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
-            }
-            if (models.isNotEmpty()) {
-                Text(
-                    text = "可用模型（${models.size}）",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    models.take(16).forEach { model ->
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = model,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
+                Icon(Icons.Filled.Terminal, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("打开 Termux")
             }
         }
     }
@@ -1209,7 +1123,6 @@ private fun NextStepsCard(
     if (!service.online) return
 
     val accountReady = service.accounts.isNotEmpty()
-    val connectionTested = uiState.lastTestResult?.first == true
 
     val title: String
     val desc: String
@@ -1223,15 +1136,9 @@ private fun NextStepsCard(
             actionLabel = "去导入 Cookie"
             action = onGoToAccounts
         }
-        !connectionTested -> {
-            title = "下一步 ②：拉取模型并配置客户端"
-            desc = "账号已就绪（${service.accounts.size} 个）。点上方「拉取模型列表」确认正常，然后复制本机地址填入酒馆（配置参数见「解疑」页）。"
-            actionLabel = "查看酒馆配置说明"
-            action = onGoToClients
-        }
         else -> {
             title = "全部就绪 ✅"
-            desc = "服务、账号、模型均正常。你可以直接关闭本 App，仅保留 Termux 和 VPN 在后台即可；以后需要查额度或遇到问题时再打开本 App。"
+            desc = "本机地址可在上方或悬浮窗复制；需要配置酒馆看「解疑」页。模型列表和额度在「账号」页查看。"
             actionLabel = "查看解疑说明"
             action = onOpenGuide
         }
@@ -1250,7 +1157,7 @@ private fun NextStepsCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = if (accountReady && connectionTested) Icons.Filled.CheckCircle else Icons.Filled.Info,
+                    imageVector = if (accountReady) Icons.Filled.CheckCircle else Icons.Filled.Info,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary
                 )

@@ -63,8 +63,6 @@ data class MainUiState(
     val agentAnswer: String? = null,
     val importingCookie: Boolean = false,
     val lastImportResult: ImportResult? = null,
-    val testingModels: Boolean = false,
-    val lastTestResult: Pair<Boolean, String>? = null,
     val lastDispatchedCommand: String? = null,
     val snackbarMessage: String? = null,
     val showPasteDialog: Boolean = false,
@@ -78,7 +76,9 @@ data class MainUiState(
     val showSecurityKeyDialog: Boolean = false,
     val savingSecurityKeys: Boolean = false,
     val quotaChecking: Boolean = false,
-    val busyAccountId: String? = null
+    val busyAccountId: String? = null,
+    /** 第一次服务状态请求已返回（无论在线 / 离线）；用于启动分流，不能用 checking 判断 */
+    val statusLoaded: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -173,6 +173,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val currentSettings = _uiState.value.settings
             val status = apiClient.fetchServiceStatus(currentSettings)
             if (status.online) {
+                // 只有 /health 真的在线才算部署成功；命令发出（dispatch）绝不写这里
+                if (!_uiState.value.service.online) {
+                    LogCollector.append("[部署] verified online port=${currentSettings.port}")
+                }
                 settingsRepo.hasDeployed = true
                 settingsRepo.deploySucceeded = true
                 OverlayState.deployStartedAt = 0L
@@ -180,6 +184,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(
                     service = status,
+                    statusLoaded = true,
                     hasDeployed = it.hasDeployed || status.online,
                     deploySucceeded = it.deploySucceeded || status.online,
                     deploying = if (status.online) false else it.deploying,
@@ -200,9 +205,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val guidance = when {
             status.online && status.accounts.isEmpty() ->
                 "服务已启动！下一步：去「账号」页导出并粘贴 Cookie，之后就能用 AI Studio 反代"
-            status.online && state.lastTestResult?.first != true ->
-                "下一步：在「反代」页拉取模型列表，并复制地址填进酒馆"
-            status.online -> "一切就绪，可以连酒馆开玩了"
+            status.online -> "反代运行中 · 本机地址可在悬浮窗复制"
             visibleError != null && visibleError.contains("梯子") ->
                 "梯子可能没开或已断，检查代理后再试"
             visibleError != null && visibleError.contains("403") ->
@@ -247,7 +250,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 deploying = state.deploying,
                 hasDeployed = state.hasDeployed,
                 termuxInstalled = termuxInstalled,
-                a11yEnabled = accessibilityEnabled
+                a11yEnabled = accessibilityEnabled,
+                localBaseUrl = state.settings.localBaseUrl
             )
         )
     }
@@ -466,18 +470,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .apply()
         }
 
+        LogCollector.append("[部署] dispatched action=${action.name}")
         when (val result = TermuxBridge.runInTermux(ctx, action, settings, preferAccessibility)) {
             is TermuxDispatchResult.AutomatedByAccessibility -> {
                 val markDeployed = action == TermuxAction.INSTALL_AND_START ||
                     action == TermuxAction.INSTALL_ONLY
                 val markExternal = action == TermuxAction.INSTALL_AND_START ||
                     action == TermuxAction.ENABLE_EXTERNAL_APPS
-                if (markDeployed) settingsRepo.hasDeployed = true
+                // 命令发出只代表 dispatched，不代表部署成功：hasDeployed 只由 refreshServiceStatus 写
                 if (markExternal) settingsRepo.externalAppsSetupDone = true
                 _uiState.update {
                     it.copy(
                         lastDispatchedCommand = result.command,
-                        hasDeployed = it.hasDeployed || markDeployed,
                         externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
                         deploying = it.deploying || markDeployed,
                         deployStartedAt = if (markDeployed && !it.deploying) {
@@ -494,12 +498,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val markDeployed = action == TermuxAction.INSTALL_AND_START ||
                     action == TermuxAction.INSTALL_ONLY
                 val markExternal = action == TermuxAction.ENABLE_EXTERNAL_APPS
-                if (markDeployed) settingsRepo.hasDeployed = true
                 if (markExternal) settingsRepo.externalAppsSetupDone = true
                 _uiState.update {
                     it.copy(
                         lastDispatchedCommand = result.command,
-                        hasDeployed = it.hasDeployed || markDeployed,
                         externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
                         deploying = it.deploying || markDeployed,
                         deployStartedAt = if (markDeployed && !it.deploying) {
@@ -530,7 +532,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     action == TermuxAction.INSTALL_ONLY
                 val markExternal = action == TermuxAction.ENABLE_EXTERNAL_APPS ||
                     result.command.contains("allow-external-apps")
-                if (markDeployed) settingsRepo.hasDeployed = true
                 if (markExternal) settingsRepo.externalAppsSetupDone = true
                 val a11yHint = if (AutomationController.isServiceEnabled(ctx) &&
                     !AutomationController.isServiceConnected()
@@ -542,7 +543,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         lastDispatchedCommand = result.command,
-                        hasDeployed = it.hasDeployed || markDeployed,
                         externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
                         deploying = it.deploying || markDeployed,
                         deployStartedAt = if (markDeployed && !it.deploying) {
@@ -569,12 +569,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val markDeploying = action == TermuxAction.INSTALL_AND_START
         val markExternal = action == TermuxAction.INSTALL_AND_START ||
             action == TermuxAction.ENABLE_EXTERNAL_APPS
-        if (markDeployed) settingsRepo.hasDeployed = true
+        // 只复制命令同样不算部署成功
         if (markExternal) settingsRepo.externalAppsSetupDone = true
         _uiState.update {
             it.copy(
                 lastDispatchedCommand = cmd,
-                hasDeployed = it.hasDeployed || markDeployed,
                 externalAppsSetupDone = it.externalAppsSetupDone || markExternal,
                 deploying = it.deploying || markDeploying,
                 deployError = if (markDeployed) null else it.deployError,
@@ -759,23 +758,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val (ok, msg) = apiClient.deleteAccount(_uiState.value.settings, accountId)
             _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
             if (ok) refreshServiceStatus(silent = true)
-        }
-    }
-
-    fun testModelsConnectivity() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(testingModels = true, lastTestResult = null) }
-            val res = apiClient.testModelsEndpoint(_uiState.value.settings)
-            _uiState.update {
-                it.copy(
-                    testingModels = false,
-                    lastTestResult = res,
-                    snackbarMessage = res.second
-                )
-            }
-            if (res.first) {
-                refreshServiceStatus(silent = true)
-            }
         }
     }
 

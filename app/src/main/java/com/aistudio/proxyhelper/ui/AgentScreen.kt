@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -83,10 +84,19 @@ fun AgentScreen(
     onFetchModels: (String, String, String, Boolean, String) -> Unit,
     onRun: (String) -> Unit,
     onAskTavern: (String) -> Unit,
+    initialProblem: String? = null,
     embedded: Boolean = false
 ) {
     var problem by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
+
+    // 有错误时预填到输入框，但不自动调用 AI（避免打开 App 就消耗额度）
+    LaunchedEffect(initialProblem) {
+        if (!initialProblem.isNullOrBlank() && problem.isBlank()) {
+            problem = initialProblem
+            mode = 0
+        }
+    }
     var showConfig by remember {
         mutableStateOf(
             if (uiState.agentUseLocal) uiState.agentLocalModel.isBlank()

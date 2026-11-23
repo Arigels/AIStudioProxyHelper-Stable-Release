@@ -43,6 +43,7 @@ import com.aistudio.proxyhelper.data.ErrorExplainer
 @Composable
 fun UsageScreen(
     uiState: MainUiState,
+    agentFirst: Boolean = false,
     agentContent: @Composable () -> Unit = {}
 ) {
     Column(
@@ -52,6 +53,10 @@ fun UsageScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // 教程完成 + 在线时，报错处理区放到最前面，打开即可用
+        if (agentFirst) {
+            agentContent()
+        }
         // ── 酒馆启动教程（Termux 新会话）──
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
@@ -97,6 +102,11 @@ fun UsageScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
+                    text = "⑥ 以后每次启动酒馆使用反代，都要开启两个窗口：一个跑反代、一个跑酒馆。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
                     text = "卡点：侧栏拉不出来就从屏幕最边缘起手；提示端口占用说明是在旧会话里重复启动了。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
@@ -133,7 +143,7 @@ fun UsageScreen(
                 )
 
                 Text(
-                    text = "代理地址和模型列表都在「反代」页，那里点一下就能复制地址。",
+                    text = "代理地址在「反代」页，也可在悬浮窗直接复制；模型列表和额度看「账号」页。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -207,8 +217,10 @@ fun UsageScreen(
             }
         }
 
-        // ── AI 助手（放在解疑页最下面）──
-        agentContent()
+        // ── AI 助手（默认放在解疑页最下面）──
+        if (!agentFirst) {
+            agentContent()
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
     }

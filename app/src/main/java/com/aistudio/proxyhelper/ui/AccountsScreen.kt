@@ -1630,9 +1630,9 @@ private fun CookieGuideCard(
     val targetBrowser = resolveTargetBrowser(env, preferFirefox)
     // 按实际检测到的浏览器给具体点击路径，未检测到时给通用兜底
     val browserMenuPath = when (targetBrowser?.label) {
-        "Edge" -> "点浏览器底部工具栏右侧的「≡」→ 菜单里选「扩展」→ 在扩展列表里点 Cookie-Editor"
-        "火狐" -> "点浏览器右上角的「⋮」（三个点）→ 选「扩展」→ 在扩展列表里点 Cookie-Editor"
-        else -> "在浏览器里打开「扩展」菜单再点 Cookie-Editor（Edge：底部「≡」→「扩展」；火狐：右上角「⋮」→「扩展」）"
+        "Edge" -> "点浏览器底部的 ☰ → 菜单里选「扩展」→ 在扩展列表里点 Cookie-Editor"
+        "火狐" -> "点浏览器右上角的 ⋮ → 选「扩展」→ 在扩展列表里点 Cookie-Editor"
+        else -> "在浏览器里打开「扩展」菜单再点 Cookie-Editor（Edge：底部 ☰ →「扩展」；火狐：右上角 ⋮ →「扩展」）"
     }
 
     Card(
@@ -1671,7 +1671,7 @@ private fun CookieGuideCard(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "⚠️ 开始以下操作前，请先确认 VPN 已开启：登录 Google 账号必须能访问 Google。",
+                            text = "⚠️ 手机网络必须能打开 Google（VPN 正常），否则登录和 Cookie 都会失败。",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFF8A6D00),
                             fontWeight = FontWeight.SemiBold,
@@ -1698,6 +1698,8 @@ private fun CookieGuideCard(
                                 .putInt("guide_schema", 2)
                                 .putBoolean("cookie_done", false)
                                 .putBoolean("paste_step_confirmed", false)
+                                .putBoolean("login_step_done", false)
+                                // 不重置 tavern_done / tavern_address_tip_done：教程结束后不再重新拉人走一遍
                                 // 掉线统计一并清零，免得重置完立刻弹「频繁掉线」
                                 .remove("drop_window_start")
                                 .remove("drop_count")
@@ -1927,7 +1929,7 @@ private fun CookieGuideCard(
                     // 步骤 3
                     GuideStep(number = 3, title = "登录 Google AI Studio") {
                         Text(
-                            text = "需要能访问 Google 的网络环境。有多个账号时，点右上角头像「添加其他账号」把账号全部登好（导入时会自动识别）。",
+                            text = "页面加载后先点 Start / Get started / 开始使用（以页面实际按钮为准）进入登录；登录要用的 Google 账号即可。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1990,10 +1992,15 @@ private fun CookieGuideCard(
 
                     // 步骤 4
                     GuideStep(number = 4, title = "打开 Cookie-Editor 并导出 JSON") {
+                        val cookieExportPath = if (targetBrowser?.label == "火狐") {
+                            "点右下角图标 → 选 JSON → 复制 Cookie"
+                        } else {
+                            "滑到最右边 → 点右下角图标 → 选 JSON → 复制 Cookie"
+                        }
                         Text(
                             text = "1. 保持浏览器停留在已登录的 aistudio.google.com 页面。\n" +
-                                "2. 打开 Cookie-Editor 扩展：$browserMenuPath。\n" +
-                                "3. 扩展面板出现后，点右下角的 Export → 选「Export as JSON」（不要选 Header String 或 Netscape）。导出成功后完整 JSON 会自动复制到剪贴板。",
+                                "2. 打开 Cookie-Editor：$browserMenuPath。\n" +
+                                "3. $cookieExportPath",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

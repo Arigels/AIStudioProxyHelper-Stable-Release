@@ -1,6 +1,7 @@
 package com.aistudio.proxyhelper
 
 import android.os.Bundle
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -170,15 +171,35 @@ fun AIStudioProxyApp(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // 教程完成 = Termux 双开「下一步」+ 复制地址卡片「完成」都点过
+    val tutorialDone = remember {
+        val guidePrefs = context.getSharedPreferences("aistudio_tutorial", Context.MODE_PRIVATE)
+        guidePrefs.getBoolean("tavern_done", false) &&
+            guidePrefs.getBoolean("tavern_address_tip_done", false)
+    }
+    var initialRouteDone by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(requestedTab) {
         if (requestedTab != null) {
             selectedTab = requestedTab
+            initialRouteDone = true
             onTabHandled()
         }
     }
+    // 启动分流：教程完成后在线直接落到「解疑」页；离线留在「反代」页看显眼的重启提醒。
+    // 悬浮窗带 requestedTab 时优先（requestedTab 的 LaunchedEffect 已经把 initialRouteDone 置 true）。
+    LaunchedEffect(uiState.statusLoaded, requestedTab) {
+        if (uiState.statusLoaded && !initialRouteDone && requestedTab == null) {
+            selectedTab = when {
+                !tutorialDone -> 0
+                uiState.service.online -> 2
+                else -> 0
+            }
+            initialRouteDone = true
+        }
+    }
     val saveableStateHolder = rememberSaveableStateHolder()
-    val context = LocalContext.current
     val versionName = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -484,7 +505,6 @@ fun AIStudioProxyApp(
                         onRestartService = {
                             viewModel.executeTermuxAction(TermuxAction.START_SERVICE)
                         },
-                        onTestModels = viewModel::testModelsConnectivity,
                         onToggleOverlay = viewModel::toggleOverlay,
                         onOpenSecurityKeys = { viewModel.openSecurityKeyDialog(fromNetworkAlert = false) },
                         onDeleteApiKey = viewModel::deleteApiKey
@@ -509,6 +529,7 @@ fun AIStudioProxyApp(
 
                     2 -> UsageScreen(
                         uiState = uiState,
+                        agentFirst = selectedTab == 2 && tutorialDone && uiState.service.online,
                         agentContent = {
                             AgentScreen(
                                 uiState = uiState,
@@ -517,6 +538,11 @@ fun AIStudioProxyApp(
                                 onFetchModels = viewModel::fetchAgentModels,
                                 onRun = viewModel::runAgent,
                                 onAskTavern = viewModel::askTavern,
+                                initialProblem = when {
+                                    uiState.deployError != null -> "反代部署报错：${uiState.deployError}"
+                                    uiState.service.lastError != null -> "反代运行报错：${uiState.service.lastError}"
+                                    else -> null
+                                },
                                 embedded = true
                             )
                         }
@@ -652,7 +678,7 @@ private fun SecurityKeyDialog(
                 }
 
                 Text(
-                    text = "提示：设置后，酒馆（代理密码）和 Cherry Studio（API Key）都需要填这里的密钥；本 App 内拉取模型会自动使用新密钥。",
+                    text = "提示：设置后，酒馆（代理密码）和 Cherry Studio（API Key）都需要填这里的密钥；在报错页让 AI 排查时会自动使用新密钥。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
