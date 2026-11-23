@@ -96,7 +96,7 @@ class OverlayService : Service() {
     private var detailsBox: LinearLayout? = null
     private var aiText: TextView? = null
     private var elapsedText: TextView? = null
-    private var modelTipText: TextView? = null
+    private var modelTipText: LinearLayout? = null
 
     private var running = true
     private var expanded = false
@@ -121,6 +121,9 @@ class OverlayService : Service() {
 
     /** 酒馆向导是否已弹出完成确认卡 */
     private var tavernConfirmShown = false
+
+    /** 打开 Termux 失败时保留红色提示，避免下一次重渲染把它冲掉 */
+    private var tavernFailHint = false
 
     /** 酒馆向导是否已完成（持久化在第 7 步接入，先用内存值） */
     private var tavernDone = false
@@ -585,10 +588,9 @@ class OverlayService : Service() {
             tutorialBrowser = null
             vpnConfirmShown = false
             tutorialFailHint = null
-            tavernConfirmShown = false
         }
         when {
-            needCookie -> renderTutorial(true)
+            needCookie -> renderTutorial(!reportMode)
             tavernMode -> renderTavernGuide(!reportMode)
             else -> {
                 renderTutorial(false)
@@ -652,25 +654,6 @@ class OverlayService : Service() {
 
         when (tutorialStage) {
             4 -> renderTutorialStage4(tut, btn, altBtn, continueRow)
-            2 -> {
-                switchRow?.visibility = View.GONE
-                tut.text = if (cookieClipLength > 0) {
-                    "✅ Cookie 已复制（${cookieClipLength} 字符）\n④ 回 App →「账号」页 → 点「粘贴剪贴板」"
-                } else {
-                    "④ 回 App →「账号」页 → 点「粘贴剪贴板」→ 导入"
-                }
-                tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
-                tut.setTypeface(null, Typeface.BOLD)
-                tut.background = GradientDrawable().apply {
-                    cornerRadius = dp(8).toFloat()
-                    setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
-                    setStroke(dp(1), Color.parseColor("#66FDE047"))
-                }
-                btn?.visibility = View.VISIBLE
-                btn?.text = "📲 打开 App 去粘贴"
-                btn?.setOnClickListener { openApp() }
-                altBtn?.visibility = View.GONE
-            }
             1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             2 -> renderTutorialStage2(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             3 -> renderTutorialStage3(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
@@ -823,16 +806,17 @@ class OverlayService : Service() {
             return
         }
 
-        tut.text = "① 打开 Termux\n② 从屏幕左边缘向右滑，拉出白色小窗\n③ 点 NEW SESSION\n④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh）"
-        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        val steps = "① 打开 Termux\n② 从屏幕左边缘向右滑，拉出白色小窗\n③ 点 NEW SESSION\n④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh）"
+        tut.text = if (tavernFailHint) "未能打开 Termux，请手动从桌面启动\n\n$steps" else steps
+        tut.setTextColor(
+            Color.parseColor(if (tavernFailHint) "#FCA5A5" else "#DBEAFE")
+        )
         tut.background = tutorialPanelBackground()
         btn?.visibility = View.VISIBLE
         btn?.text = "打开 Termux"
         btn?.setOnClickListener {
-            if (!TermuxBridge.openTermux(this)) {
-                tut.text = "未能打开 Termux，请手动从桌面启动\n\n① 打开 Termux\n② 从屏幕左边缘向右滑，拉出白色小窗\n③ 点 NEW SESSION\n④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh）"
-                tut.setTextColor(Color.parseColor("#FCA5A5"))
-            }
+            tavernFailHint = !TermuxBridge.openTermux(this)
+            render()
         }
         altBtn?.visibility = View.VISIBLE
         altBtn?.text = "完成"
