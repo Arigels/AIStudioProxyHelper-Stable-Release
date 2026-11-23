@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.3.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.5.4.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.5.3.apk
+          path: dist/AIStudioProxyHelper-v2.5.4.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.5.3"
+          TAG="v2.5.4"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.3.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.5.4.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.3.apk \
-              --title "v2.5.3 — AI Studio 反代助手" \
-              --notes "权限限制改为纯提醒：去掉「打开权限管理/解除限制」的一切按钮与步骤，只保留一条醒目提示「本 App 可能被安卓手机限制权限，请按系统提示解除限制后再开启」。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.5.4.apk \
+              --title "v2.5.4 — AI Studio 反代助手" \
+              --notes "AI 书签改名「自定义」；启动反代与拉取模型移到状态卡正下方；老用户升级自动补 deploySucceeded；顶栏显示版本号，方便确认是否装到最新包。"
           fi

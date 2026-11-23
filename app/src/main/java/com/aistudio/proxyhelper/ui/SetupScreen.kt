@@ -131,13 +131,29 @@ fun SetupScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. 状态
+        // 1. 状态（反代服务运行中/未运行）
         ServiceStatusCard(
             uiState = uiState,
             onRefresh = onRefreshStatus,
             onCopyText = onCopyText,
             onOpenConsole = onOpenConsole
         )
+
+        // 1.5 启动反代：紧贴在状态卡下面，部署完成、服务跑起来过之后才出现
+        if (uiState.deploySucceeded || uiState.hasDeployed) {
+            RestartProxyCard(
+                online = uiState.service.online,
+                onRestart = onRestartService
+            )
+        }
+
+        // 1.6 拉取反代模型
+        if (uiState.deploySucceeded || uiState.hasDeployed) {
+            ModelPullCard(
+                uiState = uiState,
+                onTestModels = onTestModels
+            )
+        }
 
         // 2. 上线后的下一步引导
         NextStepsCard(
@@ -149,22 +165,6 @@ fun SetupScreen(
 
         // 2.5 悬浮窗开关（显眼位置）
         OverlayToggleCard(canDrawOverlays = uiState.canDrawOverlays)
-
-        // 2.6 启动反代（部署成功、服务跑起来过之后才出现）
-        if (uiState.deploySucceeded) {
-            RestartProxyCard(
-                online = uiState.service.online,
-                onRestart = onRestartService
-            )
-        }
-
-        // 2.7 拉取反代模型
-        if (uiState.deploySucceeded) {
-            ModelPullCard(
-                uiState = uiState,
-                onTestModels = onTestModels
-            )
-        }
 
         // 3. 唯一主操作
         PrimaryActionCard(

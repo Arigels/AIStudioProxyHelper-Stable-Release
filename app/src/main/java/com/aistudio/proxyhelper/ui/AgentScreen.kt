@@ -168,7 +168,7 @@ fun AgentScreen(
                                 false, localModel.trim()
                             )
                         },
-                        label = { Text("外接模型") },
+                        label = { Text("自定义") },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
@@ -189,7 +189,7 @@ fun AgentScreen(
                     text = if (useLocal) {
                         "当前只用「本地反代」这一个来源：直接调用你自己搭的反代，不用填地址和 Key。"
                     } else {
-                        "当前只用「外接模型」这一个来源：填你自己的服务商地址和 Key。两个来源不会同时调用。"
+                        "当前只用「自定义（外接模型）」这一个来源：填你自己的服务商地址和 Key。两个来源不会同时调用。"
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

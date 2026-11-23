@@ -94,6 +94,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     init {
+        // 老用户升级：之前部署过但没有 deploySucceeded 标记，直接补上，保证「启动反代」不会消失
+        if (settingsRepo.hasDeployed) {
+            settingsRepo.deploySucceeded = true
+        }
         startStatusPolling()
         viewModelScope.launch {
             AutomationController.statusMessage.collect { msg ->

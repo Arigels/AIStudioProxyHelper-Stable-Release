@@ -96,6 +96,11 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val context = LocalContext.current
+    val versionName = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: ""
+    }
 
     val tabs = remember {
         listOf(
@@ -227,10 +232,17 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "AI Studio 反代助手",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text(
+                            text = "AI Studio 反代助手",
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "v$versionName",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
