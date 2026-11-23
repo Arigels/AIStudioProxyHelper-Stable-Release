@@ -88,6 +88,11 @@ class OverlayService : Service() {
     private var guideText: TextView? = null
     private var tutorialText: TextView? = null
     private var tutorialButton: TextView? = null
+    private var tutorialAltButton: TextView? = null
+    private var tutorialContinueRow: LinearLayout? = null
+    private var tutorialSwitchRow: LinearLayout? = null
+    private var tutorialEdgeSwitch: TextView? = null
+    private var tutorialFirefoxSwitch: TextView? = null
     private var detailsBox: LinearLayout? = null
     private var aiText: TextView? = null
     private var elapsedText: TextView? = null
@@ -106,6 +111,9 @@ class OverlayService : Service() {
 
     /** 上一阶段用的浏览器名（Edge / 火狐），用于只显示对应那套点击路径 */
     private var tutorialBrowser: String? = null
+
+    /** S1 主按钮打开失败时的红色提示行 */
+    private var tutorialFailHint: String? = null
 
     /** 酒馆向导是否已完成（持久化在第 7 步接入，先用内存值） */
     private var tavernDone = false
@@ -238,18 +246,34 @@ class OverlayService : Service() {
             setTypeface(typeface, Typeface.BOLD)
             setPadding(dp(8), dp(6), dp(8), dp(2))
             visibility = View.GONE
-            setOnClickListener {
-                if (tutorialStage >= 2) {
-                    openApp()
-                    return@setOnClickListener
-                }
-                val browser = detectBrowser()
-                tutorialBrowser = browser?.first
-                tutorialStage = 1
-                TermuxBridge.openUrlInPackage(this@OverlayService, TermuxBridge.URL_AISTUDIO, browser?.second)
-                render()
-            }
         }
+        val tutorialAltBtn = TextView(this).apply {
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            visibility = View.GONE
+        }
+        val switchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), dp(2), dp(8), 0)
+            visibility = View.GONE
+        }
+        val edgeSwitch = TextView(this).apply {
+            text = "使用 Edge"
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, 0, dp(16), 0)
+            setOnClickListener { tutorialBrowser = "Edge"; tutorialFailHint = null; render() }
+        }
+        val firefoxSwitch = TextView(this).apply {
+            text = "使用 火狐"
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, 0, 0, 0)
+            setOnClickListener { tutorialBrowser = "火狐"; tutorialFailHint = null; render() }
+        }
+        switchRow.addView(edgeSwitch)
+        switchRow.addView(firefoxSwitch)
         val details = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -317,7 +341,14 @@ class OverlayService : Service() {
         panel.addView(stage)
         panel.addView(guide)
         panel.addView(tutorial)
+        panel.addView(switchRow)
         panel.addView(tutorialBtn)
+        panel.addView(tutorialAltBtn)
+        val continueRow = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        panel.addView(continueRow)
         panel.addView(actionRow)
         panel.addView(
             scroll,
@@ -405,6 +436,11 @@ class OverlayService : Service() {
             guideText = guide
             tutorialText = tutorial
             tutorialButton = tutorialBtn
+            tutorialAltButton = tutorialAltBtn
+            tutorialContinueRow = continueRow
+            tutorialSwitchRow = switchRow
+            tutorialEdgeSwitch = edgeSwitch
+            tutorialFirefoxSwitch = firefoxSwitch
             detailsBox = details
             aiText = ai
             elapsedText = elapsed
@@ -516,20 +552,51 @@ class OverlayService : Service() {
     private fun renderTutorial(show: Boolean) {
         val tut = tutorialText ?: return
         val btn = tutorialButton
+        val altBtn = tutorialAltButton
+        val switchRow = tutorialSwitchRow
+        val continueRow = tutorialContinueRow
         if (!show) {
             tut.visibility = View.GONE
             btn?.visibility = View.GONE
+            altBtn?.visibility = View.GONE
+            switchRow?.visibility = View.GONE
+            continueRow?.visibility = View.GONE
             return
         }
         tut.visibility = View.VISIBLE
-        btn?.visibility = View.VISIBLE
 
-        val browser = tutorialBrowser ?: detectBrowser()?.first
+        val (edge, firefox) = detectBrowsers()
+        val detected = edge ?: firefox
+        // 已手动切换到某一类、但该类未安装时，回退到检测到的那一类
+        val chosen = when (tutorialBrowser) {
+            "Edge" -> edge ?: detected
+            "火狐" -> firefox ?: detected
+            else -> detected
+        }
+        // S1 之前若被切到未安装的那一类，纠正回检测结果
+        if (tutorialBrowser != null && chosen?.first != tutorialBrowser) tutorialBrowser = chosen?.first
+        val browserLabel = chosen?.first
+        val browserPkg = chosen?.second
+        val bothInstalled = edge != null && firefox != null
+        if (tutorialStage == 0 && chosen != null) tutorialStage = 1
         if (cookieClipLength > 0) tutorialStage = 2
 
         tut.setTypeface(null, Typeface.NORMAL)
+        tut.background = tutorialPanelBackground()
+        continueRow?.visibility = View.GONE
+        switchRow?.visibility = if (bothInstalled) View.VISIBLE else View.GONE
+        tutorialEdgeSwitch?.let {
+            it.setTextColor(Color.parseColor(if (browserLabel == "Edge") "#FDE047" else "#93C5FD"))
+            it.setTypeface(it.typeface, if (browserLabel == "Edge") Typeface.BOLD else Typeface.NORMAL)
+        }
+        tutorialFirefoxSwitch?.let {
+            it.setTextColor(Color.parseColor(if (browserLabel == "火狐") "#FDE047" else "#93C5FD"))
+            it.setTypeface(it.typeface, if (browserLabel == "火狐") Typeface.BOLD else Typeface.NORMAL)
+        }
+
         when (tutorialStage) {
             2 -> {
+                switchRow?.visibility = View.GONE
                 tut.text = if (cookieClipLength > 0) {
                     "✅ Cookie 已复制（${cookieClipLength} 字符）\n④ 回 App →「账号」页 → 点「粘贴剪贴板」"
                 } else {
@@ -542,30 +609,91 @@ class OverlayService : Service() {
                     setColor(Color.parseColor(if (highlightPulse) "#33FDE047" else "#2A22C55E"))
                     setStroke(dp(1), Color.parseColor("#66FDE047"))
                 }
+                btn?.visibility = View.VISIBLE
                 btn?.text = "📲 打开 App 去粘贴"
+                btn?.setOnClickListener { openApp() }
+                altBtn?.visibility = View.GONE
             }
-            1 -> {
-                val path = when (browser) {
-                    "Edge" -> "点底部「…」→「扩展」→ Cookie-Editor"
-                    "火狐" -> "点右上「⋮」→「扩展」→ Cookie-Editor"
-                    else -> "在浏览器菜单里打开「扩展」→ Cookie-Editor"
-                }
-                tut.text = "② $path\n③ 点 Export → 选 Export as JSON（会自动复制）"
-                tut.setTextColor(Color.parseColor("#DBEAFE"))
-                tut.background = tutorialPanelBackground()
-                btn?.text = "🔁 再开一次 AI Studio"
-            }
+            1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            0 -> renderTutorialStage0(tut, btn, altBtn)
             else -> {
-                tut.text = if (browser != null) {
-                    "① 用 ${browser} 打开 aistudio.google.com 并登录"
-                } else {
-                    "① 先装 Edge 或火狐（手机 Chrome 不支持扩展）"
-                }
+                tut.text = "① 用 ${browserLabel ?: "浏览器"} 打开 aistudio.google.com 并登录"
                 tut.setTextColor(Color.parseColor("#DBEAFE"))
-                tut.background = tutorialPanelBackground()
-                btn?.text = if (browser != null) "🌐 在 $browser 打开 AI Studio" else "🌐 打开 AI Studio"
+                btn?.visibility = View.VISIBLE
+                btn?.text = "🌐 在 $browserLabel 打开 AI Studio"
+                altBtn?.visibility = View.GONE
             }
         }
+    }
+
+    /** S0：没检测到 Edge / 火狐，引导下载官网；不显示「打开 AI Studio」与「装好点这里」。 */
+    private fun renderTutorialStage0(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?
+    ) {
+        tut.text = "请安装一个支持扩展的浏览器（手机默认浏览器、Chrome 等不支持扩展）"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        btn?.visibility = View.VISIBLE
+        btn?.text = "下载 Edge（官网）"
+        btn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_EDGE_ANDROID) }
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = "下载火狐（官网）"
+        altBtn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_FIREFOX_ANDROID) }
+    }
+
+    /** S1：检测到浏览器、扩展还没装；主按钮用指定浏览器打开扩展页，次按钮复制链接。 */
+    private fun renderTutorialStage1(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?,
+        continueRow: LinearLayout?,
+        browserLabel: String?,
+        browserPkg: String?
+    ) {
+        val label = browserLabel ?: "Edge"
+        tut.text = if (label == "火狐") {
+            "① 打开 火狐浏览器，安装 Cookie-Editor 扩展"
+        } else {
+            "① 打开 Edge，安装 Cookie-Editor 扩展"
+        }
+        tut.setTextColor(if (tutorialFailHint != null) Color.parseColor("#FCA5A5") else Color.parseColor("#DBEAFE"))
+        val addonUrl = browserAddonUrl(label)
+        btn?.visibility = View.VISIBLE
+        btn?.text = if (label == "火狐") "在 火狐 打开扩展安装页" else "在 Edge 打开扩展安装页"
+        btn?.setOnClickListener {
+            val ok = TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
+            if (!ok) {
+                tutorialFailHint = label
+                render()
+            }
+        }
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = if (label == "火狐") "复制 火狐 CE 扩展链接" else "复制 Edge CE 扩展链接"
+        altBtn?.setOnClickListener {
+            TermuxBridge.copyToClipboard(this, "Cookie-Editor ${label}扩展链接", addonUrl)
+        }
+        val fail = tutorialFailHint
+        if (fail != null) {
+            tut.text = "${tut.text}\n未能用 $fail 打开，请点「复制链接」手动粘贴"
+        }
+        tut.setOnClickListener(null)
+        renderTutorialContinueLink(continueRow)
+    }
+
+    /** S1 推进链接：装好扩展后点这里进入下一步（S2 打开 AI Studio）。 */
+    private fun renderTutorialContinueLink(host: LinearLayout?) {
+        host ?: return
+        host.removeAllViews()
+        val link = TextView(this).apply {
+            text = "装好点这里 →"
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(dp(8), dp(2), dp(8), dp(2))
+            setOnClickListener { tutorialStage = 2; tutorialFailHint = null; render() }
+        }
+        host.addView(link)
+        host.visibility = View.VISIBLE
     }
 
     private fun tutorialPanelBackground(): GradientDrawable = GradientDrawable().apply {
@@ -586,6 +714,21 @@ class OverlayService : Service() {
         )
         return candidates.firstOrNull { installed(it.second) }
     }
+
+    /** 同时返回两类浏览器，用于两个都装时的「使用 Edge / 使用 火狐」切换。 */
+    private fun detectBrowsers(): Pair<Pair<String, String>?, Pair<String, String>?> {
+        fun installed(pkg: String): Boolean = runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
+        val edge = listOf(
+            TermuxBridge.PACKAGE_EDGE, TermuxBridge.PACKAGE_EDGE_BETA, TermuxBridge.PACKAGE_EDGE_CANARY
+        ).firstOrNull { installed(it) }?.let { "Edge" to it }
+        val firefox = listOf(
+            TermuxBridge.PACKAGE_FIREFOX, TermuxBridge.PACKAGE_FIREFOX_BETA, TermuxBridge.PACKAGE_FIREFOX_NIGHTLY
+        ).firstOrNull { installed(it) }?.let { "火狐" to it }
+        return edge to firefox
+    }
+
+    private fun browserAddonUrl(label: String?): String =
+        if (label == "火狐") TermuxBridge.URL_COOKIE_EDITOR else TermuxBridge.URL_COOKIE_EDITOR_EDGE
 
     /** Cookie-Editor 导出的 JSON 是 name/value 数组，用这个特征判断剪贴板里是不是它。 */
     private fun looksLikeCookieJson(text: String): Boolean {
