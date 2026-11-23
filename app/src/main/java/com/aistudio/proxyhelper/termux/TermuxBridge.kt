@@ -56,6 +56,9 @@ object TermuxBridge {
     const val URL_FIREFOX_ANDROID = "https://www.mozilla.org/zh-CN/firefox/android/"
     const val URL_FIREFOX_ARCHIVE = "https://archive.mozilla.org/pub/fenix/releases/"
     const val URL_COOKIE_EDITOR = "https://addons.mozilla.org/zh-CN/firefox/addon/cookie-editor/"
+    // 安卓版火狐要从 AMO 的 android 专区进，桌面页在手机上只会给 .xpi 下载
+    const val URL_COOKIE_EDITOR_FIREFOX_ANDROID =
+        "https://addons.mozilla.org/zh-CN/android/addon/cookie-editor/"
     const val PACKAGE_EDGE = "com.microsoft.emmx"
     const val PACKAGE_EDGE_BETA = "com.microsoft.emmx.beta"
     const val PACKAGE_EDGE_CANARY = "com.microsoft.emmx.canary"

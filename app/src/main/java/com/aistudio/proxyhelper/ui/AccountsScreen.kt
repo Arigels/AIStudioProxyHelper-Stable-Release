@@ -1578,7 +1578,7 @@ private fun resolveTargetBrowser(
         DetectedBrowser("Edge", it, TermuxBridge.URL_COOKIE_EDITOR_EDGE)
     }
     val firefox = firefoxPkg?.let {
-        DetectedBrowser("火狐", it, TermuxBridge.URL_COOKIE_EDITOR)
+        DetectedBrowser("火狐", it, TermuxBridge.URL_COOKIE_EDITOR_FIREFOX_ANDROID)
     }
     return when {
         edge != null && firefox != null -> if (preferFirefox) firefox else edge

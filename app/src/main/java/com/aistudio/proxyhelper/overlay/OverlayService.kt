@@ -919,6 +919,15 @@ class OverlayService : Service() {
         if (fail != null) {
             tut.text = "${tut.text}\n未能用 $fail 打开，请点「复制链接」手动粘贴"
         }
+        // 安卓版火狐 120 以下不支持扩展，AMO 只会给 .xpi 下载；版本号能读到就直接点明
+        if (label == "火狐") {
+            val ffMajor = firefoxMajorVersion(browserPkg)
+            tut.text = if (ffMajor in 1..119) {
+                "${tut.text}\n⚠️ 火狐 $ffMajor 低于 120，安卓版不支持扩展，只会给下载文件。请升级火狐，或改用 Edge。"
+            } else {
+                "${tut.text}\n页面只给「下载文件」？在火狐里点 ⋮ → 扩展 → 浏览全部扩展，搜 Cookie-Editor 安装。"
+            }
+        }
         tut.setOnClickListener(null)
         renderTutorialContinueLink(continueRow)
     }
@@ -1130,7 +1139,14 @@ class OverlayService : Service() {
     }
 
     private fun browserAddonUrl(label: String?): String =
-        if (label == "火狐") TermuxBridge.URL_COOKIE_EDITOR else TermuxBridge.URL_COOKIE_EDITOR_EDGE
+        if (label == "火狐") TermuxBridge.URL_COOKIE_EDITOR_FIREFOX_ANDROID else TermuxBridge.URL_COOKIE_EDITOR_EDGE
+
+    /** 取火狐主版本号（如 130.0 / 132.0b9 → 130 / 132）；读不到返回 0。 */
+    private fun firefoxMajorVersion(pkg: String?): Int {
+        if (pkg.isNullOrBlank()) return 0
+        val v = runCatching { packageManager.getPackageInfo(pkg, 0).versionName }.getOrNull().orEmpty()
+        return v.takeWhile { it.isDigit() }.toIntOrNull() ?: 0
+    }
 
     /** 读回上次检测到的浏览器包名，服务重启后继续用，不重新探测。 */
     private fun loadBrowserCache() {
