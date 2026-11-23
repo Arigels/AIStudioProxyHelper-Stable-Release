@@ -52,6 +52,58 @@ fun UsageScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // ── 酒馆启动教程（Termux 新会话）──
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "酒馆启动教程（Termux 新会话）",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "反代跑着的时候，Termux 那个会话被反代占着，不能在同一个会话里启动酒馆，否则会把反代顶掉。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "① 打开 Termux",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "② 从屏幕左边缘向右滑，拉出白色小窗（侧栏）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "③ 点 NEW SESSION",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "④ 在新窗口输入你的酒馆启动命令（示例：bash start.sh，按你自己装的方式）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "⑤ 启动后用浏览器打开酒馆地址（本机 127.0.0.1 / 局域网 IP）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "卡点：侧栏拉不出来就从屏幕最边缘起手；提示端口占用说明是在旧会话里重复启动了。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
         // ── 连接客户端 ──
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
