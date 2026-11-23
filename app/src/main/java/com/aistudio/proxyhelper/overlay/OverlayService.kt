@@ -115,6 +115,9 @@ class OverlayService : Service() {
     /** S1 主按钮打开失败时的红色提示行 */
     private var tutorialFailHint: String? = null
 
+    /** S2 是否已弹出 VPN 确认卡 */
+    private var vpnConfirmShown = false
+
     /** 酒馆向导是否已完成（持久化在第 7 步接入，先用内存值） */
     private var tavernDone = false
 
@@ -544,6 +547,8 @@ class OverlayService : Service() {
             cookieClipLength = 0
             tutorialStage = 0
             tutorialBrowser = null
+            vpnConfirmShown = false
+            tutorialFailHint = null
         }
         renderTutorial(needCookie && !reportMode)
     }
@@ -615,6 +620,7 @@ class OverlayService : Service() {
                 altBtn?.visibility = View.GONE
             }
             1 -> renderTutorialStage1(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            2 -> renderTutorialStage2(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
             0 -> renderTutorialStage0(tut, btn, altBtn)
             else -> {
                 tut.text = "① 用 ${browserLabel ?: "浏览器"} 打开 aistudio.google.com 并登录"
@@ -679,6 +685,48 @@ class OverlayService : Service() {
         }
         tut.setOnClickListener(null)
         renderTutorialContinueLink(continueRow)
+    }
+
+    /** S2：打开 AI Studio；先原地弹 VPN 确认卡，确认后才用指定浏览器打开。 */
+    private fun renderTutorialStage2(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?,
+        continueRow: LinearLayout?,
+        browserLabel: String?,
+        browserPkg: String?
+    ) {
+        val label = browserLabel ?: "Edge"
+        continueRow?.visibility = View.GONE
+        if (vpnConfirmShown) {
+            tut.text = "⚠️ 先确认 VPN 已开启\n需要能访问 Google，否则页面打不开"
+            tut.setTextColor(Color.parseColor("#FDE68A"))
+            btn?.visibility = View.VISIBLE
+            btn?.text = "已开，继续"
+            btn?.setOnClickListener {
+                TermuxBridge.openUrlInPackage(this, TermuxBridge.URL_AISTUDIO, browserPkg)
+                vpnConfirmShown = false
+                tutorialStage = 3
+                render()
+            }
+            altBtn?.visibility = View.VISIBLE
+            altBtn?.text = "取消"
+            altBtn?.setOnClickListener {
+                vpnConfirmShown = false
+                render()
+            }
+            return
+        }
+        tut.text = "② 打开 AI Studio 并登录（需要能访问 Google）"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
+        btn?.visibility = View.VISIBLE
+        btn?.text = if (label == "火狐") "用 火狐 打开 AI Studio" else "用 Edge 打开 AI Studio"
+        btn?.setOnClickListener { vpnConfirmShown = true; render() }
+        altBtn?.visibility = View.VISIBLE
+        altBtn?.text = "复制 AI Studio 链接"
+        altBtn?.setOnClickListener {
+            TermuxBridge.copyToClipboard(this, "AI Studio 链接", TermuxBridge.URL_AISTUDIO)
+        }
     }
 
     /** S1 推进链接：装好扩展后点这里进入下一步（S2 打开 AI Studio）。 */
