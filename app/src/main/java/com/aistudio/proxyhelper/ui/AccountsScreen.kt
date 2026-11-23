@@ -1657,6 +1657,19 @@ private fun CookieGuideCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                    Text(
+                        text = "教程步骤点乱了（比如误点「打开 App」跳到了粘贴那步）？点这里从头再来",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            context.getSharedPreferences("aistudio_tutorial", 0)
+                                .edit()
+                                .putInt("cookie_max_stage", 0)
+                                .putBoolean("cookie_done", false)
+                                .apply()
+                            onShowMessage("已重置教程：悬浮窗会从第一步重新带你走")
+                        }
+                    )
 
                     // 步骤 1
                     GuideStep(number = 1, title = "安装支持扩展的浏览器（Edge / 火狐）") {

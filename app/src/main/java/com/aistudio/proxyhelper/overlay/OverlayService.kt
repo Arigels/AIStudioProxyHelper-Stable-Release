@@ -374,14 +374,24 @@ class OverlayService : Service() {
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, 0, dp(16), 0)
-            setOnClickListener { tutorialBrowser = "Edge"; tutorialFailHint = null; render() }
+            setOnClickListener {
+                tutorialBrowser = "Edge"
+                tutorialFailHint = null
+                guidePrefs.edit().putString("browser_choice", "Edge").apply()
+                render()
+            }
         }
         val firefoxSwitch = TextView(this).apply {
             text = "使用 火狐"
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, 0, 0, 0)
-            setOnClickListener { tutorialBrowser = "火狐"; tutorialFailHint = null; render() }
+            setOnClickListener {
+                tutorialBrowser = "火狐"
+                tutorialFailHint = null
+                guidePrefs.edit().putString("browser_choice", "火狐").apply()
+                render()
+            }
         }
         switchRow.addView(edgeSwitch)
         switchRow.addView(firefoxSwitch)
@@ -760,9 +770,12 @@ class OverlayService : Service() {
         val (edge, firefox) = browsersFromCache()
         val detected = edge ?: firefox
         // 已手动切换到某一类、但该类未安装时，回退到检测到的那一类
-        val chosen = when (tutorialBrowser) {
-            "Edge" -> edge ?: detected
-            "火狐" -> firefox ?: detected
+        val chosen = when {
+            tutorialBrowser == "Edge" -> edge ?: detected
+            tutorialBrowser == "火狐" -> firefox ?: detected
+            // 记住用户上次手动选的浏览器；两个都装时不再无脑优先 Edge
+            guidePrefs.getString("browser_choice", "") == "Edge" && edge != null -> edge
+            guidePrefs.getString("browser_choice", "") == "火狐" && firefox != null -> firefox
             else -> detected
         }
         // S1 之前若被切到未安装的那一类，纠正回检测结果
@@ -1138,12 +1151,23 @@ class OverlayService : Service() {
         }
     }
 
-    /** 渲染只看缓存，避免每次重绘都探测导致退回 S0。 */
+    /** 渲染只看缓存，避免每次重绘都探测导致退回 S0；但缓存里的包已卸载时必须作废，否则会一直给错浏览器。 */
     private fun browsersFromCache(): Pair<Pair<String, String>?, Pair<String, String>?> {
+        if (edgePkgCache.isNotEmpty() && !isPackageInstalled(edgePkgCache)) {
+            edgePkgCache = ""
+            guidePrefs.edit().remove("browser_edge_pkg").apply()
+        }
+        if (firefoxPkgCache.isNotEmpty() && !isPackageInstalled(firefoxPkgCache)) {
+            firefoxPkgCache = ""
+            guidePrefs.edit().remove("browser_firefox_pkg").apply()
+        }
         val edge = edgePkgCache.takeIf { it.isNotEmpty() }?.let { "Edge" to it }
         val firefox = firefoxPkgCache.takeIf { it.isNotEmpty() }?.let { "火狐" to it }
         return edge to firefox
     }
+
+    private fun isPackageInstalled(pkg: String): Boolean =
+        runCatching { packageManager.getPackageInfo(pkg, 0) }.isSuccess
 
     /** Cookie-Editor 导出的 JSON 是 name/value 数组，用这个特征判断剪贴板里是不是它。 */
     private fun looksLikeCookieJson(text: String): Boolean {
@@ -1153,8 +1177,7 @@ class OverlayService : Service() {
     }
 
     private fun openApp() {
-        // 已经从浏览器那一步过来、但剪贴板内容读不到时，也把教程推进到「回 App 粘贴」这一步
-        if (cookieMaxStage in 1..3) cookieMaxStage = 4
+        // 只负责打开 App，不再偷偷把教程推进到「回 App 粘贴」——用户在 S1/S2 误点会跳步且无法回退
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
