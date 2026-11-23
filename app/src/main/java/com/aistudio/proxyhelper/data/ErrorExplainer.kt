@@ -53,7 +53,7 @@ object ErrorExplainer {
             Explanation(
                 title = "仓库没有克隆成功",
                 cause = "下载源码那一步失败了，所以找不到 install.sh。",
-                fix = "重新点「一键搭建并启动」；仍失败请检查网络/代理后重试。"
+                fix = "重新点「半自动搭建并启动」；仍失败请检查网络/代理后重试。"
             )
         ),
         Rule(
