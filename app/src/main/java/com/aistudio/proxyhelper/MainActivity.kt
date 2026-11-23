@@ -1,6 +1,7 @@
 package com.aistudio.proxyhelper
 
 import android.os.Bundle
+import android.content.Intent
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import java.security.SecureRandom
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aistudio.proxyhelper.automation.AutomationController
@@ -86,15 +88,56 @@ import com.aistudio.proxyhelper.ui.theme.AIStudioProxyTheme
 
 class MainActivity : ComponentActivity() {
 
+    /** 与 Compose 里的 viewModel() 共用同一个 ViewModelStore Owner，保证悬浮窗入口能直接触发部署 */
+    private val appViewModel: MainViewModel by lazy {
+        ViewModelProvider(this)[MainViewModel::class.java]
+    }
+    private var requestedTab by mutableStateOf<Int?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LogCollector.start()
         enableEdgeToEdge()
+        handleLaunchIntent(intent)
         setContent {
             AIStudioProxyTheme {
-                AIStudioProxyApp()
+                AIStudioProxyApp(
+                    viewModel = appViewModel,
+                    requestedTab = requestedTab,
+                    onTabHandled = { requestedTab = null }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+    }
+
+    /** 悬浮窗带过来的动作：切到账号页 / 直接开始半自动部署 / 启动反代 */
+    private fun handleLaunchIntent(intent: Intent?) {
+        intent ?: return
+        val tab = intent.getIntExtra(EXTRA_TAB, -1)
+        if (tab in 0..2) {
+            requestedTab = tab
+            intent.removeExtra(EXTRA_TAB)
+        }
+        if (intent.getBooleanExtra(EXTRA_DEPLOY_NOW, false)) {
+            intent.removeExtra(EXTRA_DEPLOY_NOW)
+            appViewModel.startDeployFromOverlay()
+        }
+        if (intent.getBooleanExtra(EXTRA_START_SERVICE, false)) {
+            intent.removeExtra(EXTRA_START_SERVICE)
+            appViewModel.startServiceFromOverlay()
+        }
+    }
+
+    companion object {
+        const val EXTRA_TAB = "extra_tab"
+        const val EXTRA_DEPLOY_NOW = "extra_deploy_now"
+        const val EXTRA_START_SERVICE = "extra_start_service"
     }
 }
 
@@ -105,10 +148,20 @@ private data class NavTab(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
+fun AIStudioProxyApp(
+    viewModel: MainViewModel = viewModel(),
+    requestedTab: Int? = null,
+    onTabHandled: () -> Unit = {}
+) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(requestedTab) {
+        if (requestedTab != null) {
+            selectedTab = requestedTab
+            onTabHandled()
+        }
+    }
     val saveableStateHolder = rememberSaveableStateHolder()
     val context = LocalContext.current
     val versionName = remember {

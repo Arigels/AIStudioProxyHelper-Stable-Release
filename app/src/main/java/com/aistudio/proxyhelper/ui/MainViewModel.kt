@@ -274,6 +274,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         executeTermuxActionInternal(action, skipVpnCheck = false)
     }
 
+    /** 悬浮窗「开始半自动部署」入口：VPN 已在悬浮窗确认过，不再弹 App 内确认框 */
+    fun startDeployFromOverlay() {
+        executeTermuxActionInternal(TermuxAction.INSTALL_AND_START, skipVpnCheck = true)
+    }
+
+    /** 悬浮窗「启动反代」入口 */
+    fun startServiceFromOverlay() {
+        executeTermuxActionInternal(TermuxAction.START_SERVICE, skipVpnCheck = true)
+    }
+
     /** 用户确认「VPN 已开启」后，继续执行挂起的部署动作。 */
     fun confirmVpnReminder() {
         val pending = _uiState.value.pendingDeployAction
@@ -434,14 +444,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             LogCollector.clear()
         }
 
-        // 部署类动作：不依赖无障碍自动操作，改为「复制 + 打开 Termux + 弹窗提示粘贴回车」
-        if (action == TermuxAction.INSTALL_AND_START ||
-            action == TermuxAction.INSTALL_ONLY ||
-            action == TermuxAction.ENABLE_EXTERNAL_APPS
-        ) {
-            if (isDeploy) {
-                OverlayState.deployStartedAt = System.currentTimeMillis()
-            }
+        // 部署类动作：无障碍已连接就走自动粘贴；不可用才退回「复制 + 弹窗」
+        if (isDeploy) {
+            OverlayState.deployStartedAt = System.currentTimeMillis()
+        }
+        if (action == TermuxAction.ENABLE_EXTERNAL_APPS) {
             runManualFallback(action)
             return
         }
