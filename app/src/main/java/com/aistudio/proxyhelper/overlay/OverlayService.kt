@@ -791,7 +791,7 @@ class OverlayService : Service() {
         }
 
         tutorialBadge?.visibility = if (readonly) View.VISIBLE else View.GONE
-        tutorialBadge?.text = "已完成的第 ${view + 1} 步"
+        tutorialBadge?.text = "已完成的第 ${view.coerceAtLeast(1)} 步"
         tutorialPrev?.visibility = if (view > 0) View.VISIBLE else View.GONE
         tutorialNext?.visibility = if (view < stage) View.VISIBLE else View.GONE
         tutorialNavRow?.visibility = if (view > 0 || view < stage) View.VISIBLE else View.GONE
