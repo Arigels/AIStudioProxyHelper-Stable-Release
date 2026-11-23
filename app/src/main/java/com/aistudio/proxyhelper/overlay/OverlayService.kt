@@ -983,16 +983,6 @@ class OverlayService : Service() {
                 altBtn?.text = "取消"
                 altBtn?.setOnClickListener { deployVpnConfirmShown = false; render() }
             }
-            deploying -> {
-                tut.text = "正在部署：${snapshot.stage.ifBlank { "准备中" }}\n" +
-                    "约 5~15 分钟；编译阶段长时间没输出是正常的，别杀 Termux"
-                btn?.visibility = View.VISIBLE
-                btn?.text = "打开 Termux 查看"
-                btn?.setOnClickListener { TermuxBridge.openTermux(this) }
-                altBtn?.visibility = View.VISIBLE
-                altBtn?.text = "出错了？诊断"
-                altBtn?.setOnClickListener { runDiagnose() }
-            }
             snapshot.error != null && !snapshot.online -> {
                 tut.text = "部署出错了：${snapshot.error.take(60)}"
                 tut.setTextColor(Color.parseColor("#FCA5A5"))
@@ -1001,6 +991,16 @@ class OverlayService : Service() {
                 btn?.setOnClickListener { deployVpnConfirmShown = true; render() }
                 altBtn?.visibility = View.VISIBLE
                 altBtn?.text = "查看诊断"
+                altBtn?.setOnClickListener { runDiagnose() }
+            }
+            deploying -> {
+                tut.text = "正在部署：${snapshot.stage.ifBlank { "准备中" }}\n" +
+                    "约 5~15 分钟；编译阶段长时间没输出是正常的，别杀 Termux"
+                btn?.visibility = View.VISIBLE
+                btn?.text = "打开 Termux 查看"
+                btn?.setOnClickListener { TermuxBridge.openTermux(this) }
+                altBtn?.visibility = View.VISIBLE
+                altBtn?.text = "出错了？诊断"
                 altBtn?.setOnClickListener { runDiagnose() }
             }
             deployedEver -> {
