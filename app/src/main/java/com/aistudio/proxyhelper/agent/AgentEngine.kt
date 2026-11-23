@@ -404,7 +404,7 @@ ARGS: 参数（没有参数就写空）
 - 编译阶段（安装 Go/Zig 并编译 SpiderMonkey 签名引擎）通常要 5~15 分钟且几乎无输出，属于正常现象，不要误判为卡死。
 - 服务常驻内存约 35~50MB，冷启动很快；不需要浏览器，也不需要远程签名节点。
 - 防掉线：Termux 通知栏 Acquire Wakelock + 电池无限制白名单。
-- Cookie 获取：手机装 Firefox 安卓版或狐猴浏览器（Chrome/Edge 安卓版不支持扩展），安装 Cookie-Editor，登录 aistudio.google.com 后 Export as JSON。
+- Cookie 获取：手机装 Microsoft Edge、Firefox 安卓版或狐猴浏览器（手机版 Chrome 不支持扩展），安装 Cookie-Editor，登录 aistudio.google.com 后 Export as JSON。
 - 导入 Cookie：服务启动后在浏览器打开 http://localhost:8080 → 账号管理 → 导入凭据；一个 Cookie 可自动识别多个子账号（u/0、u/1...）。
 - 客户端配置：酒馆选 Chat Completion + 来源 Google AI Studio；其他客户端必须选 Google Gemini 协议，绝不能选 OpenAI 格式；本项目没有 /v1/chat/completions。
 - 限流：429 按模型独立冷却并自动切号，每天下午 4 点（美西午夜）重置额度。

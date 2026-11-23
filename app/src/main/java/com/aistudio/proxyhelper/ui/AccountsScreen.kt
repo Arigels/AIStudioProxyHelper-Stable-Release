@@ -208,6 +208,11 @@ fun AccountsScreen(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+                Text(
+                    text = "每个账号右侧的标签是 Google 当前订阅等级：Free（免费）/ Pro / Ultra，方便你挑账号用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (uiState.service.accounts.isEmpty()) {
                     Text(
                         text = "还没有账号。导入后就可以在酒馆等客户端里直接刷出模型了。",
@@ -267,42 +272,68 @@ private fun CookieGuideCard(
                 )
             }
             Text(
-                text = "⚠️ 手机版 Chrome / Edge 不支持浏览器扩展，装不了 Cookie-Editor，请按下面步骤操作。",
+                text = "⚠️ 手机版 Chrome 不支持浏览器扩展；Microsoft Edge 与火狐都支持，本教程会自动识别你安装的浏览器。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
 
             // 步骤 1
-            GuideStep(number = 1, title = "安装一个支持扩展的浏览器") {
-                if (env.firefoxInstalled) {
+            GuideStep(number = 1, title = "安装支持扩展的浏览器（Edge / 火狐）") {
+                if (env.edgeInstalled) {
                     Text(
-                        text = "✅ 已检测到火狐浏览器，可以直接使用。",
+                        text = "✅ 已检测到 Microsoft Edge，可以直接使用。",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF15803D),
                         fontWeight = FontWeight.SemiBold
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                if (!TermuxBridge.launchPackage(context, TermuxBridge.PACKAGE_FIREFOX)) {
-                                    onShowMessage("未能打开火狐，请手动从桌面启动")
-                                }
-                            },
-                            shape = RoundedCornerShape(10.dp)
-                        ) { Text("打开火狐") }
-                        OutlinedButton(
-                            onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_FIREFOX_ANDROID) },
-                            shape = RoundedCornerShape(10.dp)
-                        ) { Text("重新下载") }
-                    }
+                    OutlinedButton(
+                        onClick = {
+                            val pkg = env.edgePackage ?: TermuxBridge.PACKAGE_EDGE
+                            if (!TermuxBridge.launchPackage(context, pkg)) {
+                                onShowMessage("未能打开 Edge，请手动从桌面启动")
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("打开 Edge") }
                 } else {
                     Text(
-                        text = "推荐「火狐浏览器（Firefox）国际版」，官网可直接下载 APK，国内可访问。",
+                        text = "推荐 Microsoft Edge（安卓版支持扩展，官网可直连下载）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_EDGE_ANDROID) },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("下载 Edge（官网）")
+                    }
+                }
+
+                if (env.firefoxInstalled) {
+                    Text(
+                        text = "✅ 已检测到火狐浏览器，也可以使用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF15803D),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            if (!TermuxBridge.launchPackage(context, TermuxBridge.PACKAGE_FIREFOX)) {
+                                onShowMessage("未能打开火狐，请手动从桌面启动")
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("打开火狐") }
+                } else {
+                    Text(
+                        text = "备选：火狐浏览器（Firefox）国际版，官网可直接下载 APK。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 TermuxBridge.openUrl(context, TermuxBridge.URL_FIREFOX_ANDROID)
                             },
@@ -330,37 +361,79 @@ private fun CookieGuideCard(
 
             // 步骤 2
             GuideStep(number = 2, title = "安装 Cookie-Editor 扩展") {
-                Text(
-                    text = "在火狐里打开下面的扩展页 → 点「添加到 Firefox」→ 允许安装（狐猴浏览器则在它自带的扩展商店里搜 Cookie-Editor）。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Button(
-                    onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_COOKIE_EDITOR) },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("打开 Cookie-Editor 扩展页")
+                val edgePkg = env.edgePackage
+                val browserPkg = edgePkg
+                    ?: TermuxBridge.PACKAGE_FIREFOX.takeIf { env.firefoxInstalled }
+                val browserName = when {
+                    edgePkg != null -> "Edge"
+                    env.firefoxInstalled -> "火狐"
+                    else -> null
                 }
-                OutlinedButton(
-                    onClick = {
-                        TermuxBridge.copyToClipboard(
-                            context,
-                            "Cookie-Editor 扩展链接",
-                            TermuxBridge.URL_COOKIE_EDITOR
-                        )
-                        onShowMessage("扩展链接已复制，去火狐地址栏粘贴打开")
-                    },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("复制扩展链接")
+                val addonUrl = if (edgePkg != null) {
+                    TermuxBridge.URL_COOKIE_EDITOR_EDGE
+                } else {
+                    TermuxBridge.URL_COOKIE_EDITOR
+                }
+
+                if (browserName != null) {
+                    Text(
+                        text = "已自动识别到你安装了 $browserName，点下面按钮会直接在该浏览器里打开扩展页。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = {
+                            val ok = TermuxBridge.openUrlInPackage(context, addonUrl, browserPkg)
+                            if (!ok) onShowMessage("未能用 $browserName 打开，请用下方「复制链接」手动粘贴")
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("在 $browserName 打开扩展页")
+                    }
+                } else {
+                    Text(
+                        text = "还没检测到 Edge 或火狐：请先完成第 1 步，或直接用下面「复制链接」，在已装的浏览器地址栏粘贴打开。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            TermuxBridge.copyToClipboard(
+                                context,
+                                "Cookie-Editor Edge 链接",
+                                TermuxBridge.URL_COOKIE_EDITOR_EDGE
+                            )
+                            onShowMessage("Edge 扩展链接已复制，去 Edge 地址栏粘贴打开")
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("复制 Edge 链接")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            TermuxBridge.copyToClipboard(
+                                context,
+                                "Cookie-Editor 火狐链接",
+                                TermuxBridge.URL_COOKIE_EDITOR
+                            )
+                            onShowMessage("火狐扩展链接已复制，去火狐地址栏粘贴打开")
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("复制火狐链接")
+                    }
                 }
                 Text(
-                    text = "⚠️ 建议把火狐设为「默认浏览器」再用上面的跳转；不设也行——" +
-                        "点「复制扩展链接」，然后在火狐地址栏粘贴打开即可。",
+                    text = "提示：Edge 用「Edge 外接程序」链接，火狐用「Firefox 附加组件」链接，两个不通用，别复制错。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -368,18 +441,40 @@ private fun CookieGuideCard(
 
             // 步骤 3
             GuideStep(number = 3, title = "登录 Google AI Studio") {
+                val edgePkg = env.edgePackage
+                val browserPkg = edgePkg
+                    ?: TermuxBridge.PACKAGE_FIREFOX.takeIf { env.firefoxInstalled }
+                val browserName = when {
+                    edgePkg != null -> "Edge"
+                    env.firefoxInstalled -> "火狐"
+                    else -> null
+                }
                 Text(
                     text = "需要能访问 Google 的网络环境。有多个账号时，点右上角头像「添加其他账号」把账号全部登好（导入时会自动识别）。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedButton(
-                    onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_AISTUDIO) },
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("打开 AI Studio")
+                if (browserName != null) {
+                    OutlinedButton(
+                        onClick = {
+                            val ok = TermuxBridge.openUrlInPackage(context, TermuxBridge.URL_AISTUDIO, browserPkg)
+                            if (!ok) onShowMessage("未能用 $browserName 打开，请用下方「复制链接」手动粘贴")
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("在 $browserName 打开 AI Studio")
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_AISTUDIO) },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("打开 AI Studio")
+                    }
                 }
                 OutlinedButton(
                     onClick = {
@@ -388,7 +483,7 @@ private fun CookieGuideCard(
                             "AI Studio 链接",
                             TermuxBridge.URL_AISTUDIO
                         )
-                        onShowMessage("AI Studio 链接已复制，去火狐地址栏粘贴打开")
+                        onShowMessage("AI Studio 链接已复制，去浏览器地址栏粘贴打开")
                     },
                     shape = RoundedCornerShape(10.dp)
                 ) {
@@ -422,7 +517,7 @@ private fun CookieGuideCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "✅ 以上步骤全部完成后，火狐浏览器和 Cookie-Editor 就可以按需卸载了——" +
+                    text = "✅ 以上步骤全部完成后，Edge / 火狐浏览器和 Cookie-Editor 就可以按需卸载了——" +
                         "Cookie 已经保存在本 App 里，卸载浏览器不影响反代使用。",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF1B5E20),
@@ -497,13 +592,43 @@ private fun AccountRowItem(acc: AccountSummary) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = "${acc.email ?: "未探测到邮箱"} · 额度等级 ${acc.tier}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = acc.email ?: "未探测到邮箱",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                val (tierLabel, tierColor) = tierBadge(acc.tier)
+                Surface(
+                    color = tierColor.copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Text(
+                        text = tierLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tierColor,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
         }
+    }
+}
+
+/** 把反代服务返回的等级字段归一化为 Free / Pro / Ultra 标签。 */
+private fun tierBadge(raw: String): Pair<String, Color> {
+    val t = raw.trim().lowercase()
+    return when {
+        t.contains("ultra") -> "Ultra" to Color(0xFF7C3AED)
+        t.contains("pro") -> "Pro" to Color(0xFF1D4ED8)
+        t.contains("free") -> "Free" to Color(0xFF15803D)
+        else -> "等级未识别" to Color(0xFF6B7280)
     }
 }

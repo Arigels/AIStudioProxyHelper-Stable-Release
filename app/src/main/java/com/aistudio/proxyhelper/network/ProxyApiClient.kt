@@ -99,13 +99,19 @@ class ProxyApiClient {
                         val arr = JSONArray(resp.body?.string().orEmpty())
                         for (i in 0 until arr.length()) {
                             val item = arr.optJSONObject(i) ?: continue
+                            val rawTier = listOf(
+                                item.optString("tier"),
+                                item.optString("plan"),
+                                item.optString("subscription_tier"),
+                                item.optString("quota_tier")
+                            ).firstOrNull { it.isNotBlank() && it != "null" } ?: "free"
                             accounts.add(
                                 AccountSummary(
                                     id = item.optString("id"),
                                     name = item.optString("name", "Google Account"),
                                     email = item.optString("email").takeIf { it.isNotBlank() && it != "null" },
                                     authUser = item.optString("auth_user", "0"),
-                                    tier = item.optString("tier", "Free"),
+                                    tier = rawTier,
                                     enabled = item.optBoolean("enabled", true),
                                     group = item.optString("group", "default")
                                 )

@@ -50,9 +50,15 @@ object TermuxBridge {
     const val URL_AISTUDIO = "https://aistudio.google.com/"
 
     // 国内可访问的浏览器与扩展下载渠道
+    const val URL_EDGE_ANDROID = "https://www.microsoft.com/zh-cn/edge/download"
+    const val URL_COOKIE_EDITOR_EDGE =
+        "https://microsoftedge.microsoft.com/addons/detail/cookieeditor/neaplmfkghagebokkhpjpoebhdledlfi?hl=zh-CN"
     const val URL_FIREFOX_ANDROID = "https://www.mozilla.org/zh-CN/firefox/android/"
     const val URL_FIREFOX_ARCHIVE = "https://archive.mozilla.org/pub/fenix/releases/"
     const val URL_COOKIE_EDITOR = "https://addons.mozilla.org/zh-CN/firefox/addon/cookie-editor/"
+    const val PACKAGE_EDGE = "com.microsoft.emmx"
+    const val PACKAGE_EDGE_BETA = "com.microsoft.emmx.beta"
+    const val PACKAGE_EDGE_CANARY = "com.microsoft.emmx.canary"
     const val PACKAGE_FIREFOX = "org.mozilla.firefox"
     const val PACKAGE_LEMUR = "com.lemurbrowser.exts"
 
@@ -291,6 +297,20 @@ object TermuxBridge {
         } catch (_: Exception) {
             // 没有可用的浏览器
         }
+    }
+
+    /** 指定用某个浏览器打开链接（如 Edge / 火狐），避免被系统默认浏览器截走；失败则回退系统默认打开。 */
+    fun openUrlInPackage(context: Context, url: String, packageName: String?): Boolean {
+        if (!packageName.isNullOrBlank()) {
+            val targeted = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                setPackage(packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val ok = runCatching { context.startActivity(targeted) }.isSuccess
+            if (ok) return true
+        }
+        openUrl(context, url)
+        return false
     }
 
     /** 执行任意 shell 命令（供 AI 助手排障使用），输出会回传到 App 日志。 */

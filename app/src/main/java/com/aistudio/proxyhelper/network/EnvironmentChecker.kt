@@ -33,6 +33,12 @@ object EnvironmentChecker {
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
         val batteryIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
 
+        val detectedEdgePkg = listOf(
+            TermuxBridge.PACKAGE_EDGE,
+            TermuxBridge.PACKAGE_EDGE_BETA,
+            TermuxBridge.PACKAGE_EDGE_CANARY
+        ).firstOrNull { isPackageInstalled(context, it) }
+
         return EnvironmentStatus(
             is64BitArm = is64Bit,
             abiSummary = abiSummary,
@@ -41,6 +47,8 @@ object EnvironmentChecker {
             termuxRunCommandGranted = runCmdGranted,
             accessibilityEnabled = AutomationController.isServiceEnabled(context),
             firefoxInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_FIREFOX),
+            edgeInstalled = detectedEdgePkg != null,
+            edgePackage = detectedEdgePkg,
             lemurInstalled = isPackageInstalled(context, TermuxBridge.PACKAGE_LEMUR),
             batteryOptimizationIgnored = batteryIgnored,
             lanIpAddress = detectLanIpv4()
