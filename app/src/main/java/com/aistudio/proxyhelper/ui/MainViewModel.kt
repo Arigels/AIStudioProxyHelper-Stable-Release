@@ -530,19 +530,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun fetchAgentModels() {
-        val state = _uiState.value
+    fun fetchAgentModels(
+        baseUrl: String,
+        key: String,
+        model: String,
+        useLocal: Boolean,
+        localModel: String
+    ) {
         viewModelScope.launch {
             _uiState.update { it.copy(agentFetchingModels = true) }
             val engine = AgentEngine()
             val config = AgentConfig(
-                baseUrl = state.agentBaseUrl,
-                apiKey = state.agentApiKey,
-                model = state.agentModel,
-                useLocalProxy = state.agentUseLocal,
-                localBaseUrl = state.settings.localBaseUrl,
-                localModel = state.agentLocalModel.ifBlank { "gemini-3.7-flash" },
-                localApiKey = state.agentLocalKey.ifBlank { "aistudio-api" }
+                baseUrl = baseUrl,
+                apiKey = key,
+                model = model,
+                useLocalProxy = useLocal,
+                localBaseUrl = _uiState.value.settings.localBaseUrl,
+                localModel = localModel.ifBlank { "gemini-3.7-flash" },
+                localApiKey = _uiState.value.agentLocalKey.ifBlank { "aistudio-api" }
             )
             val result = withContext(Dispatchers.IO) {
                 runCatching { engine.listModels(config) }

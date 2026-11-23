@@ -72,7 +72,7 @@ fun AgentScreen(
     uiState: MainUiState,
     onSaveConfig: (String, String, String, Boolean, String) -> Unit,
     onTest: () -> Unit,
-    onFetchModels: () -> Unit,
+    onFetchModels: (String, String, String, Boolean, String) -> Unit,
     onRun: (String) -> Unit,
     onAskTavern: (String) -> Unit
 ) {
@@ -260,7 +260,15 @@ fun AgentScreen(
                         }
 
                         OutlinedButton(
-                            onClick = onFetchModels,
+                            onClick = {
+                                onFetchModels(
+                                    baseUrl.trim(),
+                                    apiKey.trim(),
+                                    model.trim(),
+                                    useLocal,
+                                    localModel.trim()
+                                )
+                            },
                             enabled = !uiState.agentFetchingModels,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)

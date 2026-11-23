@@ -54,9 +54,11 @@ import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.net.LogCollector
 import com.aistudio.proxyhelper.overlay.OverlayService
 import com.aistudio.proxyhelper.termux.TermuxBridge
+import com.aistudio.proxyhelper.ui.AccessibilityGuideDialog
 import com.aistudio.proxyhelper.ui.AccountsScreen
 import com.aistudio.proxyhelper.ui.AgentScreen
 import com.aistudio.proxyhelper.ui.MainViewModel
+import com.aistudio.proxyhelper.ui.PermissionWizardDialog
 import com.aistudio.proxyhelper.ui.SetupScreen
 import com.aistudio.proxyhelper.ui.UsageScreen
 import com.aistudio.proxyhelper.ui.theme.AIStudioProxyTheme
@@ -111,11 +113,12 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
     // 从 Termux / 系统设置返回时刷新状态
     val lifecycleOwner = LocalLifecycleOwner.current
     val prefs = remember { SettingsRepository(context) }
-    var showOverlayPrompt by remember { mutableStateOf(false) }
+    var showWizard by remember { mutableStateOf(false) }
+    var showRestrictionGuide by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (!Settings.canDrawOverlays(context) && !prefs.overlayPromptShown) {
-            showOverlayPrompt = true
+        if (!prefs.permissionWizardShown) {
+            showWizard = true
         }
     }
 
@@ -231,42 +234,55 @@ fun AIStudioProxyApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    if (showOverlayPrompt) {
-        AlertDialog(
-            onDismissRequest = { showOverlayPrompt = false },
-            title = { Text("开启悬浮窗权限") },
-            text = {
-                Text(
-                    "开启后，Termux 上方会显示搭建进度、AI 结论和「下一步该做什么」，" +
-                        "搭建时不用来回切 App。只需要授权一次。\n\n" +
-                        "⚠️ 小米/红米、OPPO、vivo、荣耀 等系统可能提示「已限制设置」，" +
-                        "需要先点「解除限制」才能打开开关。详细步骤见「搭建」页的权限引导。"
-                )
+    var showWizard by remember { mutableStateOf(!SettingsRepository(context).permissionWizardShown) }
+    var showRestrictionGuide by remember { mutableStateOf(false) }
+
+    if (showWizard) {
+        PermissionWizardDialog(
+            onDismiss = {
+                showWizard = false
+                prefs.permissionWizardShown = true
             },
-            confirmButton = {
-                Button(onClick = {
-                    showOverlayPrompt = false
-                    prefs.overlayPromptShown = true
-                    prefs.overlayDesired = true
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    }
-                }) {
-                    Text("去授权")
+            onOpenOverlay = {
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = {
-                    showOverlayPrompt = false
-                    prefs.overlayPromptShown = true
-                    prefs.overlayDesired = false
-                }) {
-                    Text("暂不需要")
+            onOpenA11y = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            },
+            onShowRestrictionGuide = { showRestrictionGuide = true },
+            onOpenRestrictionSettings = {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
+            }
+        )
+    }
+
+    if (showRestrictionGuide) {
+        AccessibilityGuideDialog(
+            onDismiss = { showRestrictionGuide = false },
+            onOpenSettings = {
+                showRestrictionGuide = false
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
                 }
             }
         )
