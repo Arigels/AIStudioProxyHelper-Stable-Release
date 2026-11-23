@@ -117,7 +117,7 @@ object LogCollector {
                 out.write(bytes)
                 out.flush()
             } catch (_: Exception) {
-                // ignore
+                // 忽略该次异常
             }
         }
     }

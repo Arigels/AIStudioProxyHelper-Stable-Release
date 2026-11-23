@@ -53,10 +53,8 @@ object TermuxBridge {
     const val URL_FIREFOX_ANDROID = "https://www.mozilla.org/zh-CN/firefox/android/"
     const val URL_FIREFOX_ARCHIVE = "https://archive.mozilla.org/pub/fenix/releases/"
     const val URL_COOKIE_EDITOR = "https://addons.mozilla.org/zh-CN/firefox/addon/cookie-editor/"
-    const val URL_TERMUX_BOOT = "https://f-droid.org/packages/com.termux.boot/"
     const val PACKAGE_FIREFOX = "org.mozilla.firefox"
     const val PACKAGE_LEMUR = "com.lemurbrowser.exts"
-    const val PACKAGE_TERMUX_BOOT = "com.termux.boot"
 
     /**
      * Build the exact bash command for each action, matching the official aistudio-api Termux guide.
@@ -134,14 +132,6 @@ object TermuxBridge {
             TermuxAction.ACQUIRE_WAKELOCK -> {
                 "termux-wake-lock && echo '[OK] Termux 唤醒锁已激活'"
             }
-
-            TermuxAction.AUTO_START_SETUP -> {
-                "mkdir -p ~/.termux/boot && " +
-                    "printf '#!/data/data/com.termux/files/usr/bin/bash\\ntermux-wake-lock\\n" +
-                    "cd \$HOME/aistudio-api && bash start.sh\\n' > ~/.termux/boot/start-aistudio.sh && " +
-                    "chmod +x ~/.termux/boot/start-aistudio.sh && " +
-                    "echo '[OK] 已生成开机自启脚本；安装并打开一次 Termux:Boot 后，开机会自动启动反代'"
-            }
         }
     }
 
@@ -169,14 +159,14 @@ object TermuxBridge {
             )
         }
 
-        // First-time / accessibility-preferred path: let our AccessibilityService handle everything
+        // 首次 / 优先走无障碍：交给 AccessibilityService 全自动完成
         if (preferAccessibility && AutomationController.isServiceConnected()) {
             if (AutomationController.enqueueAndRun(context, command, action.title)) {
                 return TermuxDispatchResult.AutomatedByAccessibility(command)
             }
         }
 
-        // Manual enable external-apps fallback if accessibility is not enabled
+        // 无障碍不可用时，退化为手动粘贴：复制命令并打开 Termux
         if (action == TermuxAction.ENABLE_EXTERNAL_APPS) {
             if (AutomationController.isServiceEnabled(context) &&
                 AutomationController.enqueueAndRun(context, command, action.title)
@@ -191,7 +181,7 @@ object TermuxBridge {
             )
         }
 
-        // Keep terminal open after command finishes so user can inspect logs/errors
+        // 命令执行完后保留终端界面，方便用户查看日志和报错
         val wrappedForInteractive = if (action.runInBackground) {
             command
         } else {
@@ -297,7 +287,7 @@ object TermuxBridge {
         try {
             context.startActivity(intent)
         } catch (_: Exception) {
-            // No browser available
+            // 没有可用的浏览器
         }
     }
 

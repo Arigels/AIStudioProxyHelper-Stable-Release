@@ -25,7 +25,6 @@ data class EnvironmentStatus(
     val accessibilityEnabled: Boolean = false,
     val firefoxInstalled: Boolean = false,
     val lemurInstalled: Boolean = false,
-    val termuxBootInstalled: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val lanIpAddress: String? = null
 )
@@ -87,11 +86,6 @@ enum class TermuxAction(
     ACQUIRE_WAKELOCK(
         title = "开启 Termux 唤醒锁",
         subtitle = "执行 termux-wake-lock，减少锁屏断网或杀后台",
-        runInBackground = true
-    ),
-    AUTO_START_SETUP(
-        title = "生成开机自启脚本",
-        subtitle = "写入 ~/.termux/boot/start-aistudio.sh，配合 Termux:Boot 实现开机自动启动反代",
         runInBackground = true
     ),
     ENABLE_EXTERNAL_APPS(

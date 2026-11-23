@@ -237,6 +237,17 @@ fun UsageScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "⚠️ 恢复前请先打开梯子（VPN）：服务启动时要连 Google，没梯子会一直失败、看起来像卡住。",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
                 OutlinedButton(
                     onClick = onRestartService,
                     modifier = Modifier.fillMaxWidth(),

@@ -117,7 +117,7 @@ fun SetupScreen(
         if (env.accessibilityEnabled || canDirectIpc) {
             onExecuteAction(action)
         } else {
-            // Guide user to enable Accessibility auto-controller (or skip to one-tap manual paste)
+            // 引导用户开启无障碍自动操控（或跳过，改用手动粘贴）
             pendingAutoAction = action
         }
     }
@@ -862,28 +862,6 @@ private fun AdvancedSettingsCard(
                             } else {
                                 "开启悬浮窗（在 Termux 上看搭建进度）"
                             }
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { onExecuteAction(TermuxAction.AUTO_START_SETUP) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("生成开机自启脚本（配合 Termux:Boot）")
-                    }
-                    if (!uiState.environment.termuxBootInstalled) {
-                        OutlinedButton(
-                            onClick = { TermuxBridge.openUrl(context, TermuxBridge.URL_TERMUX_BOOT) },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("下载 Termux:Boot（开机自启插件）")
-                        }
-                    } else {
-                        Text(
-                            text = "✅ 已安装 Termux:Boot：生成脚本后打开一次该插件即可生效",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF15803D)
                         )
                     }
                     OutlinedButton(

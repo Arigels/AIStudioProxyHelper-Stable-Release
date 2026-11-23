@@ -98,7 +98,7 @@ class TermuxAutomationService : AccessibilityService() {
         try {
             AutomationController.updateStatus("正在等待 Termux 终端就绪...")
 
-            // Step 1: Wait for Termux terminal_view to appear (also handles first-run bootstrap & permission popups)
+            // 第一步：等待 Termux 的终端控件出现（同时处理首次启动的 bootstrap 与权限弹窗）
             val terminalBounds = waitForTermuxTerminalReady(task)
             if (terminalBounds == null) {
                 AutomationController.clearTask("未能自动定位 Termux 终端，命令已复制到剪贴板，请手动长按粘贴并回车。")
@@ -106,11 +106,11 @@ class TermuxAutomationService : AccessibilityService() {
                 return
             }
 
-            // Let bash prompt settle cleanly
+            // 稍等片刻，让 bash 提示符稳定下来
             delay(1100L)
             if (AutomationController.pendingTask !== task) return
 
-            // Step 2: Long-press terminal -> click Paste (retry up to 3 times)
+            // 第二步：长按终端 → 点「粘贴」（最多重试 3 次）
             AutomationController.updateStatus("正在自动粘贴命令...")
             var pasted = false
             for (attempt in 1..3) {
@@ -136,7 +136,7 @@ class TermuxAutomationService : AccessibilityService() {
                 return
             }
 
-            // Step 3: 等待粘贴完成，然后按回车执行（多策略 + 自动重试）
+            // 第三步：等待粘贴完成，然后按回车执行（多策略 + 自动重试）
             delay(900L)
             if (AutomationController.pendingTask !== task) return
 
@@ -166,7 +166,7 @@ class TermuxAutomationService : AccessibilityService() {
         while (System.currentTimeMillis() < deadline) {
             if (AutomationController.pendingTask !== task) return null
 
-            // Auto-accept Android runtime permission dialog if Termux asks on first launch (e.g., Notifications)
+            // 自动同意 Termux 首次启动时的运行时权限弹窗（例如通知权限）
             tryAcceptSystemPermissionDialog()
 
             val termuxRoot = findTermuxRootNode()

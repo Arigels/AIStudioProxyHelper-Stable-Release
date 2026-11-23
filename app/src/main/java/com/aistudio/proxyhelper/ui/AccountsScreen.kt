@@ -130,6 +130,18 @@ fun AccountsScreen(
                     )
                 }
 
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "⚠️ 导入前请先打开梯子（VPN）：服务导入 Cookie 时要访问 Google，没梯子会导入失败。",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+
                 Button(
                     onClick = { onImportCookies(cookieText, true, null) },
                     enabled = !uiState.importingCookie && cookieText.isNotBlank(),

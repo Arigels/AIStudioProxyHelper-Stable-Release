@@ -12,7 +12,6 @@
 
     <queries>
         <package android:name="com.termux" />
-        <package android:name="com.termux.boot" />
         <package android:name="org.mozilla.firefox" />
         <package android:name="com.lemurbrowser.exts" />
         <package android:name="com.microsoft.emmx" />

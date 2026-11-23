@@ -47,14 +47,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.5.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.4.6.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.4.5.apk
+          path: dist/AIStudioProxyHelper-v2.4.6.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -62,11 +62,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.4.5"
+          TAG="v2.4.6"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.5.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.4.6.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.5.apk \
-              --title "v2.4.5 — AI Studio 反代助手" \
-              --notes "AI 配置交互修复：拉取模型后面板不再自动收起，直接列出可用模型供点选；「连接并拉取模型」只连接+拉取，「保存设置」才保存。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.4.6.apk \
+              --title "v2.4.6 — AI Studio 反代助手" \
+              --notes "① 账号页与使用页的导入/恢复服务前增加「先开梯子」提示；② 移除开机自启脚本（Termux:Boot）功能；③ 代码内的英文注释统一改为中文。"
           fi
