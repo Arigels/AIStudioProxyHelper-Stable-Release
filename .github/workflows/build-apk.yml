@@ -2,9 +2,9 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master, fix/cookie-guide ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main, master, fix/cookie-guide ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -97,27 +97,26 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.13.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.7.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.13.apk
+          path: dist/AIStudioProxyHelper-v2.6.7.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/cookie-guide'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.13-preview.1"
+          TAG="v2.6.7"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.13.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.13.apk \
-              --title "v2.6.13 — 教程态不再混排 / S0 增加手动出口 / 引导文案随部署状态变化" \
-              --notes "1. 悬浮窗教程期间不再显示正常态引导，避免「点半自动部署」和下载浏览器同屏；2. S0 增加「我已经装好了 →」手动出口，检测失败也能继续；3. 无浏览器包名时退化为系统浏览器；4. 引导文案按部署状态区分「半自动部署」与「启动反代」，并可点击打开 App。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk \
+              --title "v2.6.7 — 移除无用且有风控风险的清除429功能，反代页新增常驻公网安全提醒" \
+              --notes "1. 移除所有「清除/重置 429 冷却」按钮与相关引导（该操作仅清空本地冷却计时与退避保护，无法恢复 Google 服务器端额度，反而会导致强行高频重试增加风控封号风险）；2. 在「反代」页顶部新增常驻红色安全提醒，警示公网反代风险，提示勿在公共 Wi-Fi/公网下使用，请切换为手机流量或家庭 Wi-Fi 等安全网络后再使用。"
           fi
-
