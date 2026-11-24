@@ -84,6 +84,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun SetupScreen(
     uiState: MainUiState,
+    tutorialDone: Boolean,
     onRequestTermuxPermission: () -> Unit,
     onRefreshStatus: () -> Unit,
     onSaveSettings: (ProxySettings) -> Unit,
@@ -136,7 +137,7 @@ fun SetupScreen(
         )
 
         // 1.5 启动反代：只在「部署成功过、但现在没在运行」时出现，做成显眼的离线提醒
-        if (uiState.deploySucceeded && !uiState.service.online) {
+        if (tutorialDone && uiState.deploySucceeded && !uiState.service.online) {
             RestartProxyCard(
                 onRestart = onRestartService
             )

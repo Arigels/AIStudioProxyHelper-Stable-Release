@@ -484,6 +484,7 @@ fun AIStudioProxyApp(
                 when (selectedTab) {
                     0 -> SetupScreen(
                         uiState = uiState,
+                        tutorialDone = tutorialDone,
                         onRequestTermuxPermission = {
                             termuxPermLauncher.launch(TermuxBridge.PERMISSION_RUN_COMMAND)
                         },

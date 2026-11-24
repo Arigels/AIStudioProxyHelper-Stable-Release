@@ -953,7 +953,8 @@ class OverlayService : Service() {
         val tavernMode = cookieDone && !tavernDone
         val addressTipMode = cookieDone && tavernDone && !tavernAddressTipDone
         val tutorialDone = cookieDone && tavernDone && tavernAddressTipDone
-        val showTakeover = takeover && !reportMode
+        // 教程期间不做实时检测器：掉线只让状态点变灰，不拿断线卡顶掉当前步骤
+        val showTakeover = takeover && !reportMode && tutorialDone
         val guideMode = (cookieMode || tavernMode || addressTipMode || showTakeover) && !reportMode
         val needCookie = snapshot.online && !snapshot.accountsReady
 
@@ -1189,18 +1190,17 @@ class OverlayService : Service() {
         val browserPkg = chosen?.second
         val bothInstalled = edge != null && firefox != null
         val repo = SettingsRepository(applicationContext)
-        // 「命令发出」不等于「部署成功」：本次部署中 / 刚失败时永远锁在 S0
         val deployingNow = snapshot.deploying || OverlayState.deployStartedAt > 0L
-        val deployFailed = snapshot.error != null && !snapshot.online
         val everDeployed = snapshot.hasDeployed ||
             repo.hasDeployed ||
             repo.deploySucceeded ||
             proxyEverOnline
-        val deployed = snapshot.online || (everDeployed && !deployingNow && !deployFailed)
+        val firstDeploy = !everDeployed
+        val deployFailed = firstDeploy && snapshot.error != null && !snapshot.online
+        val deployed = everDeployed || snapshot.online
 
-        // 六步：0 部署、1 浏览器、2 登录、3 扩展、4 Cookie、5 粘贴；没部署过就永远停在第 0 步
         val computed = when {
-            deployingNow || deployFailed -> 0
+            firstDeploy && (deployingNow || deployFailed) -> 0
             cookieDone || snapshot.accountsReady -> 5
             !deployed -> 0
             cookieClipLength > 0 -> 5
@@ -1210,8 +1210,8 @@ class OverlayService : Service() {
             !loginStepDone -> 2
             else -> 3
         }
-        // 未部署 / 部署中 / 部署失败：强制停在部署步（第 0 步），不能跳到浏览器/登录/扩展/Cookie/粘贴
-        if ((!deployed || deployingNow || deployFailed) && guideStageMax > 0) forceGuideStage(0)
+        // 只有从没成功过才回 S0
+        if (!deployed && guideStageMax > 0) forceGuideStage(0)
         // 浏览器被卸载：回到重新安装那一步，不能卡在扩展 / Cookie 卡（回退必须走 force）
         if (deployed && chosen == null && guideStageMax >= 2) forceGuideStage(1)
         if (computed > guideStageMax) guideStageMax = computed
@@ -1222,7 +1222,9 @@ class OverlayService : Service() {
         }
         val stage = guideStageMax
         // 回看定位：只允许停在 0..stage-1，超出即跟随最新
-        val view = if (cookieViewStage in 0 until stage) cookieViewStage else stage
+        val rawView = if (cookieViewStage in 0 until stage) cookieViewStage else stage
+        // 已经跑通过一次的用户不再出现「部署」卡（含回看），避免被理解成要重新部署
+        val view = if (everDeployed && rawView == 0) 1 else rawView
         val readonly = view < stage
         cookieViewStage = if (readonly) view else -1
         if (view != 1) tutorialFailHint = null
@@ -1441,15 +1443,14 @@ class OverlayService : Service() {
         tut.setTextColor(Color.parseColor("#DBEAFE"))
         val termuxNow = isPackageInstalled(TermuxBridge.TERMUX_PACKAGE)
         val snapshot = OverlayState.snapshot
-        // 只有「非部署中、非失败」的历史成功才算部署过；本次部署没上线前一律当没部署
-        val deployedEver = (snapshot.hasDeployed ||
-            SettingsRepository(applicationContext).hasDeployed ||
-            SettingsRepository(applicationContext).deploySucceeded) &&
-            !snapshot.deploying &&
-            OverlayState.deployStartedAt == 0L &&
-            snapshot.error == null
+        val repo = SettingsRepository(applicationContext)
+        // 「跑通过一次」就算部署过：之后掉线 / 超时 / 重启服务都不再回到部署卡
+        val everDeployed = snapshot.hasDeployed ||
+            repo.hasDeployed ||
+            repo.deploySucceeded ||
+            proxyEverOnline
         val justTapped = deployTapAt > 0L && System.currentTimeMillis() - deployTapAt < 20_000L
-        val deploying = snapshot.deploying || justTapped
+        val deploying = !everDeployed && (snapshot.deploying || justTapped)
         when {
             !termuxNow -> {
                 tut.text = "还没装 Termux（必须 F-Droid / GitHub 的 arm64 版，商店旧版不行）"
@@ -1495,19 +1496,9 @@ class OverlayService : Service() {
                 altBtn?.text = "出错了？诊断"
                 altBtn?.setOnClickListener { runDiagnose() }
             }
-            deployedEver -> {
-                tut.text = "部署跑完了，但反代没在跑"
-                btn?.visibility = View.VISIBLE
-                btn?.text = "启动反代"
-                btn?.setOnClickListener { startServiceFromOverlay() }
-                altBtn?.visibility = View.VISIBLE
-                altBtn?.text = "诊断"
-                altBtn?.setOnClickListener { runDiagnose() }
-            }
             else -> {
-                tut.text = "⚠️ 手机网络必须能打开 Google（VPN 正常），否则登录和 Cookie 都会失败。\n" +
-                    "点下面按钮：自动复制部署命令 → 打开 Termux → 自动粘贴并回车\n" +
-                    "没开无障碍也能部署，只是要你在 Termux 长按粘贴"
+                tut.text = "请开启 VPN 并全程保持连接，并确认酒馆保持关闭、没有在 Termux 运行任何项目。\n" +
+                    "点击「开始半自动部署」开始部署，跳转 Termux 后粘贴指令并回车，等待部署完成。"
                 btn?.visibility = View.VISIBLE
                 btn?.text = "开始半自动部署"
                 btn?.setOnClickListener { deployVpnConfirmShown = true; render() }
