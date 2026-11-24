@@ -187,15 +187,10 @@ fun AIStudioProxyApp(
             onTabHandled()
         }
     }
-    // 启动分流：教程完成后在线直接落到「解疑」页；离线留在「反代」页看显眼的重启提醒。
-    // 悬浮窗带 requestedTab 时优先（requestedTab 的 LaunchedEffect 已经把 initialRouteDone 置 true）。
+    // 首次启动默认落在「反代」页；悬浮窗带 requestedTab 时优先（requestedTab 的 LaunchedEffect 已经把 initialRouteDone 置 true）。
     LaunchedEffect(uiState.statusLoaded, requestedTab) {
         if (uiState.statusLoaded && !initialRouteDone && requestedTab == null) {
-            selectedTab = when {
-                !tutorialDone -> 0
-                uiState.service.online -> 2
-                else -> 0
-            }
+            selectedTab = 0
             initialRouteDone = true
         }
     }
