@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -402,42 +401,6 @@ fun AgentScreen(
                             } else {
                                 Text("连接并拉取模型")
                             }
-                        }
-
-                        if (availableModels.isNotEmpty()) {
-                            Text(
-                                text = "可用模型（${availableModels.size} 个，点一个选中）",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                                maxItemsInEachRow = 2
-                            ) {
-                                availableModels.take(60).forEach { name ->
-                                    val chosen = if (useLocal) localModel else model
-                                    FilterChip(
-                                        selected = chosen == name,
-                                        onClick = {
-                                            if (useLocal) localModel = name else model = name
-                                        },
-                                        label = {
-                                            Text(
-                                                text = name,
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        } else if (!uiState.agentFetchingModels) {
-                            Text(
-                                text = "还没有模型列表，点上面「连接并拉取模型」",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
 
                         OutlinedButton(
