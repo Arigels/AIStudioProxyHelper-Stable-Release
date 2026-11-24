@@ -96,15 +96,17 @@ jobs:
 
       - name: Prepare APK artifact
         run: |
+          VERSION_NAME=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.0.apk
+          cp app/build/outputs/apk/release/app-release.apk "dist/AIStudioProxyHelper-v${VERSION_NAME}.apk"
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v1.0.apk
+          path: dist/AIStudioProxyHelper-v${{ env.VERSION_NAME }}.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -112,11 +114,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v1.0"
+          TAG="v${VERSION_NAME}"
+          ASSET="dist/AIStudioProxyHelper-v${VERSION_NAME}.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.0.apk --clobber
+            echo "Release $TAG already exists; skipping publish."
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v1.0.apk \
-              --title "AIStudioProxyHelper 正式版 1.0" \
-              --notes "1. 启动默认落到「反代」页，不再在教程完成后自动跳去「解疑」页；2. 移除所有 Cherry Studio 与 NextChat 相关文案，专注服务酒馆；3. 「解疑」页顶部新增常显黄色公告，提示报错翻译和 AI 排障助手为测试功能；4. 移除 AI 排障助手配置中重复的「可用模型」列表块，统一使用「模型」下拉选择；5. 点击悬浮窗本机地址改为自绘「已复制地址」悬浮提示，约 0.8 秒自动淡出。"
+            gh release create "$TAG" "$ASSET" \
+              --title "AIStudioProxyHelper ${TAG}" \
+              --generate-notes
           fi
