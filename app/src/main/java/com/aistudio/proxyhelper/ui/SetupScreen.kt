@@ -1061,7 +1061,7 @@ private fun ServiceStatusCard(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
 
             AddressCopyRow(
-                label = "本机代理地址（填进酒馆 / Cherry Studio 用）",
+                label = "本机代理地址（填进酒馆用）",
                 url = settings.localBaseUrl,
                 onCopy = { onCopyText("本机地址", settings.localBaseUrl) }
             )

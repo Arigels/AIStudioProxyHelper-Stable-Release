@@ -673,7 +673,7 @@ private fun SecurityKeyDialog(
                 }
 
                 Text(
-                    text = "提示：设置后，酒馆（代理密码）和 Cherry Studio（API Key）都需要填这里的密钥；在报错页让 AI 排查时会自动使用新密钥。",
+                    text = "提示：设置后，酒馆（代理密码）需要填这里的密钥；在报错页让 AI 排查时会自动使用新密钥。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

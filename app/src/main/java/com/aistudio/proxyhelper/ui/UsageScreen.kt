@@ -102,7 +102,7 @@ fun UsageScreen(
         }
 
         // ── ④ 连接客户端（默认收起）──
-        UsageCollapsibleCard(title = "连接客户端（酒馆 / Cherry Studio）") {
+        UsageCollapsibleCard(title = "连接客户端（酒馆）") {
             ConnectClientContent(uiState)
         }
 

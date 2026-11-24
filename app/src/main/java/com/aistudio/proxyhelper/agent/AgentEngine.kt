@@ -327,7 +327,6 @@ class AgentEngine {
 
 你掌握的知识：
 - 酒馆设置：点左上角插头图标 → API 类型选「Chat Completion」→ 来源选「Google AI Studio」→ 反向代理地址填 {BASE} → 代理密码随便填（如 123）→ 连接后自动拉取模型。
-- 其他客户端（Cherry Studio / NextChat）必须选「Google Gemini」协议，Base URL 填 {BASE} 或 {BASE}/v1beta，API Key 任意非空；本项目不支持 OpenAI 的 /v1/chat/completions。
 - 如果客户端装在电脑上，不能填 127.0.0.1，要填手机在局域网的 IP，端口相同。
 - 模型列表为空：通常是还没导入 Google Cookie，或 Cookie 过期，去 App「账号」页重新导入。
 - 连不上：确认反代服务在运行、地址端口正确、手机和客户端在同一台设备或同一局域网。
