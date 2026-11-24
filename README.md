@@ -14,7 +14,7 @@
 - App 本身不是反代服务器。真正的反代服务运行在 **Termux** 里。
 - App 通过 Termux 的 `RUN_COMMAND` 和无障碍服务下发送安装、启动、停止、改端口等命令。
 - App 轮询本机反代接口，把服务状态、账号数、模型数、额度和错误显示在界面与悬浮窗里。
-- 部署完成、Cookie 导入后，**App 可以直接划掉**；只要 Termux 和 VPN 还在后台运行，反代就继续工作。
+- 部署完成、Cookie 导入后，**App 可以直接关闭**；只要 Termux 和 VPN 还在后台运行，反代就继续工作。
 
 > 反代走的是 Google AI Studio 的网页登录态（Cookie），并非Gemini 官方 API Key。
 
