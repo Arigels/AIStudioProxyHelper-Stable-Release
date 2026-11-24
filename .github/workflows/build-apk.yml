@@ -97,14 +97,14 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v2.6.7.apk
+          cp app/build/outputs/apk/release/app-release.apk dist/AIStudioProxyHelper-v1.0.apk
           ls -lh dist/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AIStudioProxyHelper-APK
-          path: dist/AIStudioProxyHelper-v2.6.7.apk
+          path: dist/AIStudioProxyHelper-v1.0.apk
           retention-days: 30
 
       - name: Publish GitHub Release (Formal APK only)
@@ -112,11 +112,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v2.6.7"
+          TAG="v1.0"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk --clobber
+            gh release upload "$TAG" dist/AIStudioProxyHelper-v1.0.apk --clobber
           else
-            gh release create "$TAG" dist/AIStudioProxyHelper-v2.6.7.apk \
-              --title "v2.6.7 — 移除无用且有风控风险的清除429功能，反代页新增常驻公网安全提醒" \
-              --notes "1. 移除所有「清除/重置 429 冷却」按钮与相关引导（该操作仅清空本地冷却计时与退避保护，无法恢复 Google 服务器端额度，反而会导致强行高频重试增加风控封号风险）；2. 在「反代」页顶部新增常驻红色安全提醒，警示公网反代风险，提示勿在公共 Wi-Fi/公网下使用，请切换为手机流量或家庭 Wi-Fi 等安全网络后再使用。"
+            gh release create "$TAG" dist/AIStudioProxyHelper-v1.0.apk \
+              --title "AIStudioProxyHelper 正式版 1.0" \
+              --notes "1. 启动默认落到「反代」页，不再在教程完成后自动跳去「解疑」页；2. 移除所有 Cherry Studio 与 NextChat 相关文案，专注服务酒馆；3. 「解疑」页顶部新增常显黄色公告，提示报错翻译和 AI 排障助手为测试功能；4. 移除 AI 排障助手配置中重复的「可用模型」列表块，统一使用「模型」下拉选择；5. 点击悬浮窗本机地址改为自绘「已复制地址」悬浮提示，约 0.8 秒自动淡出。"
           fi
