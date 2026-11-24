@@ -1,25 +1,3 @@
-# GitHub 项目页文案（正式版 1.0）
-
-> 下面分两部分：第一部分复制到仓库右侧的 **About → Description**；第二部分是 **README.md** 正文。两部分不要混在一起粘贴。
-
----
-
-## 第一部分：仓库 About 简介
-
-```text
-Android 端 Google AI Studio 反代助手：联动 Termux 完成半自动部署、签名引擎编译、Cookie 导入、账号额度监控、悬浮窗向导与酒馆连接排障。无需官方 API Key。
-```
-
-建议 Topics：
-
-```text
-android, termux, google-ai-studio, gemini, sillytavern, reverse-proxy, kotlin, jetpack-compose
-```
-
----
-
-## 第二部分：README 正文
-
 # AI Studio 反代助手（正式版 1.0）
 
 > 把手机变成一台随身 Gemini 反代服务器：在 Android 上联动 Termux，完成 Google AI Studio 反代服务的部署、启动、账号导入、额度监控和酒馆连接。
