@@ -2,7 +2,7 @@
 
 > 把手机变成一台随身 Gemini 反代服务器：在 Android 上联动 Termux，完成 Google AI Studio 反代服务的部署、启动、账号导入、额度监控和酒馆连接。
 
-本项目是 [DeconstructedCube/aistudio-api](https://github.com/DeconstructedCube/aistudio-api) 的 Android 图形化封装。它不修改上游协议，只把原本零散的步骤和教程集成到App悬浮窗中。
+本项目是 [DeconstructedCube/aistudio-api](https://github.com/DeconstructedCube/aistudio-api) 的 Android 图形化封装。它不修改上游协议，只把原本零散的教程步骤、工具下载、网页跳转等集成到App和悬浮窗中。
 
 **当前版本：1.0（versionCode 68）**  
 **适用平台：Android 8.0 及以上，arm64 手机**
