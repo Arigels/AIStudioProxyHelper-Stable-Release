@@ -403,6 +403,7 @@ class OverlayService : Service() {
         runCatching { unregisterReceiver(unlockReceiver) }
         handler.removeCallbacksAndMessages(null)
         diagnosisScope.cancel()
+        dismissCopyTip()
         root?.let { view -> runCatching { windowManager?.removeView(view) } }
         root = null
         super.onDestroy()
@@ -484,7 +485,7 @@ class OverlayService : Service() {
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             maxLines = 1
-            setOnClickListener { copyLocalAddress() }
+            setOnClickListener { copyLocalAddress(this) }
         }
         addressRow.addView(addressLabel)
         addressRow.addView(
@@ -625,7 +626,7 @@ class OverlayService : Service() {
             setTextColor(Color.parseColor("#93C5FD"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             maxLines = 1
-            setOnClickListener { copyLocalAddress() }
+            setOnClickListener { copyLocalAddress(this) }
         }
         tipAddressRow.addView(tipAddressLabel)
         tipAddressRow.addView(
@@ -803,7 +804,7 @@ class OverlayService : Service() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
             setPadding(0, 0, dp(10), 0)
-            setOnClickListener { copyLocalAddress() }
+            setOnClickListener { copyLocalAddress(this) }
         }
         val miniExpand = TextView(this).apply {
             text = "−"
@@ -1150,15 +1151,93 @@ class OverlayService : Service() {
         runCatching { windowManager?.updateViewLayout(panel, params) }
     }
 
+    private var copyTipView: TextView? = null
+
     /** 复制本机地址：只读快照里的完整 URL，UI 层不拼任何 scheme/host/port。 */
-    private fun copyLocalAddress() {
+    private fun copyLocalAddress(anchor: View? = null) {
         val url = OverlayState.snapshot.localBaseUrl
         if (url.isBlank()) {
             Toast.makeText(this, "地址还没准备好，稍等一下", Toast.LENGTH_SHORT).show()
             return
         }
         TermuxBridge.copyToClipboard(this, "本机地址", url)
-        Toast.makeText(this, "已复制本机地址", Toast.LENGTH_SHORT).show()
+        showCopyTip(anchor)
+    }
+
+    private fun showCopyTip(anchor: View?) {
+        dismissCopyTip()
+
+        val tip = TextView(this).apply {
+            text = "已复制地址"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(12), dp(7), dp(12), dp(7))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#E6111827"))
+                setStroke(dp(1), Color.parseColor("#40FFFFFF"))
+            }
+            alpha = 0f
+        }
+
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+        }
+
+        val loc = IntArray(2)
+        anchor?.getLocationOnScreen(loc)
+
+        runCatching {
+            windowManager?.addView(tip, params)
+            copyTipView = tip
+
+            tip.post {
+                val screenW = resources.displayMetrics.widthPixels
+                val screenH = resources.displayMetrics.heightPixels
+                val ax = if (anchor != null) loc[0] else dp(16)
+                val ay = if (anchor != null) loc[1] else dp(96)
+                val ah = anchor?.height ?: 0
+                params.x = (ax + (anchor?.width ?: 0) / 2 - tip.width / 2)
+                    .coerceIn(dp(8), (screenW - tip.width - dp(8)).coerceAtLeast(dp(8)))
+                params.y = if (ay + ah + dp(6) + tip.height <= screenH - dp(8)) {
+                    ay + ah + dp(6)
+                } else {
+                    (ay - tip.height - dp(6)).coerceAtLeast(dp(8))
+                }
+                runCatching { windowManager?.updateViewLayout(tip, params) }
+            }
+
+            tip.animate().alpha(1f).setDuration(120L).start()
+            handler.postDelayed({
+                if (copyTipView === tip) {
+                    tip.animate().alpha(0f).setDuration(180L).withEndAction {
+                        dismissCopyTip()
+                    }.start()
+                }
+            }, 520L)
+        }
+    }
+
+    private fun dismissCopyTip() {
+        copyTipView?.let { tip ->
+            copyTipView = null
+            tip.animate().cancel()
+            runCatching { windowManager?.removeView(tip) }
+        }
     }
 
     /** 第 7 步点「完成」：教程永久结束。 */
