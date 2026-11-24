@@ -530,7 +530,6 @@ fun AIStudioProxyApp(
 
                     2 -> UsageScreen(
                         uiState = uiState,
-                        agentFirst = selectedTab == 2 && tutorialDone && uiState.service.online,
                         agentContent = {
                             AgentScreen(
                                 uiState = uiState,

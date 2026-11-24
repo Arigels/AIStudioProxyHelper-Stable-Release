@@ -261,7 +261,7 @@ private fun PublicProxySecurityBanner() {
             Spacer(modifier = Modifier.width(10.dp))
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    text = "公网反代安全提醒",
+                    text = "安全提醒",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer
@@ -295,23 +295,12 @@ private fun OverlayToggleCard(
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "悬浮窗",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = when {
-                        !canDrawOverlays -> "需在系统设置里允许「显示在其他应用上层」，开启后可拖拽查看状态并一键 AI 识别报错"
-                        overlayRunning -> "已开启：可拖拽移动，遇到报错点悬浮窗上的「🩺 报错」即可让 AI 自动分析"
-                        else -> "已授权：点右侧「开启」在 Termux / 酒馆上方显示悬浮窗与 AI 报错按钮"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "悬浮窗",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
             Button(
                 onClick = onToggle,
                 shape = RoundedCornerShape(10.dp)
@@ -953,7 +942,7 @@ private fun RestartProxyCard(
                 color = Color(0xFFB91C1C)
             )
             Text(
-                text = "点下面按钮重启反代；如果 Termux 被系统杀了，先把 Termux 拉成小窗/分屏再启动。",
+                text = "点击下方按钮重启反代",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -963,7 +952,7 @@ private fun RestartProxyCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "⚠️ 反代服务运行时必须开着 VPN，没开 VPN 会一直失败。",
+                    text = "反代服务运行时必须保持VPN开启且持续运行",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF8A6D00),
                     fontWeight = FontWeight.SemiBold,

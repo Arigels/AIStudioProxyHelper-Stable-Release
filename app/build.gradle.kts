@@ -12,8 +12,8 @@ android {
         applicationId = "com.aistudio.proxyhelper"
         minSdk = 26
         targetSdk = 35
-        versionCode = 66
-        versionName = "2.6.19"
+        versionCode = 67
+        versionName = "3.0"
 
         vectorDrawables {
             useSupportLibrary = true

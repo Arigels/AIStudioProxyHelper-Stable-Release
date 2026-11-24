@@ -56,6 +56,8 @@ object TermuxBridge {
     const val URL_COOKIE_EDITOR_EDGE =
         "https://microsoftedge.microsoft.com/addons/detail/cookieeditor/neaplmfkghagebokkhpjpoebhdledlfi?hl=zh-CN"
     const val URL_FIREFOX_ANDROID = "https://www.mozilla.org/zh-CN/firefox/android/"
+    const val URL_FIREFOX_PLAY_STORE =
+        "https://play.google.com/store/apps/details?id=org.mozilla.firefox"
     const val URL_FIREFOX_ARCHIVE = "https://archive.mozilla.org/pub/fenix/releases/"
     const val URL_COOKIE_EDITOR = "https://addons.mozilla.org/zh-CN/firefox/addon/cookie-editor/"
     // 安卓版火狐要从 AMO 的 android 专区进，桌面页在手机上只会给 .xpi 下载

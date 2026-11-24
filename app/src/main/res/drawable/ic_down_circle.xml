@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 圆形 + 向下三角：教程第 7 步「反向代理右边的下拉箭头」用这个图标，14dp -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="14dp"
+    android:height="14dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <path
+        android:pathData="M3,12 a9,9 0 1,1 18,0 a9,9 0 1,1 -18,0 Z"
+        android:fillColor="#3393C5FD"
+        android:strokeColor="#93C5FD"
+        android:strokeWidth="1.6" />
+
+    <path
+        android:pathData="M12,16.4 L7.4,9.8 L16.6,9.8 Z"
+        android:fillColor="#93C5FD" />
+</vector>

@@ -18,6 +18,10 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ImageSpan
+import android.text.style.StyleSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -31,6 +35,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.aistudio.proxyhelper.MainActivity
+import com.aistudio.proxyhelper.R
 import com.aistudio.proxyhelper.agent.AgentConfig
 import com.aistudio.proxyhelper.agent.AgentEngine
 import com.aistudio.proxyhelper.agent.AgentMode
@@ -101,6 +106,7 @@ class OverlayService : Service() {
     private var closeButton: TextView? = null
     private var minimizeButton: TextView? = null
     private var fullContent: LinearLayout? = null
+    private var titleRow: LinearLayout? = null
     private var miniBar: LinearLayout? = null
     private var miniDot: View? = null
     private var miniText: TextView? = null
@@ -211,13 +217,13 @@ class OverlayService : Service() {
         get() = guidePrefs.getBoolean("tavern_address_tip_done", false)
         set(value) = guidePrefs.edit().putBoolean("tavern_address_tip_done", value).apply()
 
-    /** 第 3 步「打开 AI Studio 并登录」已确认：用户点过「登录好了」 */
+    /** 登录已确认：合并卡不再有「登录好了」，现在只由剪贴板命中 Cookie JSON 反推 */
     private var loginStepDone: Boolean
         get() = guidePrefs.getBoolean("login_step_done", false)
         set(value) = guidePrefs.edit().putBoolean("login_step_done", value).apply()
 
     /**
-     * 六步引导到达的最远步骤：0 部署、1 浏览器、2 登录、3 扩展、4 Cookie、5 粘贴；
+     * 教程到达的最远步骤：0 部署、1 浏览器、2 扩展、3 AI Studio + Cookie、4 粘贴；
      * 常规写入只增不减（防止来回跳）；需要回退时走 forceGuideStage()。
      */
     private var guideStageMax: Int
@@ -229,7 +235,7 @@ class OverlayService : Service() {
 
     /** 直接覆盖步骤（迁移 / 回退 / 证据闸门用）。常规 setter 只增不减，不能用来回退。 */
     private fun forceGuideStage(stage: Int) {
-        val target = stage.coerceIn(0, 5)
+        val target = stage.coerceIn(0, 4)
         if (guidePrefs.getInt("guide_stage_max", 0) == target) return
         guidePrefs.edit().putInt("guide_stage_max", target).apply()
     }
@@ -307,7 +313,7 @@ class OverlayService : Service() {
     /**
      * 读一次剪贴板并更新 cookieClipLength。
      * 安卓 10+ 后台读剪贴板可能直接返回空，所以这里只是「尽力而为」：
-     * 读不到就算了，主路径是第 4 步的「已经导出好了，去粘贴」和第 5 步的「打开 App 并读取剪贴板」。
+     * 读不到就算了，主路径是第 4 步的「去粘贴」和第 5 步的「打开App并粘贴Cookie」。
      */
     private fun refreshClipboardState() {
         val text = runCatching { TermuxBridge.readFromClipboard(this) }.getOrNull().orEmpty()
@@ -320,7 +326,7 @@ class OverlayService : Service() {
             // 能导出 JSON 说明扩展已经装好、也登录过了；直接推进到粘贴步，不等用户手点
             guideExtInstalled = true
             loginStepDone = true
-            guideStageMax = 5
+            guideStageMax = 4
             LogCollector.append("[引导] 剪贴板命中 Cookie JSON（${text.length} 字符）")
         }
     }
@@ -461,6 +467,7 @@ class OverlayService : Service() {
         titleRow.addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         titleRow.addView(minimizeBtn)
         titleRow.addView(closeBtn)
+        this.titleRow = titleRow
 
         // 常驻本机地址行：只有地址文字可点复制，「本机地址：」标签不响应
         val addressRow = LinearLayout(this).apply {
@@ -593,7 +600,7 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, dp(4), 0, 0)
         }
-        // 第 8 步：复制地址卡片；大号「完成」在这里，点完永久不再出现
+        // 第 7 步：复制地址卡片；大号「完成」在这里，点完永久不再出现
         val addressTip = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(6), dp(8), dp(2))
@@ -604,7 +611,7 @@ class OverlayService : Service() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val tipBadge = TextView(this).apply {
-            text = "第 8/8 步 · 复制地址并完成"
+            text = "第7/7步 · 复制地址并完成酒馆连接"
             setTextColor(Color.parseColor("#9AA0A6"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, 0, 0, dp(2))
@@ -626,10 +633,37 @@ class OverlayService : Service() {
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         )
         val tipHint = TextView(this).apply {
-            text = "点上方本机地址直接复制，填进酒馆"
+            val hintText = "① 点击上方蓝色地址直接复制，拉新窗口启动酒馆\n" +
+                "② 进入酒馆后，点击 🔌\n" +
+                "③ API 选择聊天补全 / Chat Completion → 聊天补全来源选择 Google AI Studio → 点击反向代理右边的 ⏷\n" +
+                "④ 复制好的地址粘贴进代理服务器 URL 栏，剩下的部分随便填"
+            val sp = SpannableString(hintText)
+            val apiStart = hintText.indexOf("API")
+            if (apiStart >= 0) {
+                sp.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    apiStart,
+                    apiStart + "API".length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            // 箭头用 14dp 的圆形 drawable 顶掉占位字符；drawable 读不到时保留 ⏷ 兜底
+            val arrowStart = hintText.indexOf("⏷")
+            val arrow = ContextCompat.getDrawable(this@OverlayService, R.drawable.ic_down_circle)
+            if (arrowStart >= 0 && arrow != null) {
+                arrow.setBounds(0, 0, dp(14), dp(14))
+                sp.setSpan(
+                    ImageSpan(arrow, ImageSpan.ALIGN_BASELINE),
+                    arrowStart,
+                    arrowStart + 1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            text = sp
             setTextColor(Color.parseColor("#CBD5E1"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, dp(6), 0, dp(6))
+            setLineSpacing(dp(2).toFloat(), 1.15f)
         }
         val doneBtn = TextView(this).apply {
             text = "✅ 完成"
@@ -650,8 +684,9 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
             setPadding(0, dp(4), 0, 0)
         }
-        addressTip.addView(tipBadge)
+        // 地址在上、徽标在下：卡片第一行就是本机地址，避免跟顶部常驻地址行重复
         addressTip.addView(tipAddressRow)
+        addressTip.addView(tipBadge)
         addressTip.addView(tipHint)
         addressTip.addView(
             doneBtn,
@@ -936,17 +971,17 @@ class OverlayService : Service() {
         if (!guidePrefs.contains("cookie_done") && snapshot.online) {
             if (snapshot.accountsReady) {
                 cookieDone = true
-                forceGuideStage(5)
+                forceGuideStage(4)
             } else {
                 cookieDone = false
             }
         }
         if (snapshot.accountsReady) {
             if (!cookieDone) cookieDone = true
-            // 只在没到 5 时才写，避免每次重绘都写一遍 SharedPreferences
-            if (guideStageMax < 5) forceGuideStage(5)
-        } else if (cookieDone && guideStageMax < 5) {
-            forceGuideStage(5)
+            // 只在没到 4 时才写，避免每次重绘都写一遍 SharedPreferences
+            if (guideStageMax < 4) forceGuideStage(4)
+        } else if (cookieDone && guideStageMax < 4) {
+            forceGuideStage(4)
         }
 
         val cookieMode = !cookieDone
@@ -969,7 +1004,7 @@ class OverlayService : Service() {
         (dot?.background as? GradientDrawable)?.setColor(Color.parseColor(color))
         (miniDot?.background as? GradientDrawable)?.setColor(Color.parseColor(color))
         val addressShown = snapshot.localBaseUrl.ifBlank { "地址获取中" }
-        miniText?.text = "反代 :${snapshot.port}"
+        miniText?.text = "反代："
         miniAddress?.text = addressShown
         proxyAddressText?.text = addressShown
         addressTipValue?.text = addressShown
@@ -1104,6 +1139,7 @@ class OverlayService : Service() {
         if (!force && chromeApplied == minimized && params.width == targetWidth) return
         chromeApplied = minimized
         fullContent?.visibility = if (minimized) View.GONE else View.VISIBLE
+        titleRow?.visibility = if (minimized) View.GONE else View.VISIBLE
         miniBar?.visibility = if (minimized) View.VISIBLE else View.GONE
         val h = dp(if (minimized) 8 else 14)
         val v = dp(if (minimized) 6 else 10)
@@ -1125,7 +1161,7 @@ class OverlayService : Service() {
         Toast.makeText(this, "已复制本机地址", Toast.LENGTH_SHORT).show()
     }
 
-    /** 第 8 步点「完成」：教程永久结束。 */
+    /** 第 7 步点「完成」：教程永久结束。 */
     private fun finishAddressTip() {
         tavernAddressTipDone = true
         render()
@@ -1136,11 +1172,12 @@ class OverlayService : Service() {
         ).show()
     }
 
-    /** 第 8 步：复制地址卡片，只在教程最后出现。 */
+    /** 第 7 步：复制地址卡片，只在教程最后出现。 */
     private fun renderAddressTip(show: Boolean) {
         val box = addressTipBox ?: return
         if (!show) {
             box.visibility = View.GONE
+            proxyAddressRow?.visibility = View.VISIBLE
             return
         }
         tutorialText?.visibility = View.GONE
@@ -1150,6 +1187,8 @@ class OverlayService : Service() {
         tutorialNavRow?.visibility = View.GONE
         tutorialContinueRow?.visibility = View.GONE
         tutorialSwitchRow?.visibility = View.GONE
+        // 卡片里已经有地址，隐藏顶部常驻地址行，避免同一地址出现两遍
+        proxyAddressRow?.visibility = View.GONE
         box.visibility = View.VISIBLE
     }
 
@@ -1201,24 +1240,27 @@ class OverlayService : Service() {
 
         val computed = when {
             firstDeploy && (deployingNow || deployFailed) -> 0
-            cookieDone || snapshot.accountsReady -> 5
+            cookieDone || snapshot.accountsReady -> 4
             !deployed -> 0
-            cookieClipLength > 0 -> 5
+            cookieClipLength > 0 -> 4
             chosen == null -> 1
-            // 扩展已装 = 之前一定登录过（老用户 / 剪贴板反推），不再拉回登录步
-            guideExtInstalled -> 4
-            !loginStepDone -> 2
+            // 先装扩展，再进合并卡（打开 AI Studio + 登录 + 导出 Cookie）
+            !guideExtInstalled -> 2
             else -> 3
         }
         // 只有从没成功过才回 S0
         if (!deployed && guideStageMax > 0) forceGuideStage(0)
         // 浏览器被卸载：回到重新安装那一步，不能卡在扩展 / Cookie 卡（回退必须走 force）
         if (deployed && chosen == null && guideStageMax >= 2) forceGuideStage(1)
+        // 升级迁移：老版本 3 是「扩展」步，合并后 3 是合并卡；扩展没确认过就退回第 2 步，避免跳过安装
+        if (!cookieDone && deployed && !guideExtInstalled && guideStageMax >= 3) forceGuideStage(2)
+        // 老版本最多存到 5（原第 6 步粘贴），合并后最高是 4；夹一下免得 when(view) 落到 else 把教程整块隐藏
+        if (guideStageMax > 4) forceGuideStage(4)
         if (computed > guideStageMax) guideStageMax = computed
-        // 证据闸门：停在「粘贴」步必须有证据（剪贴板命中 JSON，或用户本次明确点过「已导出，去粘贴」），
-        // 否则退回 Cookie 步——这正是升级后直接落在粘贴步的根因
-        if (!cookieDone && guideStageMax >= 5 && cookieClipLength <= 0 && !pasteStepConfirmed) {
-            forceGuideStage(4)
+        // 证据闸门：停在「粘贴」步必须有证据（剪贴板命中 JSON，或用户本次明确点过「去粘贴」），
+        // 否则退回合并卡（AI Studio + Cookie）——这正是升级后直接落在粘贴步的根因
+        if (!cookieDone && guideStageMax >= 4 && cookieClipLength <= 0 && !pasteStepConfirmed) {
+            forceGuideStage(3)
         }
         val stage = guideStageMax
         // 回看定位：只允许停在 0..stage-1，超出即跟随最新
@@ -1228,8 +1270,8 @@ class OverlayService : Service() {
         val readonly = view < stage
         cookieViewStage = if (readonly) view else -1
         if (view != 1) tutorialFailHint = null
-        // 只有「登录」步会用到复制链接的覆盖确认；切到别步就清掉
-        if (view != 2) {
+        // 只有合并卡（AI Studio + Cookie）会用到复制链接的覆盖确认；切到别步就清掉
+        if (view != 3) {
             linkCopyConfirmShown = false
             studioOpenError = null
         }
@@ -1240,7 +1282,7 @@ class OverlayService : Service() {
         tut.setOnClickListener(null)
         continueRow?.visibility = View.GONE
         switchRow?.visibility =
-            if (view == 3 && bothInstalled && !readonly) View.VISIBLE else View.GONE
+            if (view == 2 && bothInstalled && !readonly) View.VISIBLE else View.GONE
         tutorialEdgeSwitch?.let {
             it.setTextColor(Color.parseColor(if (browserLabel == "Edge") "#FDE047" else "#93C5FD"))
             it.setTypeface(it.typeface, if (browserLabel == "Edge") Typeface.BOLD else Typeface.NORMAL)
@@ -1254,7 +1296,7 @@ class OverlayService : Service() {
         tutorialBadge?.text = if (readonly) {
             "已完成 · 第 ${view + 1} 步"
         } else {
-            "第 ${view + 1}/8 步 · ${stageName(view)}"
+            "第 ${view + 1}/7 步 · ${stageName(view)}"
         }
         tutorialPrev?.visibility = if (view > 0) View.VISIBLE else View.GONE
         tutorialNext?.visibility = if (view < stage) View.VISIBLE else View.GONE
@@ -1274,10 +1316,9 @@ class OverlayService : Service() {
         when (view) {
             0 -> renderDeployStage(tut, btn, altBtn, continueRow)
             1 -> renderBrowserStage(tut, btn, altBtn)
-            2 -> renderLoginStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            3 -> renderExtensionStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            4 -> renderCookieStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
-            5 -> renderPasteStage(tut, btn, altBtn, continueRow, browserPkg)
+            2 -> renderExtensionStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            3 -> renderCookieStage(tut, btn, altBtn, continueRow, browserLabel, browserPkg)
+            4 -> renderPasteStage(tut, btn, altBtn, continueRow, browserPkg)
             else -> renderTutorial(false)
         }
         if (readonly) {
@@ -1289,9 +1330,9 @@ class OverlayService : Service() {
     private fun stageName(stage: Int): String = when (stage) {
         0 -> "部署"
         1 -> "浏览器"
-        2 -> "登录"
-        3 -> "扩展"
-        4 -> "Cookie"
+        2 -> "扩展"
+        3 -> "AI Studio + Cookie"
+        4 -> "粘贴"
         else -> "导入"
     }
 
@@ -1515,22 +1556,22 @@ class OverlayService : Service() {
         btn: TextView?,
         altBtn: TextView?
     ) {
-        tut.text = "手机自带浏览器、Chrome 不支持扩展，先装 Edge 或火狐"
+        tut.text = "下载并安装支持拓展程序的浏览器"
         tut.setTextColor(Color.parseColor("#DBEAFE"))
         tut.setOnClickListener { refreshBrowserCache(); render() }
         btn?.visibility = View.VISIBLE
-        btn?.text = "下载 Edge（官网）"
+        btn?.text = "下载Edge（官网）"
         btn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_EDGE_ANDROID) }
         altBtn?.visibility = View.VISIBLE
-        altBtn?.text = "下载火狐（官网）"
-        altBtn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_FIREFOX_ANDROID) }
+        altBtn?.text = "下载火狐（play商店）"
+        altBtn?.setOnClickListener { TermuxBridge.openUrl(this, TermuxBridge.URL_FIREFOX_PLAY_STORE) }
     }
 
     /**
-     * 第 3 步：打开 AI Studio 并登录（只讲登录，不讲扩展 / Cookie）。
+     * 第 4 步：一张卡走完打开 AI Studio、登录、切 Playground、导出 Cookie。
      * 网络前提已经放在教程第一张卡（S0），这里不再重复整句。
      */
-    private fun renderLoginStage(
+    private fun renderCookieStage(
         tut: TextView,
         btn: TextView?,
         altBtn: TextView?,
@@ -1540,11 +1581,23 @@ class OverlayService : Service() {
     ) {
         val label = browserLabel ?: "Edge"
         continueRow?.visibility = View.GONE
-        tut.text = "① 点下面按钮打开 AI Studio\n" +
-            "② 页面加载后点 Start / Get started / 开始使用进入登录\n" +
-            "③ 登录要用的 Google 账号，确认页面右上角已经出现头像"
-        tut.setTextColor(Color.parseColor("#DBEAFE"))
         tut.setOnClickListener(null)
+        val menuPath = if (label == "火狐") {
+            "④ 点击右上「⋮」→ 扩展 → Cookie-Editor"
+        } else {
+            "④ 点击底部「≡」→ 扩展 → Cookie-Editor"
+        }
+        val exportPath = if (label == "火狐") {
+            "⑤ 火狐版：点击右下角图标 → JSON，复制 Cookie"
+        } else {
+            "⑤ Edge 版：滑到页面最右端 → 点击右下角图标 → JSON，复制 Cookie"
+        }
+        tut.text = "① 点击下面按钮打开 AI Studio\n" +
+            "② 点击 Get started / 开始使用 进行账号登录\n" +
+            "③ 点击网页左上角三横杠「≡」，切换到 Playground 页面\n" +
+            "$menuPath\n" +
+            "$exportPath"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
 
         // 复制链接会覆盖剪贴板里的 Cookie：覆盖前先确认一次
         if (linkCopyConfirmShown) {
@@ -1566,9 +1619,9 @@ class OverlayService : Service() {
                 linkCopyConfirmShown = false
                 render()
             }
-            renderTutorialActionLink(continueRow, "登录好了 →", primary = true) {
-                loginStepDone = true
-                guideStageMax = 3
+            renderTutorialActionLink(continueRow, "去粘贴 →", primary = true) {
+                pasteStepConfirmed = true
+                guideStageMax = 4
                 render()
             }
             return
@@ -1583,13 +1636,13 @@ class OverlayService : Service() {
                 tut.setTextColor(Color.parseColor("#FCA5A5"))
             }
             openedRecently -> {
-                tut.text = "✅ 已用 $label 打开 AI Studio，登录后点「登录好了」\n${tut.text}"
+                tut.text = "✅ 已用 $label 打开 AI Studio\n${tut.text}"
                 tut.setTextColor(Color.parseColor("#86EFAC"))
             }
         }
 
         btn?.visibility = View.VISIBLE
-        btn?.text = "打开 AI Studio"
+        btn?.text = if (label == "火狐") "用火狐打开 AI Studio" else "用 Edge 打开 AI Studio"
         btn?.setOnClickListener {
             val ok = openAiStudio(browserPkg)
             if (ok) {
@@ -1611,74 +1664,10 @@ class OverlayService : Service() {
                 Toast.makeText(this, "AI Studio 链接已复制", Toast.LENGTH_SHORT).show()
             }
         }
-        // 登录确认后进入安装扩展
-        renderTutorialActionLink(continueRow, "登录好了 →", primary = true) {
-            loginStepDone = true
-            guideStageMax = 3
-            render()
-        }
-    }
-
-    /**
-     * 第 5 步：在 Cookie-Editor 里获取 Cookie（只保留打开 CE + 导出 JSON）。
-     * 「打开 AI Studio 并登录」已经在上一步完成，这里不再重复登录说明。
-     */
-    private fun renderCookieStage(
-        tut: TextView,
-        btn: TextView?,
-        altBtn: TextView?,
-        continueRow: LinearLayout?,
-        browserLabel: String?,
-        browserPkg: String?
-    ) {
-        val label = browserLabel ?: "Edge"
-        continueRow?.visibility = View.GONE
-        tut.setOnClickListener(null)
-        val openPath = if (label == "火狐") {
-            "① 打开 Cookie-Editor：点右上「⋮」→ 扩展 → Cookie-Editor"
-        } else {
-            "① 打开 Cookie-Editor：点底部「≡」→ 扩展 → Cookie-Editor"
-        }
-        val exportPath = if (label == "火狐") {
-            "② 获取 Cookie：点右下角图标 → 选 JSON → 复制 Cookie"
-        } else {
-            "② 获取 Cookie：滑到最右边 → 点右下角图标 → 选 JSON → 复制 Cookie"
-        }
-        tut.text = "$openPath\n$exportPath"
-        tut.setTextColor(Color.parseColor("#DBEAFE"))
-
-        // 打开结果直接写在卡里：成功说「已打开」，失败给红字
-        val openedRecently = studioOpenedAt > 0L && System.currentTimeMillis() - studioOpenedAt < 60_000L
-        val openError = studioOpenError
-        when {
-            openError != null -> {
-                tut.text = "⚠️ $openError\n\n${tut.text}"
-                tut.setTextColor(Color.parseColor("#FCA5A5"))
-            }
-            openedRecently -> {
-                tut.text = "✅ 已用 $label 打开 AI Studio\n${tut.text}"
-                tut.setTextColor(Color.parseColor("#86EFAC"))
-            }
-        }
-
-        btn?.visibility = View.VISIBLE
-        btn?.text = if (label == "火狐") "用 火狐 打开 AI Studio" else "用 Edge 打开 AI Studio"
-        btn?.setOnClickListener {
-            val ok = openAiStudio(browserPkg)
-            if (ok) {
-                studioOpenError = null
-            } else {
-                studioOpenError = "没能打开浏览器，链接已复制，请手动粘贴到地址栏"
-                Toast.makeText(this, "没能打开浏览器，链接已复制到剪贴板", Toast.LENGTH_LONG).show()
-            }
-            render()
-        }
-        // 扩展已经装好，这里不再提供「复制链接」，避免覆盖刚导出的 Cookie
-        altBtn?.visibility = View.GONE
         // 手动推进是主路径，不再依赖剪贴板自动检测
         renderTutorialActionLink(continueRow, "去粘贴 →", primary = true) {
             pasteStepConfirmed = true
-            guideStageMax = 5
+            guideStageMax = 4
             render()
         }
     }
@@ -1702,7 +1691,7 @@ class OverlayService : Service() {
         }
         tut.visibility = View.VISIBLE
         tutorialBadge?.visibility = View.VISIBLE
-        tutorialBadge?.text = "第 7/8 步 · Termux 双窗口"
+        tutorialBadge?.text = "第 6/7 步 · Termux 双窗口"
         tutorialNavRow?.visibility = View.GONE
         switchRow?.visibility = View.GONE
         continueRow?.visibility = View.GONE
@@ -1724,7 +1713,7 @@ class OverlayService : Service() {
             render()
         }
         altBtn?.visibility = View.GONE
-        // 「下一步」进入第 8 步「复制地址并完成」；大号「完成」在那一张卡里
+        // 「下一步」进入第 7 步「复制地址并完成」；大号「完成」在那一张卡里
         renderTutorialActionLink(continueRow, "下一步 →", primary = true) {
             tavernDone = true
             render()
@@ -1740,14 +1729,9 @@ class OverlayService : Service() {
         browserPkg: String?
     ) {
         continueRow?.visibility = View.GONE
-        val hasClip = cookieClipLength > 0
-        val head = if (hasClip) {
-            "✅ 已检测到 Cookie（${cookieClipLength} 字符）\n"
-        } else {
-            // 后台读不到剪贴板时不再说「没检测到」，避免打击真实已导出的用户
-            "如果已经导出好了，点下面按钮继续\n"
-        }
-        tut.text = "${head}回 App →「账号」页 →「粘贴剪贴板」→ 导入\n导入成功后这个悬浮窗会自动消失"
+        tut.text = "如果已经成功导出 Cookie，点击下方按钮一键粘贴到 App 剪贴板。\n" +
+            "若跳转后剪贴板没有东西，则手动长按粘贴。\n" +
+            "尽量不要用输入法自带剪切板，一般会有字数上限，无法完整粘贴。"
         tut.setTextColor(Color.parseColor(if (highlightPulse) "#FDE047" else "#86EFAC"))
         tut.setTypeface(null, Typeface.BOLD)
         tut.background = GradientDrawable().apply {
@@ -1756,10 +1740,10 @@ class OverlayService : Service() {
             setStroke(dp(1), Color.parseColor("#66FDE047"))
         }
         btn?.visibility = View.VISIBLE
-        btn?.text = "📲 打开 App 并读取剪贴板"
+        btn?.text = "打开App并粘贴Cookie"
         btn?.setOnClickListener { openApp(tab = 1, pasteFromClipboard = true) }
         altBtn?.visibility = View.VISIBLE
-        altBtn?.text = "重新导出 Cookie"
+        altBtn?.text = "重新导出Cookie"
         altBtn?.setOnClickListener { openAiStudio(browserPkg) }
     }
 
@@ -1773,17 +1757,12 @@ class OverlayService : Service() {
         browserPkg: String?
     ) {
         val label = browserLabel ?: "Edge"
-        tut.text = if (label == "火狐") {
-            "① 点主按钮，用火狐打开 Cookie-Editor 安装页\n② 在安装页点添加"
-        } else {
-            "① 点主按钮，用 Edge 打开 Cookie-Editor 安装页\n② 在安装页点安装"
-        }
-        tut.setTextColor(
-            Color.parseColor(if (tutorialFailHint != null) "#FCA5A5" else "#DBEAFE")
-        )
+        tut.text = "点击下方按钮跳转页面安装Cookie-Editor\n" +
+            "若无法成功安装，则点击复制链接手动跳转安装"
+        tut.setTextColor(Color.parseColor("#DBEAFE"))
         val addonUrl = browserAddonUrl(label)
         btn?.visibility = View.VISIBLE
-        btn?.text = if (label == "火狐") "在 火狐 打开扩展安装页" else "在 Edge 打开扩展安装页"
+        btn?.text = if (label == "火狐") "用火狐打开安装页" else "用 Edge 打开安装页"
         btn?.setOnClickListener {
             val ok = if (browserPkg.isNullOrBlank()) {
                 TermuxBridge.openUrl(this, addonUrl)
@@ -1791,32 +1770,19 @@ class OverlayService : Service() {
                 TermuxBridge.openUrlInPackage(this, addonUrl, browserPkg)
             }
             if (!ok) {
-                tutorialFailHint = label
+                Toast.makeText(this, "没能打开安装页，请点「复制链接」手动粘贴", Toast.LENGTH_LONG).show()
                 render()
             }
         }
         altBtn?.visibility = View.VISIBLE
-        altBtn?.text = if (label == "火狐") "复制 火狐 CE 扩展链接" else "复制 Edge CE 扩展链接"
+        altBtn?.text = "复制链接"
         altBtn?.setOnClickListener {
             TermuxBridge.copyToClipboard(this, "Cookie-Editor ${label}扩展链接", addonUrl)
-        }
-        val fail = tutorialFailHint
-        if (fail != null) {
-            tut.text = "${tut.text}\n未能用 $fail 打开，请点「复制链接」手动粘贴"
-        }
-        // 安卓版火狐 120 以下不支持扩展，AMO 只会给 .xpi 下载；版本号能读到就直接点明
-        if (label == "火狐") {
-            val ffMajor = firefoxMajorVersion(browserPkg)
-            tut.text = if (ffMajor in 1..119) {
-                "${tut.text}\n⚠️ 火狐 $ffMajor 低于 120，安卓版不支持扩展，只会给下载文件。请升级火狐，或改用 Edge。"
-            } else {
-                "${tut.text}\n页面只给「下载文件」？在火狐里点 ⋮ → 扩展 → 浏览全部扩展，搜 Cookie-Editor 安装。"
-            }
         }
         tut.setOnClickListener(null)
         renderTutorialActionLink(continueRow, "装好了 →") {
             guideExtInstalled = true
-            guideStageMax = 4
+            guideStageMax = 3
             tutorialFailHint = null
             render()
         }

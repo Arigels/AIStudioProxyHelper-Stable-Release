@@ -1,6 +1,7 @@
 package com.aistudio.proxyhelper.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -89,6 +90,8 @@ fun AgentScreen(
 ) {
     var problem by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
+    // AI 排障助手默认只露标题，点开才显示配置 / 输入 / 排查过程 / 结论
+    var expanded by rememberSaveable { mutableStateOf(false) }
 
     // 有错误时预填到输入框，但不自动调用 AI（避免打开 App 就消耗额度）
     LaunchedEffect(initialProblem) {
@@ -143,7 +146,12 @@ fun AgentScreen(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Icon(
                         imageVector = Icons.Filled.SmartToy,
                         contentDescription = null,
@@ -153,9 +161,16 @@ fun AgentScreen(
                     Text(
                         text = "AI 排障助手",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = null
                     )
                 }
+                AnimatedVisibility(visible = expanded) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "选一个服务商、填 Key、选模型就能用。它只会做「反代部署」这件事：查状态、读日志、执行命令、改端口、启停服务。",
                     style = MaterialTheme.typography.bodySmall,
@@ -443,8 +458,13 @@ fun AgentScreen(
                         }
                     }
                 }
+                    }
+                }
             }
         }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         // 问题输入
         ElevatedCard(
@@ -617,6 +637,9 @@ fun AgentScreen(
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
+            }
+        }
+
             }
         }
 

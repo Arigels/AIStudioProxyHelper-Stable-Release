@@ -214,9 +214,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             state.deploying -> "正在${phase.label}，编译阶段没输出是正常的，请耐心等"
             !termuxInstalled -> "还没安装 Termux，去 F-Droid 下载"
             !accessibilityEnabled -> "建议开启自动操控权限，可自动完成搭建操作"
-            // 只有「从没部署成功过」才提示去点半自动部署；已部署过但服务没跑时，界面上是「启动反代」
+            // 只有「从没部署成功过」才提示去点半自动部署；已部署过但服务没跑时，界面上是「重启反代」
             !state.deploySucceeded -> "点「半自动部署反代」开始"
-            else -> "反代没在跑，点「启动反代」重新拉起服务"
+            else -> "反代尚未启动，进入App点击「重启反代」重新拉起服务"
         }
 
         if (visibleError != null) {

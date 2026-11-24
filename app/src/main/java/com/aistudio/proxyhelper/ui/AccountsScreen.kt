@@ -153,7 +153,7 @@ fun AccountsScreen(
 
     val policy = uiState.service.quotaPolicy ?: remember { QuotaPolicyResolver.builtInDefaultPolicy() }
     val hasAccounts = uiState.service.accounts.isNotEmpty()
-    var guideExpanded by rememberSaveable(hasAccounts) { mutableStateOf(!hasAccounts) }
+    var guideExpanded by rememberSaveable(hasAccounts) { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -729,6 +729,7 @@ private fun AccountsQuotaSectionCard(
 ) {
     val accounts = uiState.service.accounts
     var statusFilter by rememberSaveable { mutableStateOf("all") }
+    var sectionExpanded by rememberSaveable { mutableStateOf(false) }
     val expandedStateMap = remember { mutableStateMapOf<String, Boolean>() }
 
     val filteredAccounts = remember(accounts, statusFilter) {
@@ -753,9 +754,10 @@ private fun AccountsQuotaSectionCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { sectionExpanded = !sectionExpanded },
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "账号可用模型与今日配额（${accounts.size}）",
@@ -763,56 +765,56 @@ private fun AccountsQuotaSectionCard(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
+                Icon(
+                    imageVector = if (sectionExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = null
+                )
+            }
+
+            if (sectionExpanded) {
                 if (filteredAccounts.isNotEmpty()) {
-                    TextButton(
-                        onClick = {
-                            val target = !allExpanded
-                            filteredAccounts.forEach { expandedStateMap[it.id] = target }
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Text(if (allExpanded) "全部收起" else "展开全部")
+                        TextButton(
+                            onClick = {
+                                val target = !allExpanded
+                                filteredAccounts.forEach { expandedStateMap[it.id] = target }
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(if (allExpanded) "全部收起" else "展开全部")
+                        }
                     }
                 }
-            }
 
-            Text(
-                text = "展开每个账号可实时查看今日已调用次数、Token 消耗、可用模型及剩余每日配额；状态与管理平台实时同步。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (accounts.size > 1) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(
-                        "all" to "全部 (${accounts.size})",
-                        "ready" to "就绪 (${accounts.count { it.enabled && it.isAvailable && !it.sessionExpired }})",
-                        "limited" to "限流/冷却",
-                        "expired" to "登录失效"
-                    ).forEach { (key, label) ->
-                        FilterChip(
-                            selected = statusFilter == key,
-                            onClick = { statusFilter = key },
-                            label = { Text(label, style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
-                }
-            }
-
-            if (filteredAccounts.isEmpty()) {
                 Text(
-                    text = if (accounts.isEmpty()) {
-                        "还没有导入账号。导入后这里会实时显示每个账号的可用模型与每日配额。"
-                    } else {
-                        "当前筛选条件下没有匹配的账号。"
-                    },
+                    text = "展开每个账号可实时查看今日已调用次数、Token 消耗、可用模型及剩余每日配额；状态与管理平台实时同步。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
+
+                if (accounts.size > 1) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "all" to "全部 (${accounts.size})",
+                            "ready" to "就绪 (${accounts.count { it.enabled && it.isAvailable && !it.sessionExpired }})",
+                            "limited" to "限流/冷却",
+                            "expired" to "登录失效"
+                        ).forEach { (key, label) ->
+                            FilterChip(
+                                selected = statusFilter == key,
+                                onClick = { statusFilter = key },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+
                 filteredAccounts.forEachIndexed { idx, acc ->
                     val isActive = acc.id == uiState.service.activeAccountId
                     val expanded = expandedStateMap[acc.id] ?: isActive
@@ -1339,6 +1341,7 @@ private fun DailyQuotaTableCard(
         tierNames.firstOrNull { it.equals(norm, ignoreCase = true) } ?: tierNames.first()
     }
     var selectedTier by rememberSaveable(preferredTier) { mutableStateOf(preferredTier) }
+    var tableExpanded by rememberSaveable { mutableStateOf(false) }
     val activeTierCfg = policy.tiers[selectedTier] ?: policy.tiers.values.firstOrNull()
 
     ElevatedCard(
@@ -1350,14 +1353,16 @@ private fun DailyQuotaTableCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { tableExpanded = !tableExpanded },
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "每日额度对照表",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
                 )
                 Surface(
                     color = if (policy.syncedFromServer) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.surfaceVariant,
@@ -1371,8 +1376,15 @@ private fun DailyQuotaTableCard(
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = if (tableExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = null
+                )
             }
 
+            AnimatedVisibility(visible = tableExpanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
                 text = "与 AI Studio Proxy 管理平台「订阅额度」配置一致（美西 00:00 PST 重置）。次数或 Token 任一达到上限时，系统自动优先切换其他账号。",
                 style = MaterialTheme.typography.bodySmall,
@@ -1582,6 +1594,8 @@ private fun DailyQuotaTableCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+            }
                 }
             }
         }
@@ -1929,7 +1943,7 @@ private fun CookieGuideCard(
                     // 步骤 3
                     GuideStep(number = 3, title = "登录 Google AI Studio") {
                         Text(
-                            text = "页面加载后先点 Start / Get started / 开始使用（以页面实际按钮为准）进入登录；登录要用的 Google 账号即可。",
+                            text = "页面加载后先点 Start / Get started / 开始使用（以页面实际按钮为准）进入登录；登录Google账号后，切换到Playground页面。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
