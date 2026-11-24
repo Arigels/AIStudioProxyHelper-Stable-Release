@@ -1,3 +1,5 @@
+## *⚠️反代刚需Termux后台，TT酒馆无法使用*
+
 # AI Studio 反代助手（正式版 1.0）
 
 > 把手机变成一台随身 Gemini 反代服务器：在 Android 上联动 Termux，完成 Google AI Studio 反代服务的部署、启动、账号导入、额度监控和酒馆连接。
