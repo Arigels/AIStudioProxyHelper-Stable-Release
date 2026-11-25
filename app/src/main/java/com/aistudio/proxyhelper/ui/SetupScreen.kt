@@ -381,6 +381,15 @@ private fun PrimaryActionCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Text(
+                    text = "停止反代的方式：\n" +
+                        "一、在本页点击「停止反代服务」，App 向 Termux 发送停止指令，端口释放后客户端连接断开。Termux 未开启后台调用权限时，该按钮改为复制命令：在 Termux 新建一个没有程序运行的窗口，粘贴并回车执行。\n" +
+                        "二、在 Termux 启动反代的窗口按 Ctrl+C，或输入 exit 回车；该窗口内的进程结束后，端口释放。\n" +
+                        "三、在系统设置中强制停止 Termux，Termux 内的全部进程一并结束，端口释放。\n" +
+                        "本 App 关闭后，反代服务仍在 Termux 中运行。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Surface(
                     color = Color(0xFFE8F5E9),
                     shape = RoundedCornerShape(10.dp),
