@@ -999,9 +999,18 @@ private fun AccountQuotaItemCard(
                             !acc.enabled -> "已停用" to Color(0xFF6B7280)
                             acc.sessionExpired -> "登录失效" to Color(0xFFDC2626)
                             isActive -> "当前激活" to Color(0xFF15803D)
-                            acc.cooldownRemainingSec > 0 -> "冷却 ${acc.cooldownRemainingSec}s" to Color(0xFFD97706)
-                            !acc.isAvailable -> "限流中" to Color(0xFFD97706)
+                            acc.cooldownRemainingSec > 0 -> "429 冷却 ${acc.cooldownRemainingSec}s" to Color(0xFFD97706)
+                            !acc.isAvailable -> "429 限流" to Color(0xFFD97706)
                             else -> "就绪" to Color(0xFF1D4ED8)
+                        }
+                        // 非就绪态补一行「为什么不可用、下一步做什么」；只做表述，判定逻辑不变
+                        val statusHint = when {
+                            !acc.enabled -> "该账号已手动停用，不参与轮询；需要时打开右侧开关。"
+                            acc.sessionExpired -> "Cookie 已失效，需要重新导入该账号的 Cookie 后才能使用。"
+                            isActive -> null
+                            acc.cooldownRemainingSec > 0 -> "已触发 429（请求过于频繁或额度耗尽，被限流），倒计时结束后自动恢复。"
+                            !acc.isAvailable -> "已触发 429（该模型在当前账号上达到频率或额度上限），服务会自动切换到其它账号。"
+                            else -> null
                         }
                         Surface(
                             color = statusColor.copy(alpha = 0.14f),
@@ -1015,6 +1024,14 @@ private fun AccountQuotaItemCard(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                             )
                         }
+                    }
+                    if (statusHint != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = statusHint,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
