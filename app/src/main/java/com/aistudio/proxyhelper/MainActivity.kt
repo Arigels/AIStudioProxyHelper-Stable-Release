@@ -536,6 +536,7 @@ fun AIStudioProxyApp(
                         },
                         onActivateAccount = viewModel::activateAccount,
                         onToggleAccount = viewModel::toggleAccountEnabled,
+                        onToggleAllAccounts = viewModel::setAllAccountsEnabled,
                         onDetectAccount = viewModel::detectAccountEmailAndTier,
                         onForceNextAccount = viewModel::forceNextAccount,
                         onDeleteAccount = viewModel::deleteAccount,

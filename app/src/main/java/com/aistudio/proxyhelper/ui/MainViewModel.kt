@@ -78,6 +78,8 @@ data class MainUiState(
     val savingSecurityKeys: Boolean = false,
     val quotaChecking: Boolean = false,
     val busyAccountId: String? = null,
+    /** 账号批量启用 / 停用进行中：入口按钮置灰，避免重复触发 */
+    val bulkToggling: Boolean = false,
     /** 第一次服务状态请求已返回（无论在线 / 离线）；用于启动分流，不能用 checking 判断 */
     val statusLoaded: Boolean = false
 )
@@ -856,6 +858,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val (ok, msg) = apiClient.toggleAccount(_uiState.value.settings, accountId, enabled)
             _uiState.update { it.copy(busyAccountId = null, snackbarMessage = msg) }
             if (ok) refreshServiceStatus(silent = true)
+        }
+    }
+
+    /**
+     * 批量启用 / 停用：逐个串行调用单账号开关接口，不并发；单个失败不中断，全部跑完后再汇总一次。
+     * 只处理当前状态与目标不一致的账号，避免对已就绪账号重复下发。
+     */
+    fun setAllAccountsEnabled(enabled: Boolean) {
+        if (_uiState.value.bulkToggling) return
+        viewModelScope.launch {
+            val targets = _uiState.value.service.accounts.filter { it.enabled != enabled }
+            if (targets.isEmpty()) return@launch
+            _uiState.update { it.copy(bulkToggling = true) }
+            var success = 0
+            var failed = 0
+            targets.forEach { acc ->
+                val (ok, msg) = apiClient.toggleAccount(_uiState.value.settings, acc.id, enabled)
+                if (ok) {
+                    success++
+                } else {
+                    failed++
+                    LogCollector.append(
+                        "批量${if (enabled) "启用" else "停用"}账号失败：${acc.email ?: acc.name} · $msg"
+                    )
+                }
+            }
+            val action = if (enabled) "启用" else "停用"
+            val message = when {
+                failed == 0 -> "已全部$action（$success 个账号）"
+                success == 0 -> "全部失败：$failed 个账号未能切换，失败原因见日志"
+                else -> "部分失败：成功 $success 个，失败 $failed 个，失败原因见日志"
+            }
+            _uiState.update { it.copy(bulkToggling = false, snackbarMessage = message) }
+            refreshServiceStatus(silent = true)
         }
     }
 

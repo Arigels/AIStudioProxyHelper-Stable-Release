@@ -117,6 +117,8 @@ fun AccountsScreen(
     onOpenConsole: () -> Unit,
     onActivateAccount: (String) -> Unit,
     onToggleAccount: (String, Boolean?) -> Unit,
+    /** 批量启用 / 停用全部账号；参数为 true 时全部启用 */
+    onToggleAllAccounts: (Boolean) -> Unit,
     onDetectAccount: (String) -> Unit,
     onForceNextAccount: () -> Unit,
     onDeleteAccount: (String) -> Unit,
@@ -198,7 +200,8 @@ fun AccountsScreen(
             policy = policy,
             onRefreshQuota = onRefreshQuota,
             onForceNextAccount = onForceNextAccount,
-            onOpenConsole = onOpenConsole
+            onOpenConsole = onOpenConsole,
+            onToggleAllAccounts = onToggleAllAccounts
         )
 
         // ── 2. 已导入账号：可用模型与今日实时配额明细 ──
@@ -463,7 +466,8 @@ private fun QuotaDetectionOverviewCard(
     policy: QuotaPolicySnapshot,
     onRefreshQuota: () -> Unit,
     onForceNextAccount: () -> Unit,
-    onOpenConsole: () -> Unit
+    onOpenConsole: () -> Unit,
+    onToggleAllAccounts: (Boolean) -> Unit
 ) {
     val service = uiState.service
     val accounts = service.accounts
@@ -475,6 +479,8 @@ private fun QuotaDetectionOverviewCard(
     val total429 = accounts.sumOf { it.totalRateLimited }
     val enabledCount = accounts.count { it.enabled }
     val readyCount = accounts.count { it.enabled && it.isAvailable && !it.sessionExpired }
+    // 「全部停用」必须二次确认；「全部启用」直接执行
+    var showBulkDisableConfirm by remember { mutableStateOf(false) }
 
     val syncTimeText = remember(service.lastCheckedAt) {
         if (service.lastCheckedAt <= 0L) {
@@ -637,6 +643,27 @@ private fun QuotaDetectionOverviewCard(
                     )
                 }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = { onToggleAllAccounts(true) },
+                        enabled = !uiState.bulkToggling &&
+                            accounts.isNotEmpty() && enabledCount < accounts.size,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("全部启用", style = MaterialTheme.typography.labelMedium)
+                    }
+                    TextButton(
+                        onClick = { showBulkDisableConfirm = true },
+                        enabled = !uiState.bulkToggling && enabledCount > 0,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("全部停用", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -675,6 +702,31 @@ private fun QuotaDetectionOverviewCard(
                 }
             }
         }
+    }
+
+    if (showBulkDisableConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBulkDisableConfirm = false },
+            title = { Text("停用全部账号") },
+            text = {
+                Text("停用后所有账号不再参与轮询，正在进行的请求可能失败。需要时可在列表中逐个重新启用。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBulkDisableConfirm = false
+                        onToggleAllAccounts(false)
+                    }
+                ) {
+                    Text("停用全部")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBulkDisableConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 }
 
