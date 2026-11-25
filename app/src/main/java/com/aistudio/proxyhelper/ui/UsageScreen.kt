@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -34,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -334,6 +336,7 @@ private fun AccessibilityHelpCard() {
 
 @Composable
 private fun ErrorCheckerCard() {
+    val context = LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
     var results by remember { mutableStateOf<List<ErrorExplainer.Explanation>>(emptyList()) }
 
@@ -381,6 +384,9 @@ private fun ErrorCheckerCard() {
                 Text("帮我看看")
             }
             results.forEach { exp ->
+                val commandLines = remember(exp.fix) {
+                    extractCommandLines(exp.fix, limit = Int.MAX_VALUE)
+                }
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                     shape = RoundedCornerShape(10.dp),
@@ -390,22 +396,43 @@ private fun ErrorCheckerCard() {
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = exp.title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
+                        SelectionContainer {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    text = exp.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "原因：${exp.cause}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "怎么修：${exp.fix}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                        CommandCopyList(
+                            lines = commandLines,
+                            onCopy = { cmd ->
+                                TermuxBridge.copyToClipboard(context, "命令", cmd)
+                                Toast.makeText(context, "命令已复制", Toast.LENGTH_SHORT).show()
+                            }
                         )
-                        Text(
-                            text = "原因：${exp.cause}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "怎么修：${exp.fix}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        TextButton(
+                            onClick = {
+                                val fullText = "${exp.title}\n原因：${exp.cause}\n怎么修：${exp.fix}"
+                                TermuxBridge.copyToClipboard(context, exp.title, fullText)
+                                Toast.makeText(context, "这一条已复制", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("复制这一条")
+                        }
                     }
                 }
             }

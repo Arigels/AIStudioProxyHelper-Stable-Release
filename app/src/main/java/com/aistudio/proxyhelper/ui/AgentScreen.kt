@@ -1,5 +1,6 @@
 package com.aistudio.proxyhelper.ui
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -17,9 +18,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
@@ -51,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -58,6 +62,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.agent.AgentLine
+import com.aistudio.proxyhelper.termux.TermuxBridge
 
 private data class Provider(
     val label: String,
@@ -87,6 +92,7 @@ fun AgentScreen(
     initialProblem: String? = null,
     embedded: Boolean = false
 ) {
+    val context = LocalContext.current
     var problem by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
     // AI 排障助手默认只露标题，点开才显示配置 / 输入 / 排查过程 / 结论
@@ -570,6 +576,9 @@ fun AgentScreen(
 
         // 结论
         uiState.agentAnswer?.let { answer ->
+            val commandLines = remember(answer) {
+                extractCommandLines(answer, limit = Int.MAX_VALUE)
+            }
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp)
@@ -578,7 +587,10 @@ fun AgentScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
                             imageVector = if (answer.contains("失败")) {
                                 Icons.Filled.Warning
@@ -594,10 +606,33 @@ fun AgentScreen(
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
+                        if (answer.isNotBlank()) {
+                            Spacer(modifier = Modifier.weight(1f))
+                            IconButton(
+                                onClick = {
+                                    TermuxBridge.copyToClipboard(context, "AI 的结论", answer)
+                                    Toast.makeText(context, "结论已复制", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.ContentCopy,
+                                    contentDescription = "复制结论"
+                                )
+                            }
+                        }
                     }
-                    Text(
-                        text = answer,
-                        style = MaterialTheme.typography.bodyMedium
+                    SelectionContainer {
+                        Text(
+                            text = answer,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    CommandCopyList(
+                        lines = commandLines,
+                        onCopy = { cmd ->
+                            TermuxBridge.copyToClipboard(context, "命令", cmd)
+                            Toast.makeText(context, "命令已复制", Toast.LENGTH_SHORT).show()
+                        }
                     )
                 }
             }
