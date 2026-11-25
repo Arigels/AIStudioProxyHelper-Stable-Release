@@ -1,10 +1,13 @@
 package com.aistudio.proxyhelper
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -98,11 +101,26 @@ class MainActivity : ComponentActivity() {
     /** 悬浮窗请求「打开账号页并读取剪贴板」的次数；每 +1 触发一次，读完由界面回调清零 */
     private var accountsPasteRequest by mutableStateOf(0)
 
+    /** 上一次按下返回键的时刻（单调计时），用于判断两秒内是否连按 */
+    private var lastBackPressedAt = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LogCollector.start()
         enableEdgeToEdge()
         handleLaunchIntent(intent)
+        // 返回键双击退出：首次按下只提示，两秒内再按一次才退出；页面内弹窗、抽屉等自行消费返回的组件优先处理，不受影响
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastBackPressedAt <= BACK_PRESS_EXIT_WINDOW_MS) {
+                    finish()
+                } else {
+                    lastBackPressedAt = now
+                    Toast.makeText(this@MainActivity, "再按一次返回键退出应用", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
         setContent {
             AIStudioProxyTheme {
                 AIStudioProxyApp(
@@ -146,6 +164,9 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** 返回键双击退出的判定窗口：2 秒内再按一次才退出 */
+        private const val BACK_PRESS_EXIT_WINDOW_MS = 2000L
+
         const val EXTRA_TAB = "extra_tab"
         const val EXTRA_DEPLOY_NOW = "extra_deploy_now"
         const val EXTRA_START_SERVICE = "extra_start_service"
