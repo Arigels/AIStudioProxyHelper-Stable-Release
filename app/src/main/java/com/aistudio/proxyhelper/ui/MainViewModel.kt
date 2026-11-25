@@ -27,6 +27,7 @@ import com.aistudio.proxyhelper.network.ProxyApiClient
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import com.aistudio.proxyhelper.termux.TermuxDispatchResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,9 +84,16 @@ data class MainUiState(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        private const val ACTION_DISPATCH_POLL_INTERVAL_MS = 1500L
+        private const val ACTION_DISPATCH_TIMEOUT_MS = 20_000L
+    }
+
     private val settingsRepo = SettingsRepository(application)
     private val apiClient = ProxyApiClient()
     private var acknowledgedNetworkKey: String? = null
+    private var actionMonitorJob: Job? = null
+    private var dispatchSeq: Long = 0L
 
     private val _uiState = MutableStateFlow(
         MainUiState(
@@ -470,7 +478,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .apply()
         }
 
-        LogCollector.append("[部署] dispatched action=${action.name}")
+        val dispatchMarker = "[派发#${++dispatchSeq}] action=${action.name} port=${settings.port}"
+        LogCollector.append(dispatchMarker)
         when (val result = TermuxBridge.runInTermux(ctx, action, settings, preferAccessibility)) {
             is TermuxDispatchResult.AutomatedByAccessibility -> {
                 val markDeployed = action == TermuxAction.INSTALL_AND_START ||
@@ -489,7 +498,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         } else {
                             it.deployStartedAt
                         },
-                        snackbarMessage = "正在自动操控 Termux 执行「${action.title}」，请勿切出..."
+                        snackbarMessage = "正在自动操控 Termux 执行「${action.title}」（已派发未回话），请勿切出..."
                     )
                 }
             }
@@ -511,19 +520,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         },
                         snackbarMessage = when (action) {
                             TermuxAction.INSTALL_AND_START ->
-                                "已在 Termux 开始半自动部署，请稍候…完成后状态会自动变绿"
-                            else -> "已向 Termux 发送任务：${action.title}"
+                                "已派发「${action.title}」（已派发未回话），请在 Termux 查看进度，完成后状态会自动变绿"
+                            TermuxAction.START_SERVICE ->
+                                "已派发「${action.title}」（已派发未回话），正在等待端口 ${settings.port} 就绪…"
+                            TermuxAction.STOP_SERVICE ->
+                                "已派发「${action.title}」（已派发未回话），正在确认端口 ${settings.port} 停止…"
+                            TermuxAction.ACQUIRE_WAKELOCK ->
+                                "已派发「${action.title}」（已派发未回话）；唤醒锁不能防杀后台，请同时在「电池 → 本 App/Termux」里设为「无限制」"
+                            else -> "已派发「${action.title}」（已派发未回话）"
                         }
                     )
                 }
-                if (action == TermuxAction.STOP_SERVICE ||
-                    action == TermuxAction.START_SERVICE ||
-                    action == TermuxAction.INSTALL_AND_START
-                ) {
-                    viewModelScope.launch {
-                        delay(2500L)
-                        refreshServiceStatus(silent = true)
+                when (action) {
+                    TermuxAction.STOP_SERVICE,
+                    TermuxAction.START_SERVICE,
+                    TermuxAction.ACQUIRE_WAKELOCK -> {
+                        monitorActionDispatch(action, settings, dispatchMarker)
                     }
+                    TermuxAction.INSTALL_AND_START -> {
+                        viewModelScope.launch {
+                            delay(2500L)
+                            refreshServiceStatus(silent = true)
+                        }
+                    }
+                    else -> Unit
                 }
             }
 
@@ -555,6 +575,111 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         pasteDialogCommand = result.command
                     )
                 }
+            }
+        }
+    }
+
+    private fun monitorActionDispatch(
+        action: TermuxAction,
+        settings: ProxySettings,
+        dispatchMarker: String
+    ) {
+        actionMonitorJob?.cancel()
+        actionMonitorJob = viewModelScope.launch {
+            val deadline = System.currentTimeMillis() + ACTION_DISPATCH_TIMEOUT_MS
+            while (isActive && System.currentTimeMillis() < deadline) {
+                delay(ACTION_DISPATCH_POLL_INTERVAL_MS)
+                val recentLog = LogCollector.getLog(120).substringAfterLast(dispatchMarker, "")
+                when (action) {
+                    TermuxAction.START_SERVICE -> {
+                        if (recentLog.contains("[启动] 启动失败")) {
+                            LogCollector.append("[启动] 结果：执行失败")
+                            _uiState.update {
+                                it.copy(snackbarMessage = "启动反代执行失败，请检查日志或打开 Termux 查看")
+                            }
+                            refreshServiceStatus(silent = true)
+                            return@launch
+                        }
+                        val status = apiClient.fetchServiceStatus(settings)
+                        if (status.online) {
+                            if (!_uiState.value.service.online) {
+                                LogCollector.append("[部署] verified online port=${settings.port}")
+                            }
+                            settingsRepo.hasDeployed = true
+                            settingsRepo.deploySucceeded = true
+                            OverlayState.deployStartedAt = 0L
+                            _uiState.update {
+                                it.copy(
+                                    service = status,
+                                    statusLoaded = true,
+                                    hasDeployed = true,
+                                    deploySucceeded = true,
+                                    deploying = false,
+                                    deployStartedAt = 0L,
+                                    snackbarMessage = "反代服务已启动（端口 ${settings.port} 在线）"
+                                )
+                            }
+                            updateOverlaySnapshot(status)
+                            return@launch
+                        }
+                    }
+
+                    TermuxAction.STOP_SERVICE -> {
+                        if (recentLog.contains("[停服] 执行失败")) {
+                            LogCollector.append("[停服] 结果：执行失败")
+                            _uiState.update {
+                                it.copy(snackbarMessage = "停止反代执行失败，请打开 Termux 手动结束进程")
+                            }
+                            refreshServiceStatus(silent = true)
+                            return@launch
+                        }
+                        val status = apiClient.fetchServiceStatus(settings)
+                        if (!status.online) {
+                            LogCollector.append("[停服] 端口 ${settings.port} 已停止监听")
+                            _uiState.update {
+                                it.copy(
+                                    service = status,
+                                    statusLoaded = true,
+                                    snackbarMessage = "反代服务已停止（端口 ${settings.port} 已释放）"
+                                )
+                            }
+                            updateOverlaySnapshot(status)
+                            return@launch
+                        }
+                    }
+
+                    TermuxAction.ACQUIRE_WAKELOCK -> {
+                        if (recentLog.contains("[唤醒锁] 执行失败")) {
+                            LogCollector.append("[唤醒锁] 结果：执行失败")
+                            _uiState.update {
+                                it.copy(
+                                    snackbarMessage = "开启唤醒锁执行失败：未找到 termux-wake-lock，请确认使用 F-Droid 版 Termux 且 termux-tools 完整"
+                                )
+                            }
+                            return@launch
+                        }
+                        if (recentLog.contains("[唤醒锁] termux-wake-lock 已执行")) {
+                            _uiState.update {
+                                it.copy(
+                                    snackbarMessage = "已申请唤醒锁：Termux 会尽量保持 CPU 唤醒；唤醒锁不能防杀后台，请同时在「电池 → 本 App/Termux」里设为「无限制」"
+                                )
+                            }
+                            return@launch
+                        }
+                    }
+
+                    else -> return@launch
+                }
+            }
+
+            if (action == TermuxAction.START_SERVICE || action == TermuxAction.STOP_SERVICE) {
+                refreshServiceStatus(silent = true)
+            }
+            LogCollector.append("[派发] 超时无回话：action=${action.name} timeoutMs=$ACTION_DISPATCH_TIMEOUT_MS（未自动重发）")
+            _uiState.update {
+                it.copy(
+                    snackbarMessage = "「${action.title}」超时无回话（超过 ${ACTION_DISPATCH_TIMEOUT_MS / 1000} 秒未收到响应，已停止等待且未自动重发）"
+                )
             }
         }
     }
@@ -1015,9 +1140,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
     private fun describeResult(result: TermuxDispatchResult): String = when (result) {
-        is TermuxDispatchResult.SentToTermux -> "已通过 Termux 后台执行"
-        is TermuxDispatchResult.AutomatedByAccessibility -> "已通过自动操控执行"
-        is TermuxDispatchResult.FallbackCopied -> "已复制命令并打开 Termux，需要用户手动粘贴回车"
+        is TermuxDispatchResult.SentToTermux -> "已派发未回话（已向 Termux 发送后台指令，不保证已完成，请稍后用 get_status 确认）"
+        is TermuxDispatchResult.AutomatedByAccessibility -> "已派发未回话（已交由自动操控粘贴执行，请稍后用 get_status 确认）"
+        is TermuxDispatchResult.FallbackCopied -> "执行失败（后台派发不可用，已复制命令并打开 Termux，需用户手动粘贴回车）"
     }
 
     private suspend fun buildStatusText(): String {

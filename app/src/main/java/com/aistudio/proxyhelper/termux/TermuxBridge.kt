@@ -128,20 +128,35 @@ object TermuxBridge {
             }
 
             TermuxAction.START_SERVICE -> {
+                val stopBlock = buildStopByPortBlock(port)
+                val startStep = "cd $dirExpr && $envExports && (termux-wake-lock 2>/dev/null || true) && " +
+                    "(set -o pipefail; bash start.sh --port $port 2>&1 | tee ~/.aistudio_last.log)"
                 "if [ ! -d $dirExpr ]; then " +
-                    "echo '[错误] 尚未安装 aistudio-api，请先执行一键安装。'; exit 1; " +
-                    "fi && " +
-                    "if pgrep -f 'main.py server' >/dev/null 2>&1; then " +
-                    "pkill -f 'main.py server' 2>/dev/null || true; " +
-                    "pkill -f 'waa-signer' 2>/dev/null || true; sleep 1; " +
-                    "fi && " +
-                    "cd $dirExpr && $envExports && (termux-wake-lock 2>/dev/null || true) && bash start.sh --port $port"
+                    "curl -s -m 2 -X POST --data-binary '[启动] 启动失败：尚未安装 aistudio-api' http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "exit 1; " +
+                    "fi; " +
+                    "$stopBlock; " +
+                    "if [ \"\$_stop_ok\" -eq 1 ]; then sleep 1; fi; " +
+                    "if [ \"\$_cleanup_failed\" -eq 1 ]; then " +
+                    "echo '前置清理失败，已继续启动'; " +
+                    "curl -s -m 2 -X POST --data-binary '[启动] 前置清理失败，已继续启动' http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "fi; " +
+                    "if ! ($startStep); then " +
+                    "curl -s -m 3 -X POST --data-binary @~/.aistudio_last.log http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "curl -s -m 2 -X POST --data-binary '[启动] 启动失败：start.sh 异常退出' http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "exit 1; " +
+                    "fi"
             }
 
             TermuxAction.STOP_SERVICE -> {
-                "if pkill -f 'main.py server' 2>/dev/null || pkill -f 'waa-signer' 2>/dev/null; then " +
-                    "echo '[OK] 已停止反代进程'; " +
-                    "else echo '[提示] 没有找到正在运行的反代进程（可能本来就没启动）'; fi"
+                val stopBlock = buildStopByPortBlock(port)
+                "$stopBlock; " +
+                    "if [ \"\$_cleanup_failed\" -eq 1 ]; then " +
+                    "curl -s -m 2 -X POST --data-binary '[停服] 执行失败：无法结束反代进程' http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "exit 1; " +
+                    "else " +
+                    "curl -s -m 2 -X POST --data-binary '[停服] 停止命令已执行完成' http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "fi"
             }
 
             TermuxAction.UPDATE_AND_REBUILD -> {
@@ -157,6 +172,57 @@ object TermuxBridge {
                     "else echo '[错误] 没有找到 termux-wake-lock，请确认用的是 F-Droid 版 Termux 且 termux-tools 完整。'; fi"
             }
         }
+    }
+
+    /**
+     * 按监听端口精确查找并结束进程；取不到端口 PID 时退回按可执行名精确匹配（pkill -x），
+     * 避免使用会匹配到 bash -lc 自身命令行的 pkill -f / pgrep -f。
+     */
+    private fun buildStopByPortBlock(port: Int): String {
+        val hexPort = "%04X".format(port)
+        return "_pids=\"\"; " +
+            "if command -v lsof >/dev/null 2>&1; then " +
+            "_pids=\$(lsof -t -nP -iTCP:$port -sTCP:LISTEN 2>/dev/null || true); " +
+            "fi; " +
+            "if [ -z \"\$_pids\" ] && command -v fuser >/dev/null 2>&1; then " +
+            "_pids=\$(fuser -n tcp $port 2>/dev/null || true); " +
+            "fi; " +
+            "if [ -z \"\$_pids\" ] && command -v ss >/dev/null 2>&1; then " +
+            "_pids=\$(ss -ltnp \"sport = :$port\" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 || true); " +
+            "fi; " +
+            "if [ -z \"\$_pids\" ] && [ -r /proc/net/tcp ]; then " +
+            "_inodes=\$(awk 'FNR>1 && \$4==\"0A\" {split(\$2,a,\":\"); if (toupper(a[2])==\"$hexPort\") print \$10}' /proc/net/tcp /proc/net/tcp6 2>/dev/null | tr '\\n' '|' | sed 's/|\$//'); " +
+            "if [ -n \"\$_inodes\" ]; then " +
+            "for _p in /proc/[0-9]*; do " +
+            "_pid=\${_p#/proc/}; " +
+            "if ls -l \"\$_p/fd\" 2>/dev/null | grep -qE \"socket:\\[(\$_inodes)\\]\"; then " +
+            "_pids=\"\$_pids \$_pid\"; " +
+            "fi; " +
+            "done; " +
+            "fi; " +
+            "fi; " +
+            "_clean_pids=\"\"; " +
+            "for _pid in \$_pids; do " +
+            "case \"\$_pid\" in ''|*[!0-9]*) continue ;; esac; " +
+            "if [ \"\$_pid\" != \"\$\$\" ] && [ \"\$_pid\" != \"\$PPID\" ]; then " +
+            "_clean_pids=\"\$_clean_pids \$_pid\"; " +
+            "fi; " +
+            "done; " +
+            "_stop_ok=0; _cleanup_failed=0; " +
+            "if [ -n \"\$_clean_pids\" ]; then " +
+            "for _pid in \$_clean_pids; do " +
+            "if kill -0 \"\$_pid\" 2>/dev/null; then " +
+            "if kill \"\$_pid\" 2>/dev/null; then _stop_ok=1; else _cleanup_failed=1; fi; " +
+            "fi; " +
+            "done; " +
+            "pkill -x 'waa-signer' 2>/dev/null || true; " +
+            "else " +
+            "for _name in uvicorn waa-signer python python3 python3.11 python3.12 python3.13; do " +
+            "if pgrep -x \"\$_name\" >/dev/null 2>&1; then " +
+            "if pkill -x \"\$_name\" 2>/dev/null; then _stop_ok=1; else _cleanup_failed=1; fi; " +
+            "fi; " +
+            "done; " +
+            "fi"
     }
 
     /**
