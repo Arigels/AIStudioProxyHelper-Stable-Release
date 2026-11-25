@@ -1152,6 +1152,7 @@ class OverlayService : Service() {
     }
 
     private var copyTipView: TextView? = null
+    private var copyTipHideRunnable: Runnable? = null
 
     /** 复制本机地址：只读快照里的完整 URL，UI 层不拼任何 scheme/host/port。 */
     private fun copyLocalAddress(anchor: View? = null) {
@@ -1165,10 +1166,17 @@ class OverlayService : Service() {
     }
 
     private fun showCopyTip(anchor: View?) {
-        dismissCopyTip()
+        // 屏幕上已有提示时不重建：连点只重置停留时长，动画只播一次，避免叠影和闪烁
+        copyTipView?.let { existing ->
+            cancelCopyTipHide()
+            existing.animate().cancel()
+            existing.alpha = 1f
+            scheduleCopyTipHide(existing)
+            return
+        }
 
         val tip = TextView(this).apply {
-            text = "已复制地址"
+            text = "本机地址已复制"
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(dp(12), dp(7), dp(12), dp(7))
@@ -1222,17 +1230,32 @@ class OverlayService : Service() {
             }
 
             tip.animate().alpha(1f).setDuration(120L).start()
-            handler.postDelayed({
-                if (copyTipView === tip) {
-                    tip.animate().alpha(0f).setDuration(180L).withEndAction {
-                        dismissCopyTip()
-                    }.start()
-                }
-            }, 520L)
+            scheduleCopyTipHide(tip)
         }
     }
 
+    /** 停留到点后只渐隐一次，渐隐结束即移除视图 */
+    private fun scheduleCopyTipHide(tip: TextView) {
+        cancelCopyTipHide()
+        val runnable = Runnable {
+            copyTipHideRunnable = null
+            if (copyTipView === tip) {
+                tip.animate().alpha(0f).setDuration(180L).withEndAction {
+                    dismissCopyTip()
+                }.start()
+            }
+        }
+        copyTipHideRunnable = runnable
+        handler.postDelayed(runnable, COPY_TIP_HOLD_MS)
+    }
+
+    private fun cancelCopyTipHide() {
+        copyTipHideRunnable?.let { handler.removeCallbacks(it) }
+        copyTipHideRunnable = null
+    }
+
     private fun dismissCopyTip() {
+        cancelCopyTipHide()
         copyTipView?.let { tip ->
             copyTipView = null
             tip.animate().cancel()
@@ -2201,6 +2224,9 @@ class OverlayService : Service() {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        /** 复制提示的固定停留时长；连点时以最后一次触发重新计时 */
+        private const val COPY_TIP_HOLD_MS = 520L
+
         @Volatile
         var isRunning: Boolean = false
             private set
