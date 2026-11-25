@@ -114,7 +114,7 @@ object TermuxBridge {
 
         return when (action) {
             TermuxAction.ENABLE_EXTERNAL_APPS -> {
-                "$enableExternalBlock && echo '[OK] 已开启 Termux 一键调用，现在可返回反代助手！'"
+                enableExternalBlock
             }
 
             TermuxAction.INSTALL_AND_START -> {
@@ -160,16 +160,17 @@ object TermuxBridge {
             }
 
             TermuxAction.UPDATE_AND_REBUILD -> {
-                "if [ ! -d $dirExpr/.git ]; then " +
-                    "echo '[错误] 未检测到仓库目录，请先执行一键安装。'; exit 1; " +
-                    "fi && cd $dirExpr && $envExports && git pull --ff-only && bash install.sh --rebuild$proxyFlag"
+                "if [ ! -d $dirExpr/.git ]; then exit 1; fi && " +
+                    "cd $dirExpr && $envExports && git pull --ff-only && bash install.sh --rebuild$proxyFlag"
             }
 
             TermuxAction.ACQUIRE_WAKELOCK -> {
-                "if command -v termux-wake-lock >/dev/null 2>&1; then " +
-                    "termux-wake-lock && echo '[OK] 已申请唤醒锁：Termux 会尽量保持 CPU 唤醒，减少锁屏后被挂起。' " +
-                    "&& echo '[提示] 唤醒锁不能防止系统杀后台，请同时在「电池 → 本 App/Termux」里设为「无限制」。'; " +
-                    "else echo '[错误] 没有找到 termux-wake-lock，请确认用的是 F-Droid 版 Termux 且 termux-tools 完整。'; fi"
+                "if command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock; then " +
+                    "curl -s -m 2 -X POST --data-binary '[唤醒锁] termux-wake-lock 已执行' http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "else " +
+                    "curl -s -m 2 -X POST --data-binary '[唤醒锁] 执行失败：未找到或无法执行 termux-wake-lock' http://127.0.0.1:8099/log >/dev/null 2>&1 || true; " +
+                    "exit 1; " +
+                    "fi"
             }
         }
     }
