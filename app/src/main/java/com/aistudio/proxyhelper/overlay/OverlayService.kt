@@ -96,7 +96,7 @@ object OverlayState {
     fun statusStale(now: Long = System.currentTimeMillis()): Boolean =
         lastStatusAt == 0L || now - lastStatusAt > STATUS_TIMEOUT_MS
 
-    private const val ERROR_COOLDOWN_MS = 60_000L
+    private const val ERROR_COOLDOWN_MS = 5 * 60 * 1000L
     private val logScanLock = Any()
     private var lastScannedTail: List<String> = emptyList()
     private val lastRefreshedAtByKind = mutableMapOf<ErrorKind, Long>()
@@ -142,9 +142,10 @@ object OverlayState {
             for (line in newLines) {
                 val finding = ErrorCodeRules.scanLogLine(line) ?: continue
                 val current = lastErrorFinding
-                val lastKindAt = lastRefreshedAtByKind[finding.kind] ?: 0L
-                val sameKind = current?.kind == finding.kind
-                if (!sameKind || now - lastKindAt >= ERROR_COOLDOWN_MS) {
+                val sameError = current != null &&
+                    current.kind == finding.kind &&
+                    current.title == finding.title
+                if (!sameError || now - lastErrorAt >= 5 * 60 * 1000L) {
                     lastRefreshedAtByKind[finding.kind] = now
                     lastErrorFinding = finding
                     lastErrorAt = now

@@ -195,6 +195,16 @@ fun AccountsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        val lastFinding = uiState.lastError
+        val lastFindingAt = uiState.lastErrorAt
+        if (lastFinding != null && lastFindingAt != null && lastFindingAt > 0L) {
+            Text(
+                text = ErrorCodeRules.formatSummaryLine(lastFinding, lastFindingAt),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         // ── 1. 实时额度检测与管理台同步总览 ──
         QuotaDetectionOverviewCard(
             uiState = uiState,
@@ -581,16 +591,6 @@ private fun QuotaDetectionOverviewCard(
                         modifier = Modifier.padding(10.dp)
                     )
                 }
-            }
-
-            val lastFinding = uiState.lastError
-            val lastFindingAt = uiState.lastErrorAt
-            if (lastFinding != null && lastFindingAt != null && lastFindingAt > 0L) {
-                Text(
-                    text = ErrorCodeRules.formatSummaryLine(lastFinding, lastFindingAt),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
 
             if (service.online) {
