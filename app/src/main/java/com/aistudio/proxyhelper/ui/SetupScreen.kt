@@ -1,5 +1,6 @@
 package com.aistudio.proxyhelper.ui
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -73,7 +74,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.aistudio.proxyhelper.MainActivity
 import com.aistudio.proxyhelper.automation.AutomationController
+import com.aistudio.proxyhelper.data.ErrorCodeRules
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
@@ -375,6 +378,32 @@ private fun PrimaryActionCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
+                }
+                val lastFinding = uiState.lastError
+                val lastErrorAt = uiState.lastErrorAt ?: 0L
+                if (lastFinding != null && lastErrorAt > 0L) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "最近错误 ${ErrorCodeRules.formatTimeHHmm(lastErrorAt)} · ${lastFinding.title}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = {
+                                val intent = Intent(context, MainActivity::class.java).apply {
+                                    putExtra(MainActivity.EXTRA_TAB, 2)
+                                    addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                }
+                                context.startActivity(intent)
+                            }
+                        ) {
+                            Text("去解疑页查看")
+                        }
+                    }
                 }
                 Text(
                     text = "搭建已完成。下一步：去「账号」页导入 Cookie，然后复制上方本机地址填进酒馆（详细配置见「解疑」页）。不用时可点下方按钮停止服务以省电。",
