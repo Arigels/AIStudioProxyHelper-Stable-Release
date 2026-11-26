@@ -46,6 +46,19 @@ object TermuxBridge {
             "curl -s -m 5 -X POST --data-binary @~/.aistudio_last.log " +
             "http://127.0.0.1:8099/log >/dev/null 2>&1 || true"
 
+    /** B08：部署前环境自检。输出写独立文件，不覆盖反代日志 ~/.aistudio_last.log。 */
+    private const val ENV_PROBE_BODY =
+        "echo \"ENV_BEGIN\"; " +
+            "echo \"PY=\$(command -v python || echo MISSING)\"; " +
+            "echo \"PYVER=\$(python -V 2>&1 || echo MISSING)\"; " +
+            "echo \"UV=\$(command -v uv || echo MISSING)\"; " +
+            "echo \"ENV_END\""
+
+    private const val ENV_PROBE_SUFFIX =
+        " 2>&1 | tee ~/.aistudio_env.log; " +
+            "curl -s -m 5 -X POST --data-binary @~/.aistudio_env.log " +
+            "http://127.0.0.1:8099/log >/dev/null 2>&1 || true"
+
     const val URL_TERMUX_FDROID = "https://f-droid.org/packages/com.termux/"
     const val URL_TERMUX_GITHUB = "https://github.com/termux/termux-app/releases"
     const val URL_UPSTREAM_REPO = "https://github.com/DeconstructedCube/aistudio-api"
@@ -425,6 +438,29 @@ object TermuxBridge {
     fun runRawCommand(context: Context, command: String): Boolean {
         if (command.isBlank()) return false
         val wrapped = "($command)$CAPTURE_SUFFIX"
+        val intent = Intent(ACTION_RUN_COMMAND).apply {
+            setClassName(TERMUX_PACKAGE, SERVICE_RUN_COMMAND)
+            putExtra(EXTRA_COMMAND_PATH, TERMUX_BASH)
+            putExtra(EXTRA_ARGUMENTS, arrayOf("-lc", wrapped))
+            putExtra(EXTRA_WORKDIR, TERMUX_HOME)
+            putExtra(EXTRA_BACKGROUND, true)
+            putExtra(EXTRA_SESSION_ACTION, "2")
+        }
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** 发一次环境探测；返回 false 表示命令都没发出去（权限未开或 Termux 未就绪）。 */
+    fun runEnvProbe(context: Context): Boolean {
+        val wrapped = "($ENV_PROBE_BODY)$ENV_PROBE_SUFFIX"
         val intent = Intent(ACTION_RUN_COMMAND).apply {
             setClassName(TERMUX_PACKAGE, SERVICE_RUN_COMMAND)
             putExtra(EXTRA_COMMAND_PATH, TERMUX_BASH)

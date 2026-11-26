@@ -203,6 +203,13 @@ class OverlayService : Service() {
     private var tutorialNext: TextView? = null
     /** 回看定位：-1 表示跟随最新一步，其余为正在回看的 0–4 阶段 */
     private var cookieViewStage = -1
+
+    /** B08：Termux 环境自检结论。UNKNOWN 表示没测到，按原流程走。 */
+    private enum class EnvVerdict { UNKNOWN, CHECKING, OK, NEED_PY, NEED_UV }
+
+    private var envVerdict = EnvVerdict.UNKNOWN
+    private var envProbeSent = false
+    private var envRetryCount = 0
     private var tutorialEdgeSwitch: TextView? = null
     private var tutorialFirefoxSwitch: TextView? = null
     private var detailsBox: LinearLayout? = null
@@ -1210,6 +1217,7 @@ class OverlayService : Service() {
             studioOpenedAt = 0L
             tutorialFailHint = null
         }
+        scanEnvReport()
         when {
             showTakeover -> {
                 renderTutorial(false)
@@ -1303,9 +1311,11 @@ class OverlayService : Service() {
         showCopyTip(anchor)
     }
 
-    private fun showCopyTip(anchor: View?) {
+    private fun showCopyTip(anchor: View?, text: String = "本机地址已复制") {
+        val tipText = text
         // 屏幕上已有提示时不重建：连点只重置停留时长，动画只播一次，避免叠影和闪烁
         copyTipView?.let { existing ->
+            existing.text = tipText
             cancelCopyTipHide()
             existing.animate().cancel()
             existing.alpha = 1f
@@ -1314,7 +1324,7 @@ class OverlayService : Service() {
         }
 
         val tip = TextView(this).apply {
-            text = "本机地址已复制"
+            this.text = tipText
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(dp(12), dp(7), dp(12), dp(7))
@@ -1712,6 +1722,119 @@ class OverlayService : Service() {
         render()
     }
 
+    /** 读 LogCollector 里最后一次 ENV_BEGIN…ENV_END 报告，更新 envVerdict。 */
+    private fun scanEnvReport() {
+        if (envVerdict != EnvVerdict.CHECKING) return
+        val lines = LogCollector.getLog(60).lines().map { it.trim() }
+        val end = lines.indexOfLast { it == "ENV_END" }
+        if (end < 0) return
+        val start = lines.subList(0, end).indexOfLast { it == "ENV_BEGIN" }
+        if (start < 0) return
+        val seg = lines.subList(start + 1, end)
+        var py = ""
+        var pyVer = ""
+        var uv = ""
+        for (line in seg) {
+            when {
+                line.startsWith("PY=") -> py = line.removePrefix("PY=").trim()
+                line.startsWith("PYVER=") -> pyVer = line.removePrefix("PYVER=").trim()
+                line.startsWith("UV=") -> uv = line.removePrefix("UV=").trim()
+            }
+        }
+        val pyUsable = py.isNotBlank() && py != "MISSING" && pythonAtLeast311(pyVer)
+        envVerdict = when {
+            !pyUsable -> EnvVerdict.NEED_PY
+            uv.isBlank() || uv == "MISSING" -> EnvVerdict.NEED_UV
+            else -> EnvVerdict.OK
+        }
+        handler.post { render() }
+    }
+
+    /** 形如 "Python 3.13.1" 判主版本 3、次版本 ≥ 11；解析不出按不合格处理。 */
+    private fun pythonAtLeast311(versionLine: String): Boolean {
+        val m = Regex("Python\\s+3\\.(\\d+)").find(versionLine) ?: return false
+        return (m.groupValues[1].toIntOrNull() ?: -1) >= 11
+    }
+
+    /** B08：环境不合格时顶替教程第一步，不新增步骤号。 */
+    private fun renderEnvStageCard(
+        tut: TextView,
+        btn: TextView?,
+        altBtn: TextView?,
+        continueRow: LinearLayout?
+    ) {
+        val isPy = envVerdict == EnvVerdict.NEED_PY
+        tut.visibility = View.VISIBLE
+        tut.setTextColor(Color.parseColor("#FCA5A5"))
+        tut.background = tutorialPanelBackground()
+        tut.setOnClickListener(null)
+        val reason = if (isPy) {
+            "Termux 里的 Python 不可用，会导致部署失败\n" +
+                "原因：反代依赖需要 Python 3.11 及以上，当前环境没有可用的 Python，安装会中断。"
+        } else {
+            "Termux 里没有 uv，现在部署会失败。\n" +
+                "原因：当前 Termux 环境里没有 uv，依赖解析无法进行，安装会中断。"
+        }
+        val tail = if (envRetryCount >= 3) {
+            "\n重新检测 3 次仍未通过。可以继续部署，但这次很可能失败；失败后点击悬浮窗的「🩺 报错」，把日志发给我。"
+        } else if (envRetryCount >= 1) {
+            "\n重新检测仍未通过。第一条命令报错时，先在 Termux 执行 termux-change-repo 换回官方软件源，再重跑上面两条。"
+        } else {
+            ""
+        }
+        tut.text = reason + "\n" +
+            "按顺序复制粘贴并回车运行以下指令：\n" +
+            "① pkg update -y && pkg upgrade -y\n" +
+            "② pkg install -y python\n" +
+            "\n在第①条指令尚未运行完成时，请不要粘贴第二条指令，全部运行完成后点击下方按钮\n" +
+            "「我已执行完，重新检测」。" + tail
+
+        tutorialBadge?.visibility = View.VISIBLE
+        tutorialBadge?.text = "第 1/7 步 · 环境准备"
+        tutorialNavRow?.visibility = View.GONE
+
+        btn?.visibility = View.VISIBLE
+        btn?.isEnabled = true
+        btn?.alpha = 1f
+        if (envRetryCount >= 3) {
+            btn?.text = "仍然继续（大概率安装失败）"
+            btn?.setOnClickListener {
+                envVerdict = EnvVerdict.OK
+                deployVpnConfirmShown = true
+                render()
+            }
+            altBtn?.visibility = View.GONE
+        } else {
+            btn?.text = "复制第 1 条"
+            btn?.setOnClickListener {
+                TermuxBridge.copyToClipboard(this, "环境准备命令 1", "pkg update -y && pkg upgrade -y")
+                showCopyTip(btn, "命令已复制")
+            }
+            altBtn?.visibility = View.VISIBLE
+            altBtn?.text = "复制第 2 条"
+            altBtn?.setOnClickListener {
+                TermuxBridge.copyToClipboard(this, "环境准备命令 2", "pkg install -y python")
+                showCopyTip(altBtn, "命令已复制")
+            }
+        }
+
+        continueRow?.visibility = View.VISIBLE
+        continueRow?.removeAllViews()
+        val retry = TextView(this).apply {
+            text = "我已执行完，重新检测"
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+            setOnClickListener {
+                envProbeSent = false
+                envRetryCount += 1
+                envVerdict = EnvVerdict.UNKNOWN
+                render()
+            }
+        }
+        continueRow?.addView(retry)
+    }
+
     /** 第 1 步：半自动部署。Termux 没装先装；VPN 在卡内确认；部署中显示实时阶段。 */
     private fun renderDeployStage(
         tut: TextView,
@@ -1732,6 +1855,41 @@ class OverlayService : Service() {
             proxyEverOnline
         val justTapped = deployTapAt > 0L && System.currentTimeMillis() - deployTapAt < 20_000L
         val deploying = !everDeployed && (snapshot.deploying || justTapped)
+        // B08：首次进部署卡先做一次环境自检，不合格就顶替这一步
+        if (termuxNow && !everDeployed && !snapshot.deploying && deployTapAt == 0L) {
+            if (!envProbeSent) {
+                envProbeSent = true
+                val sent = TermuxBridge.runEnvProbe(this)
+                envVerdict = if (sent) EnvVerdict.CHECKING else EnvVerdict.UNKNOWN
+                if (sent) {
+                    handler.postDelayed({
+                        if (envVerdict == EnvVerdict.CHECKING) {
+                            envVerdict = EnvVerdict.UNKNOWN
+                            render()
+                        }
+                    }, 5000L)
+                }
+            }
+            when (envVerdict) {
+                EnvVerdict.CHECKING -> {
+                    tut.text = "正在检查 Termux 环境…"
+                    tut.setTextColor(Color.parseColor("#DBEAFE"))
+                    tut.setOnClickListener(null)
+                    btn?.visibility = View.VISIBLE
+                    btn?.text = "正在检查环境…"
+                    btn?.isEnabled = false
+                    btn?.alpha = 0.5f
+                    altBtn?.visibility = View.GONE
+                    continueRow?.visibility = View.GONE
+                    return
+                }
+                EnvVerdict.NEED_PY, EnvVerdict.NEED_UV -> {
+                    renderEnvStageCard(tut, btn, altBtn, continueRow)
+                    return
+                }
+                else -> Unit
+            }
+        }
         when {
             !termuxNow -> {
                 tut.text = "还没装 Termux（必须 F-Droid / GitHub 的 arm64 版，商店旧版不行）"
