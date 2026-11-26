@@ -140,14 +140,17 @@ object ErrorCodeRules {
     fun formatTimeHHmm(timestampMs: Long): String =
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestampMs))
 
-    fun formatSummaryLine(finding: ErrorFinding, timestampMs: Long): String {
-        val time = formatTimeHHmm(timestampMs)
-        val acct = finding.account?.takeIf { it.isNotBlank() }
-        return if (acct != null) {
-            "最近错误 $time · $acct · ${finding.title}"
-        } else {
-            "最近错误 $time · ${finding.title}"
-        }
+    fun formatSummaryLine(
+        finding: ErrorFinding,
+        timestampMs: Long,
+        label: String = "最近错误"
+    ): String {
+        val parts = mutableListOf<String>()
+        parts.add(label)
+        if (timestampMs > 0L) parts.add(formatTimeHHmm(timestampMs))
+        finding.account?.takeIf { it.isNotBlank() }?.let { parts.add(it) }
+        parts.add(finding.title)
+        return parts.joinToString(" · ")
     }
 
     private fun unknownFinding(rawText: String, account: String? = null): ErrorFinding = ErrorFinding(

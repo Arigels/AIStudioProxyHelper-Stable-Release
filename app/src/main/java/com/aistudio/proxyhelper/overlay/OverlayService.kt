@@ -1836,7 +1836,8 @@ class OverlayService : Service() {
             "② 点击 Get started / 开始使用 进行账号登录\n" +
             "③ 点击网页左上角三横杠「≡」，切换到 Playground 页面\n" +
             "$menuPath\n" +
-            "$exportPath"
+            "$exportPath\n\n" +
+            "▸ 若拥有多个账号：在 AI Studio 页面左上角点「☰」打开侧边栏 → 拉到最下方点头像 → 点「切换账号」→ 登录其他账号。登录多个账号后，Cookie-Editor 可以一次抓取全部账号的 Cookie，不用一个个导出"
         tut.setTextColor(Color.parseColor("#DBEAFE"))
 
         // 复制链接会覆盖剪贴板里的 Cookie：覆盖前先确认一次

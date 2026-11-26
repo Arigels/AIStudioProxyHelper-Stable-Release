@@ -365,14 +365,14 @@ private fun ErrorCheckerCard(uiState: MainUiState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "遇到别的报错，可以直接用上方的 AI 排障助手提问。",
+                    text = "遇到别的报错，可以直接用下方的 AI 排障助手提问。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 val guide = guideFor(finding.kind)
                 Text(
-                    text = ErrorCodeRules.formatSummaryLine(finding, errorAt),
+                    text = ErrorCodeRules.formatSummaryLine(finding, errorAt, "最近一次错误"),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )
