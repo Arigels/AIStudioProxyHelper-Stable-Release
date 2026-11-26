@@ -387,7 +387,7 @@ private fun PrimaryActionCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "最近错误 ${ErrorCodeRules.formatTimeHHmm(lastErrorAt)} · ${lastFinding.title}",
+                            text = ErrorCodeRules.formatSummaryLine(lastFinding, lastErrorAt),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)

@@ -1052,6 +1052,17 @@ private fun AccountQuotaItemCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    // 服务端账号 ID（形如 acc_xxx），便于与最近错误摘要行对照
+                    if (acc.id.isNotBlank()) {
+                        Text(
+                            text = acc.id,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     if (acc.email != null && acc.name != acc.email) {
                         Text(
                             text = "${acc.name} · 分组: ${acc.group}",

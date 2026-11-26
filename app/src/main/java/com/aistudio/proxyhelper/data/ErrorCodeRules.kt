@@ -19,7 +19,8 @@ data class ErrorFinding(
     val title: String,
     val cause: String,
     val nextStep: String,
-    val rawSnippet: String = ""
+    val rawSnippet: String = "",
+    val account: String? = null
 )
 
 /**
@@ -52,6 +53,8 @@ object ErrorCodeRules {
     private val errorLineHintRegex = Regex(
         """(?i)(\b(400|401|403|404|407|408|409|410|413|418|422|429|500|502|503|504|520|521|522|524)\b|\b(error|exception|traceback|fatal|panic|errno)\b|报错|异常|服务端拒绝|请求失败|连接失败)"""
     )
+    // 只抓取服务端 acc_ 开头的账号 ID，不抓邮箱
+    private val accountIdRegex = Regex("""acc_[0-9a-zA-Z]+""")
 
     fun analyze(input: String): ErrorFinding {
         val text = input.trim()
@@ -59,6 +62,7 @@ object ErrorCodeRules {
             return unknownFinding("")
         }
 
+        val account = accountIdRegex.find(text)?.value
         val has403 = code403Regex.containsMatchIn(text)
         val has401 = code401Regex.containsMatchIn(text)
 
@@ -68,7 +72,8 @@ object ErrorCodeRules {
                 kind = ErrorKind.REGION,
                 title = "403（账号所在地区不支持，无法使用该服务）",
                 cause = "账号所在地区不支持，无法使用该服务",
-                nextStep = "更换支持地区的账号，或更换网络节点后重试。"
+                nextStep = "更换支持地区的账号，或更换网络节点后重试。",
+                account = account
             )
         }
 
@@ -78,7 +83,8 @@ object ErrorCodeRules {
                 kind = ErrorKind.RISK,
                 title = "403（账号被 Google 判定为异常活动，需要完成验证）",
                 cause = "账号被 Google 判定为异常活动，需要完成验证",
-                nextStep = "在浏览器登录该账号完成验证，再重新导出并导入 Cookie。"
+                nextStep = "在浏览器登录该账号完成验证，再重新导出并导入 Cookie。",
+                account = account
             )
         }
 
@@ -88,7 +94,8 @@ object ErrorCodeRules {
                 kind = ErrorKind.COOKIE,
                 title = "401 / 403（Cookie 已失效或已被撤销）",
                 cause = "Cookie 已失效或已被撤销",
-                nextStep = "重新用 Cookie-Editor 导出并导入该账号的 Cookie。"
+                nextStep = "重新用 Cookie-Editor 导出并导入该账号的 Cookie。",
+                account = account
             )
         }
 
@@ -98,7 +105,8 @@ object ErrorCodeRules {
                 kind = ErrorKind.RATE,
                 title = "429（请求过于频繁或额度耗尽，触发限流）",
                 cause = "请求过于频繁或额度耗尽，触发限流",
-                nextStep = "等待冷却自动结束，或切换到其它账号。"
+                nextStep = "等待冷却自动结束，或切换到其它账号。",
+                account = account
             )
         }
 
@@ -110,11 +118,12 @@ object ErrorCodeRules {
                 kind = ErrorKind.UPSTREAM,
                 title = "${codeVal}（上游服务暂时异常）",
                 cause = "上游服务暂时异常或不可用",
-                nextStep = "等待几分钟后重试；仍报错就换一个账号或节点。"
+                nextStep = "等待几分钟后重试；仍报错就换一个账号或节点。",
+                account = account
             )
         }
 
-        return unknownFinding(text)
+        return unknownFinding(text, account)
     }
 
     /**
@@ -131,15 +140,23 @@ object ErrorCodeRules {
     fun formatTimeHHmm(timestampMs: Long): String =
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestampMs))
 
-    fun formatSummaryLine(finding: ErrorFinding, timestampMs: Long): String =
-        "最近错误 ${formatTimeHHmm(timestampMs)} · ${finding.title}"
+    fun formatSummaryLine(finding: ErrorFinding, timestampMs: Long): String {
+        val time = formatTimeHHmm(timestampMs)
+        val acct = finding.account?.takeIf { it.isNotBlank() }
+        return if (acct != null) {
+            "最近错误 $time · $acct · ${finding.title}"
+        } else {
+            "最近错误 $time · ${finding.title}"
+        }
+    }
 
-    private fun unknownFinding(rawText: String): ErrorFinding = ErrorFinding(
+    private fun unknownFinding(rawText: String, account: String? = null): ErrorFinding = ErrorFinding(
         code = "unknown",
         kind = ErrorKind.UNKNOWN,
         title = "暂未识别（这条报错未收录）",
         cause = "这条报错未收录",
         nextStep = "",
-        rawSnippet = rawText.take(200)
+        rawSnippet = rawText.take(200),
+        account = account
     )
 }

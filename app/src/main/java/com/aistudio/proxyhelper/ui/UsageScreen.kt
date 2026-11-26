@@ -372,14 +372,9 @@ private fun ErrorCheckerCard(uiState: MainUiState) {
             } else {
                 val guide = guideFor(finding.kind)
                 Text(
-                    text = finding.title,
+                    text = ErrorCodeRules.formatSummaryLine(finding, errorAt),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "检测时间 " + ErrorCodeRules.formatTimeHHmm(errorAt),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
                     text = "自查",
