@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,7 +84,7 @@ fun UsageScreen(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "报错翻译和 AI 排障助手为测试功能，并未完善优化，谨慎使用",
+                    text = "AI 排障助手为测试功能，并未完善优化，谨慎使用",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = Color(0xFF8A6D00)
@@ -334,6 +335,7 @@ private fun AccessibilityHelpCard() {
 private fun ErrorCheckerCard(uiState: MainUiState) {
     val finding = uiState.lastError
     val errorAt = uiState.lastErrorAt ?: 0L
+    val context = LocalContext.current
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -399,11 +401,30 @@ private fun ErrorCheckerCard(uiState: MainUiState) {
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     guide.fixes.forEachIndexed { index, item ->
+                        val commandLines = extractCommandLines(item, limit = Int.MAX_VALUE)
                         Text(
                             text = "${index + 1}. $item",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
+                        if (commandLines.isNotEmpty()) {
+                            TextButton(
+                                onClick = {
+                                    TermuxBridge.copyToClipboard(
+                                        context,
+                                        "命令",
+                                        commandLines.joinToString("\n")
+                                    )
+                                    Toast.makeText(context, "命令已复制", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Text(
+                                    text = "复制",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     }
                 }
             }
