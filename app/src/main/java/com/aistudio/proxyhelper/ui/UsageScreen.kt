@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -27,19 +26,15 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,7 +49,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.R
-import com.aistudio.proxyhelper.data.ErrorExplainer
+import com.aistudio.proxyhelper.data.ErrorCodeRules
+import com.aistudio.proxyhelper.data.guideFor
 import com.aistudio.proxyhelper.termux.TermuxBridge
 
 @Composable
@@ -95,8 +91,8 @@ fun UsageScreen(
             }
         }
 
-        // ── ① 报错翻译器（常开，置顶）──
-        ErrorCheckerCard()
+        // ── ① 最近报错与解决办法（常开，置顶；读 B04 的 lastError，不再粘贴）──
+        ErrorCheckerCard(uiState)
 
         // ── ② AI 排障助手（默认只露标题，点开才是完整排障窗口）──
         agentContent()
@@ -335,10 +331,9 @@ private fun AccessibilityHelpCard() {
 }
 
 @Composable
-private fun ErrorCheckerCard() {
-    val context = LocalContext.current
-    var input by rememberSaveable { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<ErrorExplainer.Explanation>>(emptyList()) }
+private fun ErrorCheckerCard(uiState: MainUiState) {
+    val finding = uiState.lastError
+    val errorAt = uiState.lastErrorAt ?: 0L
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -356,83 +351,59 @@ private fun ErrorCheckerCard() {
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "看不懂报错？粘贴进来翻译",
+                    text = "最近报错与解决办法",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
             }
-            Text(
-                text = "把 Termux 里红色的报错复制粘贴到下面，点「帮我看看」，用大白话告诉你哪儿错了、怎么修。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                label = { Text("粘贴报错信息") },
-                placeholder = { Text("例如：error while attempting to bind on address ...") },
-                minLines = 3,
-                maxLines = 6,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Button(
-                onClick = { results = ErrorExplainer.explain(input) },
-                enabled = input.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("帮我看看")
-            }
-            results.forEach { exp ->
-                val commandLines = remember(exp.fix) {
-                    extractCommandLines(exp.fix, limit = Int.MAX_VALUE)
-                }
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        SelectionContainer {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    text = exp.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "原因：${exp.cause}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "怎么修：${exp.fix}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                        CommandCopyList(
-                            lines = commandLines,
-                            onCopy = { cmd ->
-                                TermuxBridge.copyToClipboard(context, "命令", cmd)
-                                Toast.makeText(context, "命令已复制", Toast.LENGTH_SHORT).show()
-                            }
+            if (finding == null) {
+                Text(
+                    text = "当前没有检测到报错。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "遇到别的报错，可以直接用上方的 AI 排障助手提问。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                val guide = guideFor(finding.kind)
+                Text(
+                    text = finding.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "检测时间 " + ErrorCodeRules.formatTimeHHmm(errorAt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "自查",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    guide.checks.forEachIndexed { index, item ->
+                        Text(
+                            text = "${index + 1}. $item",
+                            style = MaterialTheme.typography.bodySmall
                         )
-                        TextButton(
-                            onClick = {
-                                val fullText = "${exp.title}\n原因：${exp.cause}\n怎么修：${exp.fix}"
-                                TermuxBridge.copyToClipboard(context, exp.title, fullText)
-                                Toast.makeText(context, "这一条已复制", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
-                            Text("复制这一条")
-                        }
+                    }
+                }
+                Text(
+                    text = "解决办法",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    guide.fixes.forEachIndexed { index, item ->
+                        Text(
+                            text = "${index + 1}. $item",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
