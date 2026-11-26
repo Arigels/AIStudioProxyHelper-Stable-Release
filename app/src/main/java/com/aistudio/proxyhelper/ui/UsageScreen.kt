@@ -396,30 +396,11 @@ private fun ErrorCheckerCard(uiState: MainUiState) {
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     guide.fixes.forEachIndexed { index, item ->
-                        val commandLines = extractCommandLines(item, limit = Int.MAX_VALUE)
                         Text(
                             text = "${index + 1}. $item",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        if (commandLines.isNotEmpty()) {
-                            TextButton(
-                                onClick = {
-                                    TermuxBridge.copyToClipboard(
-                                        context,
-                                        "命令",
-                                        commandLines.joinToString("\n")
-                                    )
-                                    Toast.makeText(context, "命令已复制", Toast.LENGTH_SHORT).show()
-                                }
-                            ) {
-                                Text(
-                                    text = "复制",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
                     }
                 }
             }
