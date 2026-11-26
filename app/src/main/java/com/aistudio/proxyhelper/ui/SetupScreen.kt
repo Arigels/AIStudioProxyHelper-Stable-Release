@@ -80,6 +80,7 @@ import com.aistudio.proxyhelper.data.ErrorCodeRules
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
+import com.aistudio.proxyhelper.network.NetworkVerdict
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import kotlinx.coroutines.delay
 
@@ -139,8 +140,15 @@ fun SetupScreen(
             onOpenConsole = onOpenConsole
         )
 
+        // 1.2 无障碍关闭时的提示条，开启时整条不显示
+        if (!env.accessibilityEnabled) {
+            AccessibilityOffBanner(
+                onOpenAccessibilitySettings = { AutomationController.openAccessibilitySettings(context) }
+            )
+        }
+
         // 1.5 启动反代：只在「部署成功过、但现在没在运行」时出现，做成显眼的离线提醒
-        if (tutorialDone && uiState.deploySucceeded && !uiState.service.online) {
+        if (tutorialDone && uiState.deploySucceeded && !uiState.service.online && uiState.statusLoaded) {
             RestartProxyCard(
                 onRestart = onRestartService
             )
@@ -280,6 +288,34 @@ private fun PublicProxySecurityBanner() {
 }
 
 @Composable
+private fun AccessibilityOffBanner(onOpenAccessibilitySettings: () -> Unit) {
+    Surface(
+        color = Color(0xFFFEF3C7),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "无障碍服务未开启：App 无法自动向 Termux 发送命令，需要手动粘贴执行。",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF8A6D00),
+                fontWeight = FontWeight.SemiBold
+            )
+            FilledTonalButton(
+                onClick = onOpenAccessibilitySettings,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("去开启无障碍", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
 private fun OverlayToggleCard(
     canDrawOverlays: Boolean,
     overlayRunning: Boolean,
@@ -357,7 +393,7 @@ private fun PrimaryActionCard(
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Text(
-                            text = hintForError(err),
+                            text = hintForError(err, uiState.networkVerdict),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -554,7 +590,8 @@ private fun PrimaryActionCard(
     }
 }
 
-private fun hintForError(err: String): String = when {
+private fun hintForError(err: String, verdict: NetworkVerdict?): String = when {
+    verdict != null -> verdict.message
     err.contains("梯子") ->
         "请确认梯子/VPN 已开启；若用本地代理，去「高级设置 → 网络代理」填写（如 http://127.0.0.1:7890），再点「重新安装」或「启动反代」。"
     err.contains("403") ->
@@ -1051,11 +1088,21 @@ private fun ServiceStatusCard(
                         modifier = Modifier
                             .size(12.dp)
                             .clip(CircleShape)
-                            .background(if (service.online) Color(0xFF16A34A) else Color(0xFF94A3B8))
+                            .background(
+                                when {
+                                    service.online -> Color(0xFF16A34A)
+                                    !uiState.statusLoaded -> Color(0xFFF59E0B)
+                                    else -> Color(0xFF94A3B8)
+                                }
+                            )
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (service.online) "反代服务运行中" else "反代服务未运行",
+                        text = when {
+                            service.online -> "反代服务正在运行"
+                            !uiState.statusLoaded -> "正在确认反代服务状态…"
+                            else -> "未检测到反代服务，端口 ${settings.port} 未监听"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -1068,6 +1115,14 @@ private fun ServiceStatusCard(
                         Icon(Icons.Filled.Refresh, contentDescription = "刷新状态")
                     }
                 }
+            }
+
+            if (!service.online && !uiState.statusLoaded && uiState.lastOnlineAt > 0L) {
+                Text(
+                    text = "上次运行：在线，正在确认…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             Row(

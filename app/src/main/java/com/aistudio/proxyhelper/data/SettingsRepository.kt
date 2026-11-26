@@ -131,6 +131,13 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_DEPLOY_SUCCEEDED, value).apply()
         }
 
+    /** 上次确认反代在线的本地时间（毫秒）；0 表示从没在线过。 */
+    var lastOnlineAt: Long
+        get() = prefs.getLong(KEY_LAST_ONLINE_AT, 0L)
+        set(value) {
+            prefs.edit().putLong(KEY_LAST_ONLINE_AT, value).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "aistudio_proxy_helper_prefs"
         private const val KEY_PORT = "port"
@@ -152,5 +159,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_DISCLAIMER_ACCEPTED = "disclaimer_accepted"
         private const val KEY_PERMISSION_WIZARD = "permission_wizard"
         private const val KEY_DEPLOY_SUCCEEDED = "deploy_succeeded"
+        private const val KEY_LAST_ONLINE_AT = "last_online_at"
     }
 }

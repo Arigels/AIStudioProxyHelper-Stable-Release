@@ -26,6 +26,12 @@ class ProxyApiClient {
         .writeTimeout(4000, TimeUnit.MILLISECONDS)
         .build()
 
+    /** 只打 /health 的轻量探测：1.5 秒内不回就当没起，明细交给 fetchServiceStatus。 */
+    private val quickClient = OkHttpClient.Builder()
+        .connectTimeout(1500, TimeUnit.MILLISECONDS)
+        .readTimeout(1500, TimeUnit.MILLISECONDS)
+        .build()
+
     private val actionClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
@@ -33,6 +39,13 @@ class ProxyApiClient {
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+
+    suspend fun probeHealth(settings: ProxySettings): Boolean = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("${settings.localBaseUrl}/health").get().build()
+        runCatching {
+            quickClient.newCall(req).execute().use { it.isSuccessful }
+        }.getOrDefault(false)
+    }
 
     suspend fun fetchServiceStatus(settings: ProxySettings): ServiceStatus =
         withContext(Dispatchers.IO) {

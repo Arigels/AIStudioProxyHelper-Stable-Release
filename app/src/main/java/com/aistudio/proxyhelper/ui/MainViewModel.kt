@@ -19,6 +19,8 @@ import com.aistudio.proxyhelper.data.ServiceStatus
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.data.TermuxAction
 import com.aistudio.proxyhelper.network.EnvironmentChecker
+import com.aistudio.proxyhelper.network.NetworkJudge
+import com.aistudio.proxyhelper.network.NetworkVerdict
 import com.aistudio.proxyhelper.net.LogCollector
 import com.aistudio.proxyhelper.data.ProgressTracker
 import com.aistudio.proxyhelper.overlay.OverlayService
@@ -83,6 +85,10 @@ data class MainUiState(
     val bulkToggling: Boolean = false,
     /** 第一次服务状态请求已返回（无论在线 / 离线）；用于启动分流，不能用 checking 判断 */
     val statusLoaded: Boolean = false,
+    /** 上次确认在线的时间；0 表示从没在线过。用于首屏占位 */
+    val lastOnlineAt: Long = 0L,
+    /** 最近一次网络结论；null 表示网络正常或尚未判定，不显示提示 */
+    val networkVerdict: NetworkVerdict? = null,
     /** 最近一次识别到的错误（只读展示用，悬浮窗与账号页共用） */
     val lastError: ErrorFinding? = null,
     val lastErrorAt: Long? = null
@@ -104,6 +110,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(
         MainUiState(
             settings = settingsRepo.load(),
+            lastOnlineAt = settingsRepo.lastOnlineAt,
             environment = EnvironmentChecker.inspect(application),
             hasDeployed = settingsRepo.hasDeployed,
             externalAppsSetupDone = settingsRepo.externalAppsSetupDone,
@@ -136,7 +143,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startStatusPolling() {
         viewModelScope.launch {
+            var round = 0
             while (isActive) {
+                if (round == 0) {
+                    // 首屏先进「正在确认」，用上次已知在线状态做占位
+                    _uiState.update {
+                        it.copy(
+                            service = it.service.copy(checking = true),
+                            lastOnlineAt = settingsRepo.lastOnlineAt
+                        )
+                    }
+                    // 轻量探测成功即先判在线，明细交给下面的深抓补齐
+                    if (apiClient.probeHealth(_uiState.value.settings)) {
+                        _uiState.update {
+                            it.copy(
+                                service = it.service.copy(online = true, checking = true),
+                                statusLoaded = true
+                            )
+                        }
+                    }
+                }
                 refreshServiceStatus(silent = true)
                 // 同步刷新悬浮窗授权与运行状态：用户从系统设置返回后界面立即切换为「开启/关闭」
                 val canDraw = android.provider.Settings.canDrawOverlays(getApplication())
@@ -144,8 +170,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (_uiState.value.canDrawOverlays != canDraw || _uiState.value.overlayRunning != running) {
                     _uiState.update { it.copy(canDrawOverlays = canDraw, overlayRunning = running) }
                 }
-                delay(6000L)
+                round++
+                // 前 3 次 1.5 秒，稳定后回到 6 秒
+                delay(if (round < 3) 1500L else 6000L)
             }
+        }
+    }
+
+    private var lastVerdictAt = 0L
+
+    /** 网络结论只在手动刷新或刚掉线时判一次，60 秒内不重复；不做定时轮询。 */
+    private fun judgeNetworkOnce() {
+        val now = System.currentTimeMillis()
+        if (now - lastVerdictAt < 60_000L) return
+        lastVerdictAt = now
+        viewModelScope.launch {
+            val verdict = NetworkJudge.judge(getApplication(), _uiState.value.settings)
+            _uiState.update { it.copy(networkVerdict = verdict) }
         }
     }
 
@@ -190,6 +231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(service = it.service.copy(checking = true)) }
             }
             val currentSettings = _uiState.value.settings
+            val wasOnline = _uiState.value.service.online
             val status = apiClient.fetchServiceStatus(currentSettings)
             if (status.online) {
                 // 只有 /health 真的在线才算部署成功；命令发出（dispatch）绝不写这里
@@ -204,11 +246,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     service = status,
                     statusLoaded = true,
+                    networkVerdict = if (status.online) null else it.networkVerdict,
                     hasDeployed = it.hasDeployed || status.online,
                     deploySucceeded = it.deploySucceeded || status.online,
                     deploying = if (status.online) false else it.deploying,
                     deployStartedAt = if (status.online) 0L else it.deployStartedAt
                 )
+            }
+            if (status.online) {
+                settingsRepo.lastOnlineAt = System.currentTimeMillis()
+            }
+            if (!status.online && (!silent || wasOnline)) {
+                judgeNetworkOnce()
             }
             updateOverlaySnapshot(status)
         }
@@ -221,12 +270,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val phase = ProgressTracker.analyze(LogCollector.getLog(200))
         val visibleError = if (status.online) null else phase.error
         val state = _uiState.value
+        val verdict = state.networkVerdict
         val guidance = when {
             status.online && status.accounts.isEmpty() ->
                 "服务已启动！下一步：去「账号」页导出并粘贴 Cookie，之后就能用 AI Studio 反代"
             status.online -> "反代运行中 · 本机地址可在悬浮窗复制"
-            visibleError != null && visibleError.contains("梯子") ->
-                "梯子可能没开或已断，检查代理后再试"
+            !status.online && verdict != null -> verdict.message
             visibleError != null && visibleError.contains("403") ->
                 "Google 拒绝了访问：先确认梯子正常，再重新导入 Cookie"
             visibleError != null -> "出错了，点开 App 按提示修复"
