@@ -40,6 +40,9 @@ import com.aistudio.proxyhelper.agent.AgentConfig
 import com.aistudio.proxyhelper.agent.AgentEngine
 import com.aistudio.proxyhelper.agent.AgentMode
 import com.aistudio.proxyhelper.automation.AutomationController
+import com.aistudio.proxyhelper.data.ErrorCodeRules
+import com.aistudio.proxyhelper.data.ErrorFinding
+import com.aistudio.proxyhelper.data.ErrorKind
 import com.aistudio.proxyhelper.data.SettingsRepository
 import com.aistudio.proxyhelper.net.LogCollector
 import com.aistudio.proxyhelper.termux.TermuxBridge
@@ -48,6 +51,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** 悬浮窗展示的快照，由 App 主界面轮询时写入。 */
@@ -89,6 +95,64 @@ object OverlayState {
     /** 状态是否已失联（App 进程被杀 / 主界面长时间没轮询到） */
     fun statusStale(now: Long = System.currentTimeMillis()): Boolean =
         lastStatusAt == 0L || now - lastStatusAt > STATUS_TIMEOUT_MS
+
+    private const val ERROR_COOLDOWN_MS = 60_000L
+    private val logScanLock = Any()
+    private var lastScannedTail: List<String> = emptyList()
+    private val lastRefreshedAtByKind = mutableMapOf<ErrorKind, Long>()
+
+    @Volatile
+    var lastErrorFinding: ErrorFinding? = null
+        private set
+
+    @Volatile
+    var lastErrorAt: Long = 0L
+        private set
+
+    private val _lastErrorState = MutableStateFlow<Pair<ErrorFinding?, Long?>>(null to null)
+    val lastErrorState: StateFlow<Pair<ErrorFinding?, Long?>> = _lastErrorState.asStateFlow()
+
+    /**
+     * 增量扫描 LogCollector 最近 60 行：只处理新增行，同 kind 60 秒内只刷新一次，新 kind 覆盖旧的。
+     */
+    fun scanIncrementalLogs(now: Long = System.currentTimeMillis()) {
+        val rawLog = LogCollector.getLog(60)
+        synchronized(logScanLock) {
+            if (rawLog.isBlank()) {
+                lastScannedTail = emptyList()
+                return
+            }
+            val currentLines = rawLog.lines().filter { it.isNotBlank() }
+            if (currentLines.isEmpty()) {
+                lastScannedTail = emptyList()
+                return
+            }
+            val maxOverlap = minOf(lastScannedTail.size, currentLines.size)
+            var overlap = 0
+            for (k in maxOverlap downTo 1) {
+                if (lastScannedTail.subList(lastScannedTail.size - k, lastScannedTail.size) ==
+                    currentLines.subList(0, k)
+                ) {
+                    overlap = k
+                    break
+                }
+            }
+            val newLines = if (overlap > 0) currentLines.drop(overlap) else currentLines
+            lastScannedTail = currentLines
+            for (line in newLines) {
+                val finding = ErrorCodeRules.scanLogLine(line) ?: continue
+                val current = lastErrorFinding
+                val lastKindAt = lastRefreshedAtByKind[finding.kind] ?: 0L
+                val sameKind = current?.kind == finding.kind
+                if (!sameKind || now - lastKindAt >= ERROR_COOLDOWN_MS) {
+                    lastRefreshedAtByKind[finding.kind] = now
+                    lastErrorFinding = finding
+                    lastErrorAt = now
+                    _lastErrorState.value = finding to now
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -123,6 +187,9 @@ class OverlayService : Service() {
     private var dot: View? = null
     private var titleText: TextView? = null
     private var stageText: TextView? = null
+    private var lastErrorMainText: TextView? = null
+    private var lastErrorNextText: TextView? = null
+    private var lastErrorSolveButton: TextView? = null
     private var guideText: TextView? = null
     private var tutorialText: TextView? = null
     private var tutorialButton: TextView? = null
@@ -345,6 +412,21 @@ class OverlayService : Service() {
         }
     }
 
+    private val logScanRunnable = object : Runnable {
+        override fun run() {
+            if (!running) return
+            if (OverlayState.snapshot.online) {
+                val prevFinding = OverlayState.lastErrorFinding
+                val prevAt = OverlayState.lastErrorAt
+                OverlayState.scanIncrementalLogs()
+                if (OverlayState.lastErrorFinding != prevFinding || OverlayState.lastErrorAt != prevAt) {
+                    render()
+                }
+            }
+            handler.postDelayed(this, LOG_SCAN_INTERVAL_MS)
+        }
+    }
+
     /** 解锁时重探一次浏览器：装完 Edge/火狐回到桌面即能进 S1 */
     private val unlockReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -389,6 +471,7 @@ class OverlayService : Service() {
             registerReceiver(unlockReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
         }
         handler.post(ticker)
+        handler.post(logScanRunnable)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -497,6 +580,29 @@ class OverlayService : Service() {
             setTextColor(Color.parseColor("#CBD5E1"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, dp(6), 0, 0)
+        }
+
+        val lastErrorMain = TextView(this).apply {
+            setTextColor(Color.parseColor("#FCA5A5"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(0, dp(4), 0, 0)
+            visibility = View.GONE
+        }
+        val lastErrorNext = TextView(this).apply {
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setPadding(0, dp(2), 0, 0)
+            visibility = View.GONE
+        }
+        val lastErrorSolveBtn = TextView(this).apply {
+            text = "如何解决"
+            setTextColor(Color.parseColor("#93C5FD"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            gravity = Gravity.START
+            setPadding(0, dp(2), dp(8), dp(2))
+            background = null
+            visibility = View.GONE
+            setOnClickListener { openApp(tab = 2) }
         }
 
         val guide = TextView(this).apply {
@@ -757,6 +863,15 @@ class OverlayService : Service() {
         }
         full.addView(addressRow)
         full.addView(stage)
+        full.addView(lastErrorMain)
+        full.addView(lastErrorNext)
+        full.addView(
+            lastErrorSolveBtn,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
         full.addView(guide)
         full.addView(badge)
         full.addView(tutorial)
@@ -911,6 +1026,9 @@ class OverlayService : Service() {
             dot = dotView
             titleText = title
             stageText = stage
+            lastErrorMainText = lastErrorMain
+            lastErrorNextText = lastErrorNext
+            lastErrorSolveButton = lastErrorSolveBtn
             guideText = guide
             tutorialText = tutorial
             tutorialButton = tutorialBtn
@@ -1032,6 +1150,25 @@ class OverlayService : Service() {
         stageText?.visibility = if (guideMode) View.GONE else View.VISIBLE
 
         if (!reportMode) {
+            val errFinding = OverlayState.lastErrorFinding
+            val errAt = OverlayState.lastErrorAt
+            if (!guideMode && errFinding != null && errAt > 0L) {
+                lastErrorMainText?.text = ErrorCodeRules.formatSummaryLine(errFinding, errAt)
+                lastErrorMainText?.visibility = View.VISIBLE
+                if (errFinding.kind != ErrorKind.UNKNOWN && errFinding.nextStep.isNotBlank()) {
+                    lastErrorNextText?.text = errFinding.nextStep
+                    lastErrorNextText?.visibility = View.VISIBLE
+                    lastErrorSolveButton?.visibility = View.VISIBLE
+                } else {
+                    lastErrorNextText?.visibility = View.GONE
+                    lastErrorSolveButton?.visibility = View.GONE
+                }
+            } else {
+                lastErrorMainText?.visibility = View.GONE
+                lastErrorNextText?.visibility = View.GONE
+                lastErrorSolveButton?.visibility = View.GONE
+            }
+
             // 教程/断线卡期间只留一张卡；正常态才显示这一行引导
             guideText?.text = "👉 ${snapshot.guidance}"
             guideText?.setTextColor(Color.parseColor("#93C5FD"))
@@ -2151,6 +2288,9 @@ class OverlayService : Service() {
             savedY = params.y
         }
         reportMode = true
+        lastErrorMainText?.visibility = View.GONE
+        lastErrorNextText?.visibility = View.GONE
+        lastErrorSolveButton?.visibility = View.GONE
         detailsExpanded = true
         detailsBox?.visibility = View.VISIBLE
         aiText?.text = "AI 报错分析（可上下滑动，点右上角 — 收起、✕ 关闭）：\n\n$text"
@@ -2226,6 +2366,8 @@ class OverlayService : Service() {
     companion object {
         /** 复制提示的固定停留时长；连点时以最后一次触发重新计时 */
         private const val COPY_TIP_HOLD_MS = 520L
+        /** 悬浮窗日志增量扫描周期 */
+        private const val LOG_SCAN_INTERVAL_MS = 5_000L
 
         @Volatile
         var isRunning: Boolean = false

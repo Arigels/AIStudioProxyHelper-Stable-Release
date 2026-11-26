@@ -11,6 +11,7 @@ import com.aistudio.proxyhelper.agent.AgentMode
 import com.aistudio.proxyhelper.automation.AutomationController
 import com.aistudio.proxyhelper.data.CookiePreflight
 import com.aistudio.proxyhelper.data.EnvironmentStatus
+import com.aistudio.proxyhelper.data.ErrorFinding
 import com.aistudio.proxyhelper.data.ImportResult
 import com.aistudio.proxyhelper.data.ProxySettings
 import com.aistudio.proxyhelper.data.PublicNetworkRisk
@@ -81,7 +82,10 @@ data class MainUiState(
     /** 账号批量启用 / 停用进行中：入口按钮置灰，避免重复触发 */
     val bulkToggling: Boolean = false,
     /** 第一次服务状态请求已返回（无论在线 / 离线）；用于启动分流，不能用 checking 判断 */
-    val statusLoaded: Boolean = false
+    val statusLoaded: Boolean = false,
+    /** 最近一次识别到的错误（只读展示用，悬浮窗与账号页共用） */
+    val lastError: ErrorFinding? = null,
+    val lastErrorAt: Long? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -121,6 +125,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             AutomationController.statusMessage.collect { msg ->
                 _uiState.update { it.copy(automationStatus = msg) }
+            }
+        }
+        viewModelScope.launch {
+            OverlayState.lastErrorState.collect { (finding, at) ->
+                _uiState.update { it.copy(lastError = finding, lastErrorAt = at) }
             }
         }
     }
@@ -233,19 +242,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             OverlayState.deployStartedAt = 0L
         }
 
+        if (status.online) {
+            OverlayState.scanIncrementalLogs()
+        }
+
         val networkRisk = if (status.online) {
             EnvironmentChecker.inspectPublicNetworkRisk(ctx)
         } else {
             null
         }
         val alertToShow = networkRisk?.takeIf { it.key != acknowledgedNetworkKey }
+        val latestError = OverlayState.lastErrorFinding
+        val latestErrorAt = OverlayState.lastErrorAt.takeIf { it > 0L }
 
         _uiState.update {
             it.copy(
                 deployStage = phase.label,
                 deployError = visibleError,
                 deploying = if (visibleError != null) false else it.deploying,
-                publicNetworkAlert = alertToShow
+                publicNetworkAlert = alertToShow,
+                lastError = latestError,
+                lastErrorAt = latestErrorAt
             )
         }
         OverlayState.update(

@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import com.aistudio.proxyhelper.data.AccountSummary
 import com.aistudio.proxyhelper.data.CookiePreflight
 import com.aistudio.proxyhelper.data.EnvironmentStatus
+import com.aistudio.proxyhelper.data.ErrorCodeRules
 import com.aistudio.proxyhelper.data.ModelDailyQuotaDetail
 import com.aistudio.proxyhelper.data.QuotaPolicyResolver
 import com.aistudio.proxyhelper.data.QuotaPolicySnapshot
@@ -580,6 +581,16 @@ private fun QuotaDetectionOverviewCard(
                         modifier = Modifier.padding(10.dp)
                     )
                 }
+            }
+
+            val lastFinding = uiState.lastError
+            val lastFindingAt = uiState.lastErrorAt
+            if (lastFinding != null && lastFindingAt != null && lastFindingAt > 0L) {
+                Text(
+                    text = ErrorCodeRules.formatSummaryLine(lastFinding, lastFindingAt),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             if (service.online) {
