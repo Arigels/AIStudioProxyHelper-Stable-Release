@@ -209,6 +209,7 @@ class OverlayService : Service() {
 
     private var envVerdict = EnvVerdict.UNKNOWN
     private var envProbeSent = false
+    private var envProbeAt = 0L
     private var envRetryCount = 0
     private var tutorialEdgeSwitch: TextView? = null
     private var tutorialFirefoxSwitch: TextView? = null
@@ -1855,10 +1856,18 @@ class OverlayService : Service() {
             proxyEverOnline
         val justTapped = deployTapAt > 0L && System.currentTimeMillis() - deployTapAt < 20_000L
         val deploying = !everDeployed && (snapshot.deploying || justTapped)
+        // B08-patch1：上次部署失败也允许再探一次，10 秒节流，避免重试路径永远看不到环境卡
+        if (!everDeployed && snapshot.error != null && !snapshot.online &&
+            envVerdict == EnvVerdict.UNKNOWN &&
+            System.currentTimeMillis() - envProbeAt >= 10_000L
+        ) {
+            envProbeSent = false
+        }
         // B08：首次进部署卡先做一次环境自检，不合格就顶替这一步
-        if (termuxNow && !everDeployed && !snapshot.deploying && deployTapAt == 0L) {
+        if (termuxNow && !everDeployed && !deploying) {
             if (!envProbeSent) {
                 envProbeSent = true
+                envProbeAt = System.currentTimeMillis()
                 val sent = TermuxBridge.runEnvProbe(this)
                 envVerdict = if (sent) EnvVerdict.CHECKING else EnvVerdict.UNKNOWN
                 if (sent) {
@@ -1872,16 +1881,18 @@ class OverlayService : Service() {
             }
             when (envVerdict) {
                 EnvVerdict.CHECKING -> {
-                    tut.text = "正在检查 Termux 环境…"
-                    tut.setTextColor(Color.parseColor("#DBEAFE"))
-                    tut.setOnClickListener(null)
-                    btn?.visibility = View.VISIBLE
-                    btn?.text = "正在检查环境…"
-                    btn?.isEnabled = false
-                    btn?.alpha = 0.5f
-                    altBtn?.visibility = View.GONE
-                    continueRow?.visibility = View.GONE
-                    return
+                    if (snapshot.error == null) {
+                        tut.text = "正在检查 Termux 环境…"
+                        tut.setTextColor(Color.parseColor("#DBEAFE"))
+                        tut.setOnClickListener(null)
+                        btn?.visibility = View.VISIBLE
+                        btn?.text = "正在检查环境…"
+                        btn?.isEnabled = false
+                        btn?.alpha = 0.5f
+                        altBtn?.visibility = View.GONE
+                        continueRow?.visibility = View.GONE
+                        return
+                    }
                 }
                 EnvVerdict.NEED_PY, EnvVerdict.NEED_UV -> {
                     renderEnvStageCard(tut, btn, altBtn, continueRow)
