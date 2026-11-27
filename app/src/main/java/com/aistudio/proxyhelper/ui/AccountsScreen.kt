@@ -1023,21 +1023,6 @@ private fun AccountQuotaItemCard(
                             !acc.isAvailable -> "429 限流" to Color(0xFFD97706)
                             else -> "就绪" to Color(0xFF1D4ED8)
                         }
-                        // 非就绪态补一行「为什么不可用、下一步做什么」；只做表述，判定逻辑不变
-                        val statusHint = when {
-                            !acc.enabled -> "该账号已手动停用，不参与轮询；需要时打开右侧开关。"
-                            acc.sessionExpired -> "Cookie 已失效，需要重新导入该账号的 Cookie 后才能使用。"
-                            serverMark?.kind == ErrorKind.REGION ->
-                                "该账号所在地区不支持此服务，需要更换支持地区的账号或更换网络节点。"
-                            serverMark?.kind == ErrorKind.RISK ->
-                                "Google 要求该账号完成本人验证，在浏览器完成验证后重新导出并导入 Cookie。"
-                            serverMark?.kind == ErrorKind.COOKIE ->
-                                "Cookie 已过期或被撤销，需要重新导出并导入该账号的 Cookie。"
-                            isActive -> null
-                            acc.cooldownRemainingSec > 0 -> "已触发 429（请求过于频繁或额度耗尽，被限流），倒计时结束后自动恢复。"
-                            !acc.isAvailable -> "已触发 429（该模型在当前账号上达到频率或额度上限），服务会自动切换到其它账号。"
-                            else -> null
-                        }
                         Surface(
                             color = statusColor.copy(alpha = 0.14f),
                             shape = RoundedCornerShape(6.dp)
@@ -1050,6 +1035,21 @@ private fun AccountQuotaItemCard(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                             )
                         }
+                    }
+                    // 非就绪态补一行「为什么不可用、下一步做什么」；只做表述，判定逻辑不变
+                    val statusHint = when {
+                        !acc.enabled -> "该账号已手动停用，不参与轮询；需要时打开右侧开关。"
+                        acc.sessionExpired -> "Cookie 已失效，需要重新导入该账号的 Cookie 后才能使用。"
+                        serverMark?.kind == ErrorKind.REGION ->
+                            "该账号所在地区不支持此服务，需要更换支持地区的账号或更换网络节点。"
+                        serverMark?.kind == ErrorKind.RISK ->
+                            "Google 要求该账号完成本人验证，在浏览器完成验证后重新导出并导入 Cookie。"
+                        serverMark?.kind == ErrorKind.COOKIE ->
+                            "Cookie 已过期或被撤销，需要重新导出并导入该账号的 Cookie。"
+                        isActive -> null
+                        acc.cooldownRemainingSec > 0 -> "已触发 429（请求过于频繁或额度耗尽，被限流），倒计时结束后自动恢复。"
+                        !acc.isAvailable -> "已触发 429（该模型在当前账号上达到频率或额度上限），服务会自动切换到其它账号。"
+                        else -> null
                     }
                     if (statusHint != null) {
                         Spacer(modifier = Modifier.height(2.dp))
