@@ -77,6 +77,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import com.aistudio.proxyhelper.data.ErrorKind
 import com.aistudio.proxyhelper.data.AccountSummary
 import com.aistudio.proxyhelper.data.CookiePreflight
 import com.aistudio.proxyhelper.data.EnvironmentStatus
@@ -84,6 +86,7 @@ import com.aistudio.proxyhelper.data.ErrorCodeRules
 import com.aistudio.proxyhelper.data.ModelDailyQuotaDetail
 import com.aistudio.proxyhelper.data.QuotaPolicyResolver
 import com.aistudio.proxyhelper.data.QuotaPolicySnapshot
+import com.aistudio.proxyhelper.overlay.OverlayState
 import com.aistudio.proxyhelper.termux.TermuxBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -918,6 +921,9 @@ private fun AccountQuotaItemCard(
     onDetect: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val accountMarks by OverlayState.accountErrorMarks.collectAsState()
+    val serverMark =
+        if (accountMarks.containsKey(acc.id)) OverlayState.accountMarkFor(acc.id, acc.totalSuccess) else null
     val normTier = QuotaPolicyResolver.normalizeTier(acc.tier)
     val (tierLabel, tierColor) = tierBadge(acc.tier)
 
@@ -1009,6 +1015,9 @@ private fun AccountQuotaItemCard(
                         val (statusText, statusColor) = when {
                             !acc.enabled -> "已停用" to Color(0xFF6B7280)
                             acc.sessionExpired -> "登录失效" to Color(0xFFDC2626)
+                            serverMark?.kind == ErrorKind.REGION -> "地区不支持" to Color(0xFFDC2626)
+                            serverMark?.kind == ErrorKind.RISK -> "需验证" to Color(0xFFDC2626)
+                            serverMark?.kind == ErrorKind.COOKIE -> "Cookie 失效" to Color(0xFFDC2626)
                             isActive -> "当前激活" to Color(0xFF15803D)
                             acc.cooldownRemainingSec > 0 -> "429 冷却 ${acc.cooldownRemainingSec}s" to Color(0xFFD97706)
                             !acc.isAvailable -> "429 限流" to Color(0xFFD97706)
@@ -1018,6 +1027,12 @@ private fun AccountQuotaItemCard(
                         val statusHint = when {
                             !acc.enabled -> "该账号已手动停用，不参与轮询；需要时打开右侧开关。"
                             acc.sessionExpired -> "Cookie 已失效，需要重新导入该账号的 Cookie 后才能使用。"
+                            serverMark?.kind == ErrorKind.REGION ->
+                                "该账号所在地区不支持此服务，需要更换支持地区的账号或更换网络节点。"
+                            serverMark?.kind == ErrorKind.RISK ->
+                                "Google 要求该账号完成本人验证，在浏览器完成验证后重新导出并导入 Cookie。"
+                            serverMark?.kind == ErrorKind.COOKIE ->
+                                "Cookie 已过期或被撤销，需要重新导出并导入该账号的 Cookie。"
                             isActive -> null
                             acc.cooldownRemainingSec > 0 -> "已触发 429（请求过于频繁或额度耗尽，被限流），倒计时结束后自动恢复。"
                             !acc.isAvailable -> "已触发 429（该模型在当前账号上达到频率或额度上限），服务会自动切换到其它账号。"

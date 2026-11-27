@@ -111,6 +111,28 @@ object OverlayState {
 
     private val _lastErrorState = MutableStateFlow<Pair<ErrorFinding?, Long?>>(null to null)
     val lastErrorState: StateFlow<Pair<ErrorFinding?, Long?>> = _lastErrorState.asStateFlow()
+    /** B09：按 acc_ ID 保留每个账号最近一次服务端错误，供账号页标注异常状态。 */
+    private val _accountErrorMarks = MutableStateFlow<Map<String, Pair<ErrorFinding, Long>>>(emptyMap())
+    val accountErrorMarks: StateFlow<Map<String, Pair<ErrorFinding, Long>>> = _accountErrorMarks.asStateFlow()
+    private val _accountMarkBaselines = mutableMapOf<String, Int>()
+
+    /**
+     * B09：该账号仍需显示的异常标记。判据是「累计成功次数是否增长」，不是时间：
+     * 标记写入时记下当时的成功次数作基线，之后成功次数增长即视为账号已恢复、标记消失。
+     * 30 分钟一直没成功才兜底隐藏，防止标记永久挂在卡片上。
+     */
+    fun accountMarkFor(accId: String, totalSuccess: Int): ErrorFinding? {
+        val map = _accountErrorMarks.value
+        val mark = map[accId] ?: return null
+        val baseline = _accountMarkBaselines.getOrPut(accId) { totalSuccess }
+        if (totalSuccess > baseline) {
+            _accountErrorMarks.value = map - accId
+            _accountMarkBaselines.remove(accId)
+            return null
+        }
+        if (System.currentTimeMillis() - mark.second >= 30 * 60 * 1000L) return null
+        return mark.first
+    }
 
     /**
      * 增量扫描 LogCollector 最近 60 行：只处理新增行，同 kind 60 秒内只刷新一次，新 kind 覆盖旧的。
@@ -150,6 +172,11 @@ object OverlayState {
                     lastErrorFinding = finding
                     lastErrorAt = now
                     _lastErrorState.value = finding to now
+                }
+                val accId = finding.account
+                if (accId != null) {
+                    _accountErrorMarks.value = _accountErrorMarks.value + (accId to (finding to now))
+                    _accountMarkBaselines.remove(accId)
                 }
             }
         }
