@@ -2155,7 +2155,7 @@ private fun CookieGuideCard(
                     GuideStep(number = 5, title = "回到本 App 导入（支持剪贴板 / 文件）") {
                         Text(
                             text = "首选：点下面「粘贴剪贴板」按钮。它直接读系统剪贴板，绕过输入法剪贴板条的字数上限（多数手机输入法只允许粘 1000~5000 字），也不用点进输入框。\n" +
-                                "其次：点「从文件导入 (.json/.txt)」，把 Cookie-Editor 导出的 JSON 存成文件再选，完全没有字数限制。\n" +
+                                "其次：点「从文件导入」，把 Cookie-Editor 导出的 JSON 存成文件再选，完全没有字数限制。\n" +
                                 "最后：如果一定要手动粘，长按输入框空白处用系统原生「粘贴」，不要用输入法键盘上的剪贴板历史。\n" +
                                 "说明：输入法的剪贴板上限 App 无法读取或检测，所以这里直接用上面两个办法绕开。导入后会自动识别所有子账号。",
                             style = MaterialTheme.typography.bodySmall,

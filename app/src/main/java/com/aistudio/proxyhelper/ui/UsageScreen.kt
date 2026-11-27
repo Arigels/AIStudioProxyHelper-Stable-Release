@@ -32,7 +32,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -335,7 +334,6 @@ private fun AccessibilityHelpCard() {
 private fun ErrorCheckerCard(uiState: MainUiState) {
     val finding = uiState.lastError
     val errorAt = uiState.lastErrorAt ?: 0L
-    val context = LocalContext.current
 
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),

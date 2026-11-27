@@ -38,10 +38,10 @@ object ErrorCodeRules {
         """(?i)(region\s+not\s+supported|unsupported\s+region|location\s+is\s+not\s+supported|not\s+available\s+in\s+your\s+(country|region)|country.{0,10}region|geo[_-]?restricted|region[_-]?restricted|unsupported\s+location|region_not_supported)"""
     )
     private val riskFragmentRegex = Regex(
-        """(?i)(unusual activity|verification|captcha|security check|suspicious|abuse|unusual traffic|automated queries)"""
+        """(?i)(unusual\s+activity|verif(y|ication)|captcha|security\s+check|suspicious|abuse|unusual\s+traffic|automated\s+queries|account\s+(has\s+been\s+)?disabled|tos[_-]?violation)"""
     )
     private val cookieFragmentRegex = Regex(
-        """(?i)(cookie (expired|invalid|revoked)|session (expired|invalid|revoked)|token (expired|invalid)|unauthenticated|not logged in|login required)"""
+        """(?i)(cookie\s+(expired|invalid|revoked)|session\s+(expired|invalid|revoked)|token\s+(expired|invalid)|unauthenticated|unauthorized|not\s+logged\s+in|login\s+required|re-?auth|invalid[_-]?auth|invalid\s+credentials?|sapisid|psid|auth\s+(failed|error))"""
     )
     private val rateFragmentRegex = Regex(
         """(?i)(rate\s*limit|ratelimit|too\s+many\s+requests|quota|resource[_-]?exhausted|limit\s+exceeded|throttl|try\s+again\s+later)"""

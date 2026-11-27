@@ -96,7 +96,6 @@ object OverlayState {
     fun statusStale(now: Long = System.currentTimeMillis()): Boolean =
         lastStatusAt == 0L || now - lastStatusAt > STATUS_TIMEOUT_MS
 
-    private const val ERROR_COOLDOWN_MS = 5 * 60 * 1000L
     private val logScanLock = Any()
     private var lastScannedTail: List<String> = emptyList()
     private val lastRefreshedAtByKind = mutableMapOf<ErrorKind, Long>()
@@ -114,7 +113,7 @@ object OverlayState {
     /** B09：按 acc_ ID 保留每个账号最近一次服务端错误，供账号页标注异常状态。 */
     private val _accountErrorMarks = MutableStateFlow<Map<String, Pair<ErrorFinding, Long>>>(emptyMap())
     val accountErrorMarks: StateFlow<Map<String, Pair<ErrorFinding, Long>>> = _accountErrorMarks.asStateFlow()
-    private val _accountMarkBaselines = mutableMapOf<String, Int>()
+    private val _accountMarkBaselines = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     /**
      * B09：该账号仍需显示的异常标记。判据是「累计成功次数是否增长」，不是时间：
